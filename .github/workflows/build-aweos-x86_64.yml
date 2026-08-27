@@ -75,7 +75,9 @@ jobs:
           "$KBUILD_OUTPUT/scripts/config" --file "$KBUILD_OUTPUT/.config" \
             --enable CONFIG_BLK_DEV_INITRD \
             --enable CONFIG_DEVTMPFS \
-            --enable CONFIG_DEVTMPFS_MOUNT
+            --enable CONFIG_DEVTMPFS_MOUNT \
+            --enable CONFIG_SERIAL_8250 \
+            --enable CONFIG_SERIAL_8250_CONSOLE
           make -C linux O="$KBUILD_OUTPUT" olddefconfig
 
       - name: Build Linux kernel out-of-tree
@@ -129,9 +131,10 @@ EOF
       - name: Build Limine BIOS+UEFI ISO
         run: |
           set -euo pipefail
-          mkdir -p build/iso_root/boot build/iso_root/EFI/BOOT
-          cp "$LIMINE_ROOT/BOOTX64.EFI" build/iso_root/EFI/BOOT/BOOTX64.EFI
+          mkdir -p build/iso_root/boot
           cp "$LIMINE_ROOT/limine-bios.sys" build/iso_root/boot/limine-bios.sys
+          cp "$LIMINE_ROOT/limine-bios-cd.bin" build/limine-bios-cd.bin
+          cp "$LIMINE_ROOT/limine-uefi-cd.bin" build/limine-uefi-cd.bin
           cp "$KBUILD_OUTPUT/arch/x86/boot/bzImage" build/iso_root/boot/bzImage
           cat > build/iso_root/limine.conf <<'EOF'
 TIMEOUT=3
@@ -139,22 +142,24 @@ TIMEOUT=3
 :AWEOS x86_64
     PROTOCOL=linux
     KERNEL_PATH=boot:///boot/bzImage
+    KERNEL_CMDLINE=console=ttyS0,115200
 EOF
           xorriso -as mkisofs \
-            -b boot/limine-bios.sys \
+            -b limine-bios-cd.bin \
             -no-emul-boot \
             -boot-load-size 4 \
             -boot-info-table \
-            --efi-boot EFI/BOOT/BOOTX64.EFI \
+            --efi-boot limine-uefi-cd.bin \
             -efi-boot-part --efi-boot-image \
             -iso-level 3 -volid AWEOS \
-            -o build/AWEOS-x86_64.iso build/iso_root
+            -o build/AWEOS-x86_64.iso build/iso_root \
+            build/limine-bios-cd.bin build/limine-uefi-cd.bin
           test -s build/AWEOS-x86_64.iso
 
       - name: Boot ISO in QEMU and require AWEOS Hello
         run: |
           set -euo pipefail
-          timeout 45s qemu-system-x86_64 \
+          timeout 60s qemu-system-x86_64 \
             -machine q35 \
             -m 512M \
             -cdrom build/AWEOS-x86_64.iso \
