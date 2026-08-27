@@ -1,0 +1,132 @@
+name: AWEOS x86_64 Boot Build
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'Bootloader/**'
+      - '.github/workflows/build-aweos-x86_64.yml'
+      - 'Makefile'
+      - 'README.md'
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: aweos-x86_64-build
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      KBUILD_OUTPUT: ${{ github.workspace }}/build/kernel
+      LIMINE_VERSION: v12.6.1
+      LIMINE_SHA256: 1d7f71df1614110892eadb35bad7b7f4277ca0d2dbf8575512da333a546009a7
+
+    steps:
+      - name: Checkout AWEOS
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: Install build dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential bc bison flex libssl-dev libelf-dev \
+            cpio xz-utils curl xorriso dosfstools mtools busybox-static
+
+      - name: Assert Linux source boundary
+        run: |
+          set -euo pipefail
+          test -d linux
+          test -f linux/Makefile
+          test -f linux/Kconfig
+          git diff --exit-code -- linux
+          test -z "$(git status --porcelain -- linux)"
+
+      - name: Configure Linux x86_64 out-of-tree
+        run: |
+          set -euo pipefail
+          mkdir -p "$KBUILD_OUTPUT"
+          make -C linux O="$KBUILD_OUTPUT" x86_64_defconfig
+          "$KBUILD_OUTPUT/scripts/config" --file "$KBUILD_OUTPUT/.config" \
+            --enable CONFIG_BLK_DEV_INITRD \
+            --enable CONFIG_DEVTMPFS \
+            --enable CONFIG_DEVTMPFS_MOUNT
+          make -C linux O="$KBUILD_OUTPUT" olddefconfig
+
+      - name: Build Linux kernel without modifying /linux
+        run: |
+          set -euo pipefail
+          make -C linux O="$KBUILD_OUTPUT" -j"$(nproc)" bzImage
+          test -s "$KBUILD_OUTPUT/arch/x86/boot/bzImage"
+
+      - name: Build minimal AWEOS initramfs
+        run: |
+          set -euo pipefail
+          ROOT="$GITHUB_WORKSPACE/build/initramfs"
+          rm -rf "$ROOT"
+          mkdir -p "$ROOT"/{bin,sbin,etc,proc,sys,dev,tmp,run}
+          cp /bin/busybox "$ROOT/bin/busybox"
+          ln -s /bin/busybox "$ROOT/bin/sh"
+          ln -s /bin/busybox "$ROOT/bin/mount"
+          ln -s /bin/busybox "$ROOT/bin/echo"
+          cat > "$ROOT/init" <<'EOF'
+#!/bin/sh
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
+printf '\nAWEOS x86_64 booted successfully.\n'
+printf 'Linux kernel: /linux (built out-of-tree)\n'
+exec /bin/sh
+EOF
+          chmod +x "$ROOT/init"
+          (cd "$ROOT" && find . -print0 | cpio --null -ov --format=newc | gzip -9) > "$KBUILD_OUTPUT/aweos-initramfs.cpio.gz"
+          test -s "$KBUILD_OUTPUT/aweos-initramfs.cpio.gz"
+
+      - name: Rebuild kernel with AWEOS initramfs
+        run: |
+          set -euo pipefail
+          "$KBUILD_OUTPUT/scripts/config" --file "$KBUILD_OUTPUT/.config" \
+            --set-str CONFIG_INITRAMFS_SOURCE "$KBUILD_OUTPUT/aweos-initramfs.cpio.gz"
+          make -C linux O="$KBUILD_OUTPUT" olddefconfig
+          make -C linux O="$KBUILD_OUTPUT" -j"$(nproc)" bzImage
+          test -s "$KBUILD_OUTPUT/arch/x86/boot/bzImage"
+
+      - name: Verify /linux was not modified
+        run: |
+          set -euo pipefail
+          git diff --exit-code -- linux
+          test -z "$(git status --porcelain -- linux)"
+
+      - name: Prepare UEFI boot image
+        run: |
+          set -euo pipefail
+          mkdir -p build/esp/EFI/BOOT build/esp/boot
+          cp Bootloader/x86_64/BOOTX64.EFI build/esp/EFI/BOOT/BOOTX64.EFI
+          cp Bootloader/x86_64/limine.conf build/esp/limine.conf
+          cp "$KBUILD_OUTPUT/arch/x86/boot/bzImage" build/esp/boot/bzImage
+          truncate -s 64M build/efi.img
+          mkfs.fat -F 32 build/efi.img
+          mcopy -s -i build/efi.img build/esp/* ::/
+          mkdir -p build/iso
+          cp build/efi.img build/iso/aweos-efi.img
+          xorriso -as mkisofs \
+            -iso-level 3 -V AWEOS \
+            -e aweos-efi.img -no-emul-boot \
+            -o build/AWEOS-x86_64-UEFI.iso build/iso
+          test -s build/AWEOS-x86_64-UEFI.iso
+
+      - name: Upload bootable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AWEOS-x86_64-UEFI
+          path: |
+            build/AWEOS-x86_64-UEFI.iso
+            build/kernel/arch/x86/boot/bzImage
+          if-no-files-found: error
