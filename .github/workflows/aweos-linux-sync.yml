@@ -1,9 +1,18 @@
 name: AWEOS Linux Kernel Sync
 
-on: [push, workflow_dispatch]
+on:
+  push:
+    branches: [master]
+  schedule:
+    - cron: '23 3 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: aweos-linux-sync
+  cancel-in-progress: false
 
 jobs:
   sync:
@@ -18,6 +27,7 @@ jobs:
 
       - name: Configure Git
         run: |
+          set -euo pipefail
           git config user.name "AWEOS Linux Sync Bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
@@ -33,6 +43,9 @@ jobs:
         run: |
           set -euo pipefail
 
+          # First-run migration is kept as a guarded fallback. The current
+          # repository has already been migrated, so normal runs only enter
+          # the safe synchronization path below.
           if [[ ! -f linux/Makefile ]]; then
             echo "Initial migration: moving the complete Linux fork into /linux."
             test -f Makefile
@@ -46,63 +59,8 @@ jobs:
             done < <(git ls-tree -z --name-only HEAD)
 
             mkdir -p .github/workflows
-            cat > .github/workflows/aweos-linux-sync.yml <<'YAML'
-name: AWEOS Linux Kernel Sync
-on: [push, workflow_dispatch]
-permissions:
-  contents: write
-jobs:
-  sync:
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
-    steps:
-      - name: Checkout AWEOS
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          persist-credentials: true
-      - name: Configure Git
-        run: |
-          git config user.name "AWEOS Linux Sync Bot"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-      - name: Fetch official Linux upstream
-        run: |
-          git remote remove linux-upstream 2>/dev/null || true
-          git remote add linux-upstream https://github.com/torvalds/linux.git
-          git fetch --no-tags linux-upstream master
-      - name: Safe Linux synchronization
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -f linux/Makefile
-          test -f linux/Kconfig
-          test -d linux/kernel
-          test -d linux/arch
-          if [[ -n "$(git status --porcelain -- linux)" ]]; then
-            echo "ERROR: /linux contains local changes; update aborted."
-            git status --short -- linux
-            exit 1
-          fi
-          CURRENT_TREE="$(git rev-parse HEAD:linux)"
-          UPSTREAM_TREE="$(git rev-parse linux-upstream/master^{tree})"
-          UPSTREAM_SHA="$(git rev-parse linux-upstream/master)"
-          if [[ "$CURRENT_TREE" == "$UPSTREAM_TREE" ]]; then
-            echo "Already synchronized with torvalds/linux: $UPSTREAM_SHA"
-            exit 0
-          fi
-          git rm -r --quiet linux
-          git read-tree --prefix=linux/ -u linux-upstream/master
-          test -f linux/Makefile
-          test -f linux/Kconfig
-          test -d linux/kernel
-          test -d linux/arch
-          git add -A
-          git commit -m "Sync Linux kernel to $UPSTREAM_SHA"
-          git push origin HEAD:master
-YAML
-
             git add -A
-            git commit -m "Move complete Linux kernel into /linux and establish AWEOS boundary"
+            git commit -m "Move complete Linux kernel into /linux"
             git push origin HEAD:master
             exit 0
           fi
@@ -113,9 +71,10 @@ YAML
           test -d linux/kernel
           test -d linux/arch
 
-          # Never overwrite AWEOS or a manually modified Linux tree.
+          # HARD SAFETY RULE: never overwrite a manually modified Linux tree.
+          # All AWEOS code must live outside /linux.
           if [[ -n "$(git status --porcelain -- linux)" ]]; then
-            echo "ERROR: /linux contains local changes; update aborted."
+            echo "ERROR: /linux contains local changes; Linux update aborted."
             git status --short -- linux
             exit 1
           fi
@@ -125,18 +84,24 @@ YAML
           UPSTREAM_SHA="$(git rev-parse linux-upstream/master)"
 
           if [[ "$CURRENT_TREE" == "$UPSTREAM_TREE" ]]; then
-            echo "Linux is already exactly synchronized: $UPSTREAM_SHA"
+            echo "Linux is already exactly synchronized with torvalds/linux."
+            echo "Upstream commit: $UPSTREAM_SHA"
             exit 0
           fi
 
-          echo "Updating only /linux to torvalds/linux $UPSTREAM_SHA"
+          echo "Updating ONLY /linux to official torvalds/linux: $UPSTREAM_SHA"
+
+          # Remove and recreate only the /linux tree from upstream. The root
+          # AWEOS tree is never touched by this operation.
           git rm -r --quiet linux
           git read-tree --prefix=linux/ -u linux-upstream/master
 
+          # Post-import integrity checks before commit.
           test -f linux/Makefile
           test -f linux/Kconfig
           test -d linux/kernel
           test -d linux/arch
+          test "$(git rev-parse :linux)" = "$UPSTREAM_TREE"
 
           git add -A
           git commit -m "Sync Linux kernel to $UPSTREAM_SHA"
