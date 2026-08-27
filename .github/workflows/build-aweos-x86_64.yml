@@ -14,7 +14,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 120
-
     steps:
       - name: Checkout AWEOS
         uses: actions/checkout@v5
@@ -27,23 +26,20 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential bc bison flex libssl-dev libelf-dev cpio gzip xz-utils curl xorriso qemu-system-x86 ovmf busybox-static
 
-      - name: Record Linux tree
+      - name: Verify Linux source
         run: |
           set -eu
           test -f linux/Makefile
           test -f linux/Kconfig
-          git status --porcelain -- linux > build-linux-status-before.txt
-          test ! -s build-linux-status-before.txt
+          test -z "$(git status --porcelain -- linux)"
           git ls-files -s linux | sha256sum > build-linux-before.sha256
 
-      - name: Download verified Limine v12.6.1
-        env:
-          LIMINE_SHA256: 1d7f71df1614110892eadb35bad7b7f4277ca0d2dbf8575512da333a546009a7
+      - name: Download Limine v12.6.1
         run: |
           set -eu
           mkdir -p build/limine
           curl -fL --retry 5 -o build/limine/limine-binary.tar.xz https://github.com/Limine-Bootloader/Limine/releases/download/v12.6.1/limine-binary.tar.xz
-          echo "$LIMINE_SHA256  build/limine/limine-binary.tar.xz" | sha256sum -c -
+          echo '1d7f71df1614110892eadb35bad7b7f4277ca0d2dbf8575512da333a546009a7  build/limine/limine-binary.tar.xz' | sha256sum -c -
           tar -xJf build/limine/limine-binary.tar.xz -C build/limine
           LIMINE_ROOT=$(find build/limine -type f -name BOOTX64.EFI -printf '%h\n' | head -n 1)
           test -n "$LIMINE_ROOT"
@@ -53,20 +49,16 @@ jobs:
           test -s "$LIMINE_ROOT/limine-uefi-cd.bin"
           echo "LIMINE_ROOT=$LIMINE_ROOT" >> "$GITHUB_ENV"
 
-      - name: Configure Linux x86_64
+      - name: Configure and build Linux x86_64
         run: |
           set -eu
           mkdir -p build/kernel
           make -C linux O="$GITHUB_WORKSPACE/build/kernel" x86_64_defconfig
           make -C linux O="$GITHUB_WORKSPACE/build/kernel" olddefconfig
-
-      - name: Build Linux kernel
-        run: |
-          set -eu
           make -C linux O="$GITHUB_WORKSPACE/build/kernel" -j"$(nproc)" bzImage
           test -s build/kernel/arch/x86/boot/bzImage
 
-      - name: Create AWEOS Hello initramfs
+      - name: Create AWEOS initramfs
         run: |
           set -eu
           ROOT="$GITHUB_WORKSPACE/build/initramfs"
@@ -92,18 +84,20 @@ EOF
           set -eu
           scripts_config=build/kernel/scripts/config
           test -x "$scripts_config"
-          "$scripts_config" --file build/kernel/.config --enable CONFIG_BLK_DEV_INITRD --enable CONFIG_DEVTMPFS --enable CONFIG_DEVTMPFS_MOUNT --enable CONFIG_SERIAL_8250 --enable CONFIG_SERIAL_8250_CONSOLE
+          "$scripts_config" --file build/kernel/.config --enable CONFIG_BLK_DEV_INITRD
+          "$scripts_config" --file build/kernel/.config --enable CONFIG_DEVTMPFS
+          "$scripts_config" --file build/kernel/.config --enable CONFIG_DEVTMPFS_MOUNT
+          "$scripts_config" --file build/kernel/.config --enable CONFIG_SERIAL_8250
+          "$scripts_config" --file build/kernel/.config --enable CONFIG_SERIAL_8250_CONSOLE
           "$scripts_config" --file build/kernel/.config --set-str CONFIG_INITRAMFS_SOURCE "$GITHUB_WORKSPACE/build/aweos-initramfs.cpio.gz"
           make -C linux O="$GITHUB_WORKSPACE/build/kernel" olddefconfig
           make -C linux O="$GITHUB_WORKSPACE/build/kernel" -j"$(nproc)" bzImage
           test -s build/kernel/arch/x86/boot/bzImage
 
-      - name: Verify Linux was not changed
+      - name: Verify Linux source unchanged
         run: |
           set -eu
-          git diff --exit-code -- linux
-          git status --porcelain -- linux > build-linux-status-after.txt
-          test ! -s build-linux-status-after.txt
+          test -z "$(git status --porcelain -- linux)"
           git ls-files -s linux | sha256sum > build-linux-after.sha256
           cmp build-linux-before.sha256 build-linux-after.sha256
 
@@ -136,16 +130,12 @@ EOF
           set -e
           cat build/qemu-bios.log
           grep -Fq 'HELLO FROM AWEOS x86_64' build/qemu-bios.log
-          echo "BIOS test passed; QEMU exit code: $rc"
+          echo "BIOS test passed: $rc"
 
       - name: QEMU UEFI Hello test
         run: |
           set -eu
-          if [ -f /usr/share/OVMF/OVMF_CODE_4M.fd ]; then
-            UEFI=/usr/share/OVMF/OVMF_CODE_4M.fd
-          else
-            UEFI=/usr/share/OVMF/OVMF_CODE.fd
-          fi
+          if [ -f /usr/share/OVMF/OVMF_CODE_4M.fd ]; then UEFI=/usr/share/OVMF/OVMF_CODE_4M.fd; else UEFI=/usr/share/OVMF/OVMF_CODE.fd; fi
           test -f "$UEFI"
           set +e
           timeout 90s qemu-system-x86_64 -machine q35 -m 512M -bios "$UEFI" -cdrom build/AWEOS-x86_64.iso -nographic -serial stdio -no-reboot > build/qemu-uefi.log 2>&1
@@ -153,7 +143,7 @@ EOF
           set -e
           cat build/qemu-uefi.log
           grep -Fq 'HELLO FROM AWEOS x86_64' build/qemu-uefi.log
-          echo "UEFI test passed; QEMU exit code: $rc"
+          echo "UEFI test passed: $rc"
 
       - name: Upload verified artifacts
         uses: actions/upload-artifact@v4
