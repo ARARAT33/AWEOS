@@ -1,8 +1,6 @@
 name: AWEOS Linux Kernel Sync
 
 on:
-  push:
-    branches: [master]
   schedule:
     - cron: '23 3 * * *'
   workflow_dispatch:
@@ -15,12 +13,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  sync:
+  sync-linux-only:
     runs-on: ubuntu-latest
     timeout-minutes: 120
+
     steps:
       - name: Checkout AWEOS
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
           persist-credentials: true
@@ -34,75 +33,77 @@ jobs:
       - name: Fetch official Linux upstream
         run: |
           set -euo pipefail
-          git remote remove linux-upstream 2>/dev/null || true
           git remote add linux-upstream https://github.com/torvalds/linux.git
           git fetch --no-tags linux-upstream master
 
-      - name: Initialize or safely synchronize /linux
-        shell: bash
+      - name: Verify AWEOS repository is clean
         run: |
           set -euo pipefail
-
-          # First-run migration is kept as a guarded fallback. The current
-          # repository has already been migrated, so normal runs only enter
-          # the safe synchronization path below.
-          if [[ ! -f linux/Makefile ]]; then
-            echo "Initial migration: moving the complete Linux fork into /linux."
-            test -f Makefile
-            test -f Kconfig
-            test -d kernel
-            test -d arch
-
-            mkdir -p linux
-            while IFS= read -r -d '' path; do
-              git mv -- "$path" "linux/$path"
-            done < <(git ls-tree -z --name-only HEAD)
-
-            mkdir -p .github/workflows
-            git add -A
-            git commit -m "Move complete Linux kernel into /linux"
-            git push origin HEAD:master
-            exit 0
-          fi
-
-          echo "Checking /linux before update..."
+          test -d linux
           test -f linux/Makefile
           test -f linux/Kconfig
           test -d linux/kernel
           test -d linux/arch
-
-          # HARD SAFETY RULE: never overwrite a manually modified Linux tree.
-          # All AWEOS code must live outside /linux.
-          if [[ -n "$(git status --porcelain -- linux)" ]]; then
-            echo "ERROR: /linux contains local changes; Linux update aborted."
-            git status --short -- linux
+          if [[ -n "$(git status --porcelain)" ]]; then
+            echo "ERROR: Working tree is not clean. Aborting safely; nothing will be pushed."
+            git status --short
             exit 1
           fi
 
-          CURRENT_TREE="$(git rev-parse HEAD:linux)"
-          UPSTREAM_TREE="$(git rev-parse linux-upstream/master^{tree})"
-          UPSTREAM_SHA="$(git rev-parse linux-upstream/master)"
-
-          if [[ "$CURRENT_TREE" == "$UPSTREAM_TREE" ]]; then
-            echo "Linux is already exactly synchronized with torvalds/linux."
-            echo "Upstream commit: $UPSTREAM_SHA"
-            exit 0
+      - name: Compare ONLY /linux with torvalds/linux
+        id: compare
+        shell: bash
+        run: |
+          set -euo pipefail
+          current_tree="$(git rev-parse HEAD:linux)"
+          upstream_tree="$(git rev-parse linux-upstream/master^{tree})"
+          upstream_sha="$(git rev-parse linux-upstream/master)"
+          echo "upstream_sha=$upstream_sha" >> "$GITHUB_OUTPUT"
+          if [[ "$current_tree" == "$upstream_tree" ]]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "/linux already exactly matches torvalds/linux: $upstream_sha"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "/linux differs from torvalds/linux and will be synchronized."
           fi
 
-          echo "Updating ONLY /linux to official torvalds/linux: $UPSTREAM_SHA"
-
-          # Remove and recreate only the /linux tree from upstream. The root
-          # AWEOS tree is never touched by this operation.
-          git rm -r --quiet linux
+      - name: Update ONLY /linux
+        if: steps.compare.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # HARD BOUNDARY: this workflow is allowed to change /linux only.
+          git rm -r --quiet -- linux
           git read-tree --prefix=linux/ -u linux-upstream/master
 
-          # Post-import integrity checks before commit.
+          # Exact upstream-tree verification.
           test -f linux/Makefile
           test -f linux/Kconfig
           test -d linux/kernel
           test -d linux/arch
-          test "$(git rev-parse :linux)" = "$UPSTREAM_TREE"
+          test "$(git rev-parse :linux)" = "$(git rev-parse linux-upstream/master^{tree})"
 
-          git add -A
-          git commit -m "Sync Linux kernel to $UPSTREAM_SHA"
+      - name: Verify NOTHING outside /linux changed
+        if: steps.compare.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          outside="$(git diff --cached --name-only -- . ':(exclude)linux/**')"
+          if [[ -n "$outside" ]]; then
+            echo "ERROR: Change detected outside /linux. Aborting without commit or push."
+            printf '%s\n' "$outside"
+            git reset --hard HEAD
+            exit 1
+          fi
+          echo "SAFE: all staged changes are inside /linux only."
+
+      - name: Commit and push Linux update
+        if: steps.compare.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          git commit -m "Sync /linux with torvalds/linux ${{ steps.compare.outputs.upstream_sha }}"
           git push origin HEAD:master
+
+      - name: Already synchronized
+        if: steps.compare.outputs.changed == 'false'
+        run: echo "No update required."
