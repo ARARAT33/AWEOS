@@ -5,6 +5,7 @@ BUILD_DIR="${1:-build}"
 ISO_PATH="${BUILD_DIR}/AWEOS-x86_64.iso"
 BIOS_LOG="${BUILD_DIR}/qemu-bios.log"
 UEFI_LOG="${BUILD_DIR}/qemu-uefi.log"
+TARGET_MODE="${2:-all}"
 
 if [ ! -f "${ISO_PATH}" ]; then
     echo "Error: ISO not found at ${ISO_PATH}" >&2
@@ -52,10 +53,12 @@ test_boot() {
     return 0
 }
 
-# 1. QEMU BIOS Boot Test
-test_boot "BIOS" "${BIOS_LOG}" qemu-system-x86_64 -machine q35 -m 512M -cdrom "${ISO_PATH}" -display none -serial stdio -no-reboot
+# 1. BIOS Test
+if [ "$TARGET_MODE" = "all" ] || [ "$TARGET_MODE" = "bios" ]; then
+    test_boot "BIOS" "${BIOS_LOG}" qemu-system-x86_64 -machine q35 -m 512M -cdrom "${ISO_PATH}" -display none -serial stdio -no-reboot -net nic,model=virtio -net user
+fi
 
-# 2. QEMU UEFI Boot Test
+# 2. UEFI Test
 UEFI_FIRMWARE=""
 if [ -f /usr/share/ovmf/OVMF.fd ]; then
     UEFI_FIRMWARE=/usr/share/ovmf/OVMF.fd
@@ -65,10 +68,12 @@ elif [ -f /usr/share/OVMF/OVMF_CODE.fd ]; then
     UEFI_FIRMWARE=/usr/share/OVMF/OVMF_CODE.fd
 fi
 
-if [ -n "${UEFI_FIRMWARE}" ]; then
-    test_boot "UEFI" "${UEFI_LOG}" qemu-system-x86_64 -machine q35 -m 512M -bios "${UEFI_FIRMWARE}" -cdrom "${ISO_PATH}" -display none -serial stdio -no-reboot
-else
-    echo "WARNING: OVMF firmware not found, skipping UEFI test in current environment."
+if [ "$TARGET_MODE" = "all" ] || [ "$TARGET_MODE" = "uefi" ]; then
+    if [ -n "${UEFI_FIRMWARE}" ]; then
+        test_boot "UEFI" "${UEFI_LOG}" qemu-system-x86_64 -machine q35 -m 512M -bios "${UEFI_FIRMWARE}" -cdrom "${ISO_PATH}" -display none -serial stdio -no-reboot -net nic,model=virtio -net user
+    else
+        echo "WARNING: OVMF firmware not found, skipping UEFI test in current environment."
+    fi
 fi
 
 echo "=========================================="

@@ -1,0 +1,108 @@
+#!/bin/bash
+set -euo pipefail
+
+KERNEL_SRC="${1:-linux}"
+KERNEL_BUILD_DIR="${2:-build/linux-x86_64}"
+
+mkdir -p "${KERNEL_BUILD_DIR}"
+
+if [ -f "${KERNEL_BUILD_DIR}/.config" ]; then
+    echo "Kernel configuration ${KERNEL_BUILD_DIR}/.config already exists, skipping re-config."
+    exit 0
+fi
+
+echo "Configuring Linux kernel out-of-tree in ${KERNEL_BUILD_DIR}..."
+
+# Generate base defconfig out-of-tree
+make -C "${KERNEL_SRC}" O="${KERNEL_BUILD_DIR}" x86_64_defconfig
+
+CONFIG_TOOL="${KERNEL_SRC}/scripts/config --file ${KERNEL_BUILD_DIR}/.config"
+
+# Disable heavy debug info
+${CONFIG_TOOL} --disable CONFIG_DEBUG_INFO
+${CONFIG_TOOL} --disable CONFIG_DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT
+${CONFIG_TOOL} --disable CONFIG_DEBUG_INFO_DWARF4
+${CONFIG_TOOL} --disable CONFIG_DEBUG_INFO_DWARF5
+${CONFIG_TOOL} --disable CONFIG_DEBUG_INFO_BTF
+
+# Essential filesystems & devtmpfs
+${CONFIG_TOOL} --enable CONFIG_DEVTMPFS
+${CONFIG_TOOL} --enable CONFIG_DEVTMPFS_MOUNT
+${CONFIG_TOOL} --enable CONFIG_EXT4_FS
+${CONFIG_TOOL} --enable CONFIG_ISO9660_FS
+${CONFIG_TOOL} --enable CONFIG_SQUASHFS
+${CONFIG_TOOL} --enable CONFIG_FAT_FS
+${CONFIG_TOOL} --enable CONFIG_VFAT_FS
+${CONFIG_TOOL} --enable CONFIG_NLS_CODEPAGE_437
+${CONFIG_TOOL} --enable CONFIG_NLS_ISO8859_1
+
+# Block & VirtIO Drivers
+${CONFIG_TOOL} --enable CONFIG_BLK_DEV_INITRD
+${CONFIG_TOOL} --enable CONFIG_RD_GZIP
+${CONFIG_TOOL} --enable CONFIG_VIRTIO_MENU
+${CONFIG_TOOL} --enable CONFIG_VIRTIO
+${CONFIG_TOOL} --enable CONFIG_VIRTIO_PCI
+${CONFIG_TOOL} --enable CONFIG_VIRTIO_BLK
+${CONFIG_TOOL} --enable CONFIG_VIRTIO_NET
+${CONFIG_TOOL} --enable CONFIG_VIRTIO_CONSOLE
+${CONFIG_TOOL} --enable CONFIG_BLK_DEV_LOOP
+
+# Physical Hardware Storage (AHCI, NVMe, SCSI, USB)
+${CONFIG_TOOL} --enable CONFIG_ATA
+${CONFIG_TOOL} --enable CONFIG_SATA_AHCI
+${CONFIG_TOOL} --enable CONFIG_ATA_PIIX
+${CONFIG_TOOL} --enable CONFIG_BLK_DEV_NVME
+${CONFIG_TOOL} --enable CONFIG_SCSI
+${CONFIG_TOOL} --enable CONFIG_BLK_DEV_SD
+
+# USB & Input
+${CONFIG_TOOL} --enable CONFIG_USB_SUPPORT
+${CONFIG_TOOL} --enable CONFIG_USB
+${CONFIG_TOOL} --enable CONFIG_USB_XHCI_HCD
+${CONFIG_TOOL} --enable CONFIG_USB_EHCI_HCD
+${CONFIG_TOOL} --enable CONFIG_USB_STORAGE
+${CONFIG_TOOL} --enable CONFIG_INPUT
+${CONFIG_TOOL} --enable CONFIG_INPUT_KEYBOARD
+${CONFIG_TOOL} --enable CONFIG_KEYBOARD_ATKBD
+${CONFIG_TOOL} --enable CONFIG_INPUT_MOUSEDEV
+${CONFIG_TOOL} --enable CONFIG_HID
+${CONFIG_TOOL} --enable CONFIG_HID_GENERIC
+${CONFIG_TOOL} --enable CONFIG_USB_HID
+
+# Console & Terminal PTY
+${CONFIG_TOOL} --enable CONFIG_TTY
+${CONFIG_TOOL} --enable CONFIG_VT
+${CONFIG_TOOL} --enable CONFIG_VT_CONSOLE
+${CONFIG_TOOL} --enable CONFIG_HW_CONSOLE
+${CONFIG_TOOL} --enable CONFIG_SERIAL_8250
+${CONFIG_TOOL} --enable CONFIG_SERIAL_8250_CONSOLE
+${CONFIG_TOOL} --enable CONFIG_UNIX98_PTYS
+${CONFIG_TOOL} --enable CONFIG_LEGACY_PTYS
+
+# Framebuffer / Console
+${CONFIG_TOOL} --enable CONFIG_FB
+${CONFIG_TOOL} --enable CONFIG_FB_VESA
+${CONFIG_TOOL} --enable CONFIG_FB_EFI
+${CONFIG_TOOL} --enable CONFIG_FRAMEBUFFER_CONSOLE
+
+# System, PCI, ACPI, UEFI
+${CONFIG_TOOL} --enable CONFIG_PCI
+${CONFIG_TOOL} --enable CONFIG_ACPI
+${CONFIG_TOOL} --enable CONFIG_EFI
+${CONFIG_TOOL} --enable CONFIG_EFI_STUB
+
+# Networking
+${CONFIG_TOOL} --enable CONFIG_NET
+${CONFIG_TOOL} --enable CONFIG_INET
+${CONFIG_TOOL} --enable CONFIG_NETDEVICES
+${CONFIG_TOOL} --enable CONFIG_ETHERNET
+${CONFIG_TOOL} --enable CONFIG_NET_VENDOR_INTEL
+${CONFIG_TOOL} --enable CONFIG_E1000
+${CONFIG_TOOL} --enable CONFIG_E1000E
+${CONFIG_TOOL} --enable CONFIG_NET_VENDOR_REALTEK
+${CONFIG_TOOL} --enable CONFIG_R8169
+${CONFIG_TOOL} --enable CONFIG_UNIX
+${CONFIG_TOOL} --enable CONFIG_PACKET
+
+make -C "${KERNEL_SRC}" O="${KERNEL_BUILD_DIR}" olddefconfig
+echo "Kernel configuration complete in ${KERNEL_BUILD_DIR}/.config"

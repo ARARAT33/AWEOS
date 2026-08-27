@@ -1,60 +1,66 @@
 # AWEOS Architecture & Boot System Documentation
 
 ## Overview
-AWEOS is an x86_64 operating system base powered by the Linux kernel source and the Limine bootloader.
+AWEOS is a complete, bootable, terminal-only x86_64 Linux distribution powered by the upstream Linux kernel source and the Limine bootloader.
 
 ## Core Rules & Isolation Policy
 - **`/linux` Read-Only Rule**: The upstream Linux kernel source tree in `/linux` is strictly read-only. No files inside `/linux` are added, modified, formatted, patched, or created.
-- **Out-of-Tree Builds**: All Linux kernel configuration and build outputs are generated entirely in `build/linux-x86_64/`.
+- **Out-of-Tree Builds**: All Linux kernel configuration (`scripts/config-kernel.sh`) and build outputs are generated out-of-tree in `build/linux-x86_64/`.
+- **Read-Only Protection Guard**: Enforced via `./scripts/verify-linux-readonly.sh`.
 
-## Boot Sequence Architecture
+## Architecture & Boot Sequence
 ```
-    Firmware (BIOS / UEFI)
-             ↓
-Limine Bootloader (v12.6.1)
-             ↓
-Linux Kernel (x86_64 bzImage)
-             ↓
-Separate AWEOS Initramfs (cpio.gz)
-             ↓
-       AWEOS /init
-             ↓
-    AWEOS ASCII Boot Logo
-             ↓
-  AWEOS BOOT SUCCESS
- AWEOS TERMINAL READY
-             ↓
-BusyBox Interactive Terminal
+               Firmware (BIOS / UEFI)
+                         ↓
+            Limine Bootloader (v12.6.1)
+                         ↓
+            Linux Kernel (x86_64 bzImage)
+                         ↓
+          AWEOS Initramfs Bootstrap (cpio.gz)
+                         ↓
+      Locate & Mount Persistent ext4 rootfs.img
+                         ↓
+                    switch_root
+                         ↓
+             AWEOS Init (/sbin/init)
+                         ↓
+       AWEOS ASCII Boot Logo & Verification
+                         ↓
+       AWEOS BOOT SUCCESS / TERMINAL READY
+                         ↓
+       Interactive Shell / User Session (ash)
 ```
 
-## Limine Integration
-Limine v12.6.1 bootloader artifacts located in `Bootloader/x86_64/` are used directly:
-- `limine-bios.sys` & `limine-bios-cd.bin` for BIOS boot.
-- `limine-uefi-cd.bin` & `BOOTX64.EFI` for UEFI boot.
-- `limine.conf` uses Limine Linux protocol syntax:
-  ```ini
-  timeout: 1
-  serial: yes
+## Persistent Root Filesystem & Userspace Architecture
+- **Persistent ext4 Rootfs (`build/rootfs.img`)**: Contains complete Unix directory structure (`/bin`, `/sbin`, `/usr`, `/etc`, `/dev`, `/proc`, `/sys`, `/run`, `/tmp`, `/var`, `/home`, `/root`, `/opt`, `/mnt`, `/srv`).
+- **User Accounts & Auth**: Standard Unix account files (`/etc/passwd`, `/etc/group`, `/etc/shadow`, `/etc/shells`) defining `root` and `aweos` user.
+- **Init System (`/sbin/init`)**: Mounts virtual filesystems (`proc`, `sysfs`, `devtmpfs`, `devpts`, `tmpfs`), configures hostname (`aweos`), launches networking daemon (`/sbin/aweos-network`), displays boot logos, and manages getty/login shell.
 
-  /AWEOS Linux x86_64
-      protocol: linux
-      kernel_path: boot():/boot/bzImage
-      module_path: boot():/boot/aweos-initramfs.cpio.gz
-      cmdline: console=ttyS0,115200
-  ```
+## AWEOS System Utilities & Package Manager
+- **`aweos` / `aweos-info`**: System metrics display tool (version, kernel, architecture, uptime, memory, CPU, rootfs usage).
+- **`aweos-diagnostics`**: Automated system health and virtual filesystem diagnostic tool.
+- **`awepkg`**: Package manager supporting local `.awe` packages (manifest verification, installation, removal, info, and package tracking under `/var/lib/awepkg`).
 
-## Initramfs & Userspace Environment
-The initramfs is packed into `build/aweos-initramfs.cpio.gz` using standard `busybox-static` applets.
-The `/init` script mounts `/proc`, `/sys`, `/dev` (devtmpfs), `/tmp`, and `/run`, outputs the AWEOS boot banner, displays the mandatory success markers:
-- `AWEOS BOOT SUCCESS`
-- `AWEOS TERMINAL READY`
+## Hardware Support & Verification Status
 
-And spawns an interactive shell via `cttyhack /bin/sh`. Standard Linux commands (`ls`, `cd`, `pwd`, `cat`, `echo`, `mkdir`, `cp`, `mv`, `rm`, `touch`, `chmod`, `ps`, `mount`, `uname`, `free`, `df`, `ip`, `dmesg`, `clear`, `env`, `reboot`, `poweroff`, `shutdown`) execute natively.
+### QEMU Verification
+- **STATUS: QEMU VERIFIED**
+- Fully verified in QEMU BIOS (`make qemu-bios` / `make test-bios`) and QEMU UEFI (`make qemu-uefi` / `make test-uefi`).
+- VirtIO block & net devices operational.
+
+### Physical PC Hardware Support
+- **STATUS: HARDWARE COMPATIBLE (UNTESTED ON PHYSICAL RIGS)**
+- Built with standard PC hardware kernel drivers enabled (SATA/AHCI, NVMe, USB XHCI/EHCI, USB HID, USB storage, PS/2, Framebuffer/EFI VGA console, Ethernet e1000/r8169).
+- Produces `build/AWEOS-x86_64.iso` for optical/virtual media and `build/AWEOS-x86_64-disk.img` for raw USB/disk flashing.
+- **WARNING**: Never write `AWEOS-x86_64-disk.img` directly to physical drives (`/dev/sdX` or `/dev/nvmeX`) without backing up data first.
 
 ## Build System Usage
 
-- `make` or `make build`: Build the out-of-tree Linux kernel, construct initramfs, and assemble `build/AWEOS-x86_64.iso`.
-- `make test`: Execute QEMU automated BIOS and UEFI boot tests and verify `AWEOS BOOT SUCCESS` / `AWEOS TERMINAL READY`.
+- `make` or `make build`: Verify `/linux` immutability, build out-of-tree kernel, rootfs image, initramfs, ISO (`build/AWEOS-x86_64.iso`), and raw disk image (`build/AWEOS-x86_64-disk.img`).
+- `make iso`: Assemble ISO image.
+- `make disk-image`: Assemble raw bootable disk image.
+- `make verify-linux-readonly`: Execute read-only integrity check on `/linux`.
+- `make test`: Run automated QEMU BIOS and UEFI boot & terminal verification tests.
 - `make qemu-bios`: Launch ISO interactive boot test in QEMU BIOS mode.
 - `make qemu-uefi`: Launch ISO interactive boot test in QEMU UEFI mode.
-- `make clean`: Clean build artifacts.
+- `make clean`: Clean build artifacts in `build/`.
