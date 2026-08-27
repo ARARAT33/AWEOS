@@ -1,6 +1,6 @@
 name: AWEOS x86_64 Boot and QEMU Hello
 
-on:
+"on":
   workflow_dispatch:
   push:
     paths:
@@ -9,7 +9,6 @@ on:
 
 permissions:
   contents: read
-  actions: write
 
 concurrency:
   group: aweos-x86_64-build
@@ -22,7 +21,7 @@ env:
 jobs:
   build-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
 
     steps:
       - name: Checkout AWEOS
@@ -36,18 +35,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential bc bison flex libssl-dev libelf-dev \
-            cpio xz-utils curl xorriso qemu-system-x86 busybox-static
+            cpio xz-utils curl xorriso qemu-system-x86 ovmf busybox-static
 
-      - name: Verify Linux source boundary before build
+      - name: Protect Linux source
         run: |
           set -euo pipefail
           test -f linux/Makefile
           test -f linux/Kconfig
-          git status --short -- linux
           test -z "$(git status --porcelain -- linux)"
           git ls-files -s linux | sha256sum > build-linux-before.sha256
 
-      - name: Download and verify Limine v12.6.1
+      - name: Download and verify official Limine v12.6.1
         run: |
           set -euo pipefail
           mkdir -p build/limine
@@ -59,9 +57,9 @@ jobs:
           LIMINE_ROOT="$(find build/limine -type f -name BOOTX64.EFI -printf '%h\n' | head -n 1)"
           test -n "$LIMINE_ROOT"
           test -s "$LIMINE_ROOT/BOOTX64.EFI"
+          test -s "$LIMINE_ROOT/limine-bios.sys"
           test -s "$LIMINE_ROOT/limine-bios-cd.bin"
           test -s "$LIMINE_ROOT/limine-uefi-cd.bin"
-          test -s "$LIMINE_ROOT/limine-bios.sys"
           echo "LIMINE_ROOT=$LIMINE_ROOT" >> "$GITHUB_ENV"
 
       - name: Configure Linux x86_64 out of tree
@@ -77,7 +75,7 @@ jobs:
             --enable CONFIG_SERIAL_8250_CONSOLE
           make -C linux O="$KBUILD_OUTPUT" olddefconfig
 
-      - name: Build Linux x86_64 out of tree
+      - name: Build Linux x86_64 kernel
         run: |
           set -euo pipefail
           make -C linux O="$KBUILD_OUTPUT" -j"$(nproc)" bzImage
@@ -91,8 +89,7 @@ jobs:
           mkdir -p "$ROOT/bin" "$ROOT/dev" "$ROOT/etc" "$ROOT/proc" "$ROOT/sys" "$ROOT/run" "$ROOT/tmp"
           cp /bin/busybox "$ROOT/bin/busybox"
           ln -s busybox "$ROOT/bin/sh"
-          ln -s busybox "$ROOT/bin/mount"
-          cat > "$ROOT/init" <<'EOF'
+          cat > "$ROOT/init" <<'INIT_EOF'
 #!/bin/sh
 mount -t proc proc /proc
 mount -t sysfs sysfs /sys
@@ -100,12 +97,12 @@ mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
 printf '\nHELLO FROM AWEOS x86_64\n'
 printf 'Linux kernel + Limine boot OK\n'
 exec /bin/sh
-EOF
+INIT_EOF
           chmod +x "$ROOT/init"
           (cd "$ROOT" && find . -print0 | cpio --null -o --format=newc | gzip -9) > "$KBUILD_OUTPUT/aweos-initramfs.cpio.gz"
           test -s "$KBUILD_OUTPUT/aweos-initramfs.cpio.gz"
 
-      - name: Embed initramfs and rebuild kernel
+      - name: Embed AWEOS initramfs and rebuild kernel
         run: |
           set -euo pipefail
           "$KBUILD_OUTPUT/scripts/config" --file "$KBUILD_OUTPUT/.config" \
@@ -114,7 +111,7 @@ EOF
           make -C linux O="$KBUILD_OUTPUT" -j"$(nproc)" bzImage
           test -s "$KBUILD_OUTPUT/arch/x86/boot/bzImage"
 
-      - name: Verify Linux source remained unchanged
+      - name: Verify Linux source is unchanged
         run: |
           set -euo pipefail
           git diff --exit-code -- linux
@@ -122,7 +119,7 @@ EOF
           git ls-files -s linux | sha256sum > build-linux-after.sha256
           cmp build-linux-before.sha256 build-linux-after.sha256
 
-      - name: Create Limine bootable ISO tree
+      - name: Create real Limine BIOS and UEFI ISO
         run: |
           set -euo pipefail
           rm -rf build/iso_root
@@ -130,16 +127,17 @@ EOF
           cp "$LIMINE_ROOT/limine-bios.sys" build/iso_root/boot/limine-bios.sys
           cp "$LIMINE_ROOT/limine-bios-cd.bin" build/iso_root/limine-bios-cd.bin
           cp "$LIMINE_ROOT/limine-uefi-cd.bin" build/iso_root/limine-uefi-cd.bin
-          cp "$LIMINE_ROOT/BOOTX64.EFI" build/iso_root/BOOTX64.EFI
           cp "$KBUILD_OUTPUT/arch/x86/boot/bzImage" build/iso_root/boot/bzImage
-          cat > build/iso_root/limine.conf <<'EOF'
-TIMEOUT=1
+          cat > build/iso_root/limine.conf <<'CONF_EOF'
+timeout: 1
+serial: yes
+serial_baudrate: 115200
 
-:AWEOS x86_64
-    PROTOCOL=linux
-    KERNEL_PATH=boot:///boot/bzImage
-    KERNEL_CMDLINE=console=ttyS0,115200 panic=-1
-EOF
+/AWEOS x86_64
+    protocol: linux
+    kernel_path: boot:///boot/bzImage
+    cmdline: console=ttyS0,115200 panic=-1
+CONF_EOF
           xorriso -as mkisofs \
             -b limine-bios-cd.bin \
             -no-emul-boot \
@@ -154,29 +152,53 @@ EOF
             build/iso_root
           test -s build/AWEOS-x86_64.iso
 
-      - name: Boot ISO in QEMU and verify Hello
+      - name: QEMU BIOS boot test
         run: |
           set -euo pipefail
           set +e
-          timeout 75s qemu-system-x86_64 \
+          timeout 90s qemu-system-x86_64 \
             -machine q35 \
             -m 512M \
             -cdrom build/AWEOS-x86_64.iso \
             -nographic \
             -serial stdio \
-            -no-reboot > build/qemu.log 2>&1
-          QEMU_RC=$?
+            -no-reboot > build/qemu-bios.log 2>&1
+          rc=$?
           set -e
-          cat build/qemu.log
-          grep -Fq 'HELLO FROM AWEOS x86_64' build/qemu.log
-          echo "QEMU exit code: $QEMU_RC"
+          cat build/qemu-bios.log
+          grep -Fq 'HELLO FROM AWEOS x86_64' build/qemu-bios.log
+          echo "BIOS QEMU exit code: $rc"
 
-      - name: Upload verified AWEOS artifacts
+      - name: QEMU UEFI boot test
+        run: |
+          set -euo pipefail
+          UEFI_CODE=/usr/share/OVMF/OVMF_CODE.fd
+          if [ ! -f "$UEFI_CODE" ]; then
+            UEFI_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd
+          fi
+          test -f "$UEFI_CODE"
+          set +e
+          timeout 90s qemu-system-x86_64 \
+            -machine q35 \
+            -m 512M \
+            -bios "$UEFI_CODE" \
+            -cdrom build/AWEOS-x86_64.iso \
+            -nographic \
+            -serial stdio \
+            -no-reboot > build/qemu-uefi.log 2>&1
+          rc=$?
+          set -e
+          cat build/qemu-uefi.log
+          grep -Fq 'HELLO FROM AWEOS x86_64' build/qemu-uefi.log
+          echo "UEFI QEMU exit code: $rc"
+
+      - name: Upload verified AWEOS boot artifacts
         uses: actions/upload-artifact@v4
         with:
           name: AWEOS-x86_64-verified
           path: |
             build/AWEOS-x86_64.iso
             build/kernel/arch/x86/boot/bzImage
-            build/qemu.log
+            build/qemu-bios.log
+            build/qemu-uefi.log
           if-no-files-found: error
