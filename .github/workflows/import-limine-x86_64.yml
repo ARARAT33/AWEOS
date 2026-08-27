@@ -1,0 +1,88 @@
+name: Import Limine x86_64
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  import-limine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout AWEOS
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+          fetch-tags: false
+
+      - name: Download and verify official Limine v12.6.1 binary release
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="12.6.1"
+          URL="https://github.com/Limine-Bootloader/Limine/releases/download/v${VERSION}/limine-binary.tar.xz"
+          EXPECTED="1d7f71df1614110892eadb35bad7b7f4277ca0d2dbf8575512da333a546009a7"
+
+          rm -rf /tmp/limine-binary
+          mkdir -p /tmp/limine-binary
+          curl --fail --location --retry 5 --retry-delay 2 "$URL" -o /tmp/limine-binary.tar.xz
+
+          ACTUAL="$(sha256sum /tmp/limine-binary.tar.xz | awk '{print $1}')"
+          test "$ACTUAL" = "$EXPECTED"
+
+          tar -xJf /tmp/limine-binary.tar.xz -C /tmp/limine-binary
+          test -f /tmp/limine-binary/limine-binary/limine-bios.sys
+          test -f /tmp/limine-binary/limine-binary/limine-bios-cd.bin
+          test -f /tmp/limine-binary/limine-binary/limine-uefi-cd.bin
+          test -f /tmp/limine-binary/limine-binary/BOOTX64.EFI
+
+      - name: Install only x86_64 Limine boot artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC=/tmp/limine-binary/limine-binary
+          DST=Bootloader/x86_64
+
+          # Never touch /linux or any other AWEOS directory.
+          mkdir -p "$DST"
+          cp "$SRC/limine-bios.sys" "$DST/"
+          cp "$SRC/limine-bios-cd.bin" "$DST/"
+          cp "$SRC/limine-uefi-cd.bin" "$DST/"
+          cp "$SRC/BOOTX64.EFI" "$DST/"
+
+          # Keep a machine-readable provenance record beside the binaries.
+          cat > "$DST/LIMINE-VERSION.txt" <<EOF
+          Limine v12.6.1
+          Source: https://github.com/Limine-Bootloader/Limine/releases/tag/v12.6.1
+          Asset: limine-binary.tar.xz
+          SHA256: $EXPECTED
+          Imported by: AWEOS/.github/workflows/import-limine-x86_64.yml
+          Target: x86_64
+          EOF
+
+      - name: Verify repository boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          git status --short
+          if git status --short | grep -vE '^\?\? Bootloader/x86_64/|^ M Bootloader/x86_64/|^A  Bootloader/x86_64/|^ M Bootloader/x86_64/|^A  Bootloader/x86_64/' ; then
+            echo 'Unexpected change outside Bootloader/x86_64/' >&2
+            exit 1
+          fi
+          git diff --name-only -- Bootloader/x86_64/
+
+      - name: Commit and push
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Bootloader/x86_64/
+          if git diff --cached --quiet; then
+            echo 'Limine x86_64 artifacts are already current.'
+            exit 0
+          fi
+          git commit -m "bootloader: import Limine v12.6.1 x86_64 binaries"
+          git push origin HEAD:master
