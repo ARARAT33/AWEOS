@@ -1,7 +1,7 @@
 # AWEOS Architecture & Boot System Documentation
 
 ## Overview
-AWEOS is a complete, bootable, terminal-only x86_64 Linux distribution powered by the upstream Linux kernel source and the Limine bootloader.
+AWEOS is a complete, bootable x86_64 Linux operating system featuring a native C graphical stack, double-buffered framebuffer renderer, compositor, window manager, PTY-backed terminal emulator, and headless fallback, powered by the upstream Linux kernel source and the Limine bootloader.
 
 ## Core Rules & Isolation Policy
 - **`/linux` Read-Only Rule**: The upstream Linux kernel source tree in `/linux` is strictly read-only. No files inside `/linux` are added, modified, formatted, patched, or created.
@@ -24,11 +24,19 @@ AWEOS is a complete, bootable, terminal-only x86_64 Linux distribution powered b
                          ↓
              AWEOS Init (/sbin/init)
                          ↓
-       AWEOS ASCII Boot Logo & Verification
+          AWEOS BOOT SUCCESS & Boot Markers
                          ↓
-       AWEOS BOOT SUCCESS / TERMINAL READY
-                         ↓
-       Interactive Shell / User Session (ash)
+       ┌─────────────────┴─────────────────┐
+       │                                   │
+  AWEOS GUI Mode (Default)     AWEOS Headless Mode
+  (aweos.mode=gui / /dev/fb0) (aweos.mode=headless / fallback)
+       │                                   │
+  Native C Window Manager             Serial / Getty Shell
+  (/usr/bin/aweos-wm)                     (ash)
+       │
+  AWEOS Compositor & Shell
+       │
+  Graphical PTY Terminal Window
 ```
 
 ## Persistent Root Filesystem & Userspace Architecture
@@ -54,13 +62,23 @@ AWEOS is a complete, bootable, terminal-only x86_64 Linux distribution powered b
 - Produces `build/AWEOS-x86_64.iso` for optical/virtual media and `build/AWEOS-x86_64-disk.img` for raw USB/disk flashing.
 - **WARNING**: Never write `AWEOS-x86_64-disk.img` directly to physical drives (`/dev/sdX` or `/dev/nvmeX`) without backing up data first.
 
+## GUI Stack Architecture & Components
+- **Native C Graphical Stack (`src/gui/`)**: Built independently of external Desktop Environments (GNOME, KDE, Xfce, LXQt, etc.).
+- **Graphics Abstraction (`src/gui/graphics.c`)**: Double-buffered `/dev/fb0` Linux framebuffer driver supporting EFI/VESA and DRM/KMS fbdev emulation.
+- **Input System (`src/gui/input.c`)**: Event device abstraction for Linux `/dev/input/event*` keyboard scancodes and mouse events with PS/2 fallback.
+- **Compositor & Window Manager (`src/gui/wm.c`)**: Native AWEOS window manager handling surface layout, panel rendering, mouse cursor composition, title bars, and z-ordering.
+- **Graphical Terminal Window**: Spawns live `/bin/sh` or standard AWEOS login shell via Unix PTY (`/dev/ptmx`), rendering command output graphically in real-time.
+- **Boot Modes & Graceful Fallback**: Supports `aweos.mode=gui` (default) and `aweos.mode=headless`. Automatically falls back to terminal mode if framebuffer initialization fails.
+
 ## Build System Usage
 
-- `make` or `make build`: Verify `/linux` immutability, build out-of-tree kernel, rootfs image, initramfs, ISO (`build/AWEOS-x86_64.iso`), and raw disk image (`build/AWEOS-x86_64-disk.img`).
+- `make` or `make build`: Verify `/linux` immutability, build out-of-tree kernel, native GUI stack, rootfs image, initramfs, ISO (`build/AWEOS-x86_64.iso`), and raw disk image (`build/AWEOS-x86_64-disk.img`).
 - `make iso`: Assemble ISO image.
 - `make disk-image`: Assemble raw bootable disk image.
 - `make verify-linux-readonly`: Execute read-only integrity check on `/linux`.
-- `make test`: Run automated QEMU BIOS and UEFI boot & terminal verification tests.
+- `make test`: Run automated QEMU BIOS, UEFI, and GUI verification tests.
+- `make test-gui`: Run automated QEMU GUI boot marker test and QMP screenshot capture (`build/aweos-gui-screenshot.png`).
+- `make qemu-gui`: Launch interactive QEMU graphical desktop boot mode.
 - `make qemu-bios`: Launch ISO interactive boot test in QEMU BIOS mode.
 - `make qemu-uefi`: Launch ISO interactive boot test in QEMU UEFI mode.
 - `make clean`: Clean build artifacts in `build/`.

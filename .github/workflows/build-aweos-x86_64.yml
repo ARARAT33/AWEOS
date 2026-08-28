@@ -32,7 +32,7 @@ jobs:
         run: |
           set -eu
           sudo apt-get update
-          sudo apt-get install -y build-essential bc bison flex libssl-dev libelf-dev cpio gzip xz-utils curl xorriso qemu-system-x86 ovmf busybox-static util-linux e2fsprogs parted
+          sudo apt-get install -y build-essential bc bison flex libssl-dev libelf-dev cpio gzip xz-utils curl xorriso qemu-system-x86 ovmf busybox-static util-linux e2fsprogs parted netcat-openbsd imagemagick
 
       - name: Verify /linux source integrity (Pre-build)
         run: |
@@ -74,4 +74,6 @@ jobs:
             build/linux-x86_64/arch/x86/boot/bzImage
             build/qemu-bios.log
             build/qemu-uefi.log
+            build/qemu-gui.log
+            build/aweos-gui-screenshot.png
           if-no-files-found: error

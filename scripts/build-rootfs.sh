@@ -124,6 +124,13 @@ EOF
 cp "${ROOTFS_DIR}/etc/profile" "${ROOTFS_DIR}/root/.profile"
 cp "${ROOTFS_DIR}/etc/profile" "${ROOTFS_DIR}/home/aweos/.profile"
 
+# Build & install AWEOS GUI stack binary
+echo "Compiling AWEOS native GUI stack..."
+gcc -Wall -Wextra -O2 "${1}/../src/gui"/*.c -lutil -o "${ROOTFS_DIR}/usr/bin/aweos-wm"
+chmod +x "${ROOTFS_DIR}/usr/bin/aweos-wm"
+ln -sf /usr/bin/aweos-wm "${ROOTFS_DIR}/usr/bin/aweos-gui"
+ln -sf /usr/bin/aweos-wm "${ROOTFS_DIR}/usr/bin/aweos-terminal"
+
 # Copy AWEOS utilities into rootfs
 cp "${1}/../scripts/aweos-info.sh" "${ROOTFS_DIR}/usr/bin/aweos"
 cp "${1}/../scripts/aweos-diagnostics.sh" "${ROOTFS_DIR}/usr/bin/aweos-diagnostics"
@@ -191,7 +198,7 @@ cat << 'LOGO'
    ██║  ██║╚███╔███╔╝███████╗╚██████╔╝███████║
    ╚═╝  ╚═╝ ╚══╝╚══╝ ╚══════╝ ╚═════╝ ╚══════╝
 
-AWEOS Terminal Linux Operating System
+AWEOS x86_64 Operating System
 Kernel: Linux (x86_64)
 Init System: AWEOS Init v1.0.0
 
@@ -200,16 +207,31 @@ AWEOS TERMINAL READY
 
 LOGO
 
-# Check config for autologin vs login prompt
-AUTOLOGIN="true"
-if [ -f /etc/aweos/config ]; then
-    . /etc/aweos/config
+# Check kernel cmdline for boot mode override (aweos.mode=gui vs aweos.mode=headless)
+MODE="gui"
+if grep -q "aweos.mode=headless" /proc/cmdline 2>/dev/null; then
+    MODE="headless"
 fi
 
-if [ "$AUTOLOGIN" = "true" ]; then
-    exec /bin/busybox cttyhack /bin/sh
+if [ "$MODE" = "gui" ] && [ -x /usr/bin/aweos-wm ] && [ -e /dev/fb0 ]; then
+    echo "Starting AWEOS Graphical User Interface..."
+    /usr/bin/aweos-wm || {
+        echo "WARNING: AWEOS GUI initialization failed! Falling back to terminal..."
+        exec /bin/busybox cttyhack /bin/sh
+    }
 else
-    exec /bin/busybox cttyhack /bin/login
+    if [ "$MODE" = "gui" ]; then
+        echo "WARNING: Framebuffer /dev/fb0 not detected or aweos-wm missing. Falling back to terminal..."
+    fi
+    AUTOLOGIN="true"
+    if [ -f /etc/aweos/config ]; then
+        . /etc/aweos/config
+    fi
+    if [ "$AUTOLOGIN" = "true" ]; then
+        exec /bin/busybox cttyhack /bin/sh
+    else
+        exec /bin/busybox cttyhack /bin/login
+    fi
 fi
 EOF
 chmod +x "${ROOTFS_DIR}/sbin/init"
