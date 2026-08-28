@@ -125,11 +125,13 @@ cp "${ROOTFS_DIR}/etc/profile" "${ROOTFS_DIR}/root/.profile"
 cp "${ROOTFS_DIR}/etc/profile" "${ROOTFS_DIR}/home/aweos/.profile"
 
 # Build & install AWEOS GUI stack binary (statically linked for standalone execution in rootfs)
-echo "Compiling AWEOS native GUI stack..."
-gcc -static -Wall -Wextra -O2 "${1}/../src/gui"/*.c "${1}/../src/apps"/*.c -lutil -o "${ROOTFS_DIR}/usr/bin/aweos-wm"
-chmod +x "${ROOTFS_DIR}/usr/bin/aweos-wm"
-ln -sf /usr/bin/aweos-wm "${ROOTFS_DIR}/usr/bin/aweos-gui"
-ln -sf /usr/bin/aweos-wm "${ROOTFS_DIR}/usr/bin/aweos-terminal"
+echo "Compiling AWEOS native GUI stack (AYUI)..."
+gcc -static -Wall -Wextra -O2 "${1}/../src/gui"/*.c "${1}/../src/apps"/*.c "${1}/../src/core"/*.c -I"${1}/../src/gui" -I"${1}/../src/apps" -I"${1}/../src/core" -lutil -o "${ROOTFS_DIR}/usr/bin/aweos-ayui"
+chmod +x "${ROOTFS_DIR}/usr/bin/aweos-ayui"
+ln -sf /usr/bin/aweos-ayui "${ROOTFS_DIR}/usr/bin/aweos-wm"
+ln -sf /usr/bin/aweos-ayui "${ROOTFS_DIR}/usr/bin/aweos-gui"
+ln -sf /usr/bin/aweos-ayui "${ROOTFS_DIR}/usr/bin/start-ayui"
+ln -sf /usr/bin/aweos-ayui "${ROOTFS_DIR}/usr/bin/aweos-terminal"
 
 # Copy AWEOS utilities into rootfs
 cp "${1}/../scripts/aweos-info.sh" "${ROOTFS_DIR}/usr/bin/aweos"
@@ -213,15 +215,15 @@ if grep -q "aweos.mode=headless" /proc/cmdline 2>/dev/null; then
     MODE="headless"
 fi
 
-if [ "$MODE" = "gui" ] && [ -x /usr/bin/aweos-wm ] && [ -e /dev/fb0 ]; then
-    echo "Starting AWEOS Graphical User Interface..."
-    /usr/bin/aweos-wm || {
-        echo "WARNING: AWEOS GUI initialization failed! Falling back to terminal..."
+if [ "$MODE" = "gui" ] && [ -x /usr/bin/aweos-ayui ] && [ -e /dev/fb0 ]; then
+    echo "Starting AYUI Desktop Session..."
+    /usr/bin/aweos-ayui || {
+        echo "WARNING: AYUI GUI initialization failed! Falling back to terminal..."
         exec /bin/busybox cttyhack /bin/sh
     }
 else
     if [ "$MODE" = "gui" ]; then
-        echo "WARNING: Framebuffer /dev/fb0 not detected or aweos-wm missing. Falling back to terminal..."
+        echo "WARNING: Framebuffer /dev/fb0 not detected or aweos-ayui missing. Falling back to terminal..."
     fi
     AUTOLOGIN="true"
     if [ -f /etc/aweos/config ]; then

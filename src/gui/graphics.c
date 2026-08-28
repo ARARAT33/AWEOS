@@ -37,7 +37,7 @@ int aweos_gfx_init(aweos_fb_t *fb, const char *device) {
     fb->height = vinfo.yres;
     fb->bpp = vinfo.bits_per_pixel;
     fb->pitch_bytes = finfo.line_length;
-    fb->pitch_pixels = finfo.line_length / (fb->bpp / 8);
+    fb->pitch_pixels = (fb->bpp > 0) ? (finfo.line_length / (fb->bpp / 8)) : vinfo.xres;
     fb->screen_size = finfo.smem_len;
 
     fb->front_buffer = (uint32_t *)mmap(0, fb->screen_size, PROT_READ | PROT_WRITE, MAP_SHARED, fb->fd, 0);
@@ -100,4 +100,20 @@ void aweos_gfx_draw_rect(aweos_fb_t *fb, int x, int y, int w, int h, uint32_t co
     aweos_gfx_fill_rect(fb, x, y + h - 1, w, 1, color);
     aweos_gfx_fill_rect(fb, x, y, 1, h, color);
     aweos_gfx_fill_rect(fb, x + w - 1, y, 1, h, color);
+}
+
+void aweos_gfx_draw_line(aweos_fb_t *fb, int x0, int y0, int x1, int y1, uint32_t color) {
+    int dx = abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+    int dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+    int err = dx + dy, e2;
+
+    while (1) {
+        if (x0 >= 0 && x0 < (int)fb->width && y0 >= 0 && y0 < (int)fb->height) {
+            fb->back_buffer[y0 * fb->pitch_pixels + x0] = color;
+        }
+        if (x0 == x1 && y0 == y1) break;
+        e2 = 2 * err;
+        if (e2 >= dy) { err += dy; x0 += sx; }
+        if (e2 <= dx) { err += dx; y0 += sy; }
+    }
 }

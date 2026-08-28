@@ -1,7 +1,7 @@
 #include "font.h"
 #include <string.h>
 
-/* Standard 8x16 VGA / IBM font data for standard ASCII 0-127 */
+/* Standard 8x16 VGA / IBM font data for standard ASCII 0-255 */
 const uint8_t aweos_font8x16[256][16] = {
     [' '] = {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00},
     ['!'] = {0x00,0x00,0x18,0x3c,0x3c,0x3c,0x18,0x18,0x18,0x00,0x18,0x18,0x00,0x00,0x00,0x00},
@@ -107,6 +107,7 @@ void draw_char(uint32_t *buffer, int pitch_pixels, int x, int y, char c, uint32_
         for (int col = 0; col < FONT_WIDTH; col++) {
             int px = x + col;
             int py = y + row;
+            if (px < 0 || py < 0) continue;
             if (bits & (0x80 >> col)) {
                 buffer[py * pitch_pixels + px] = fg;
             } else if (!transparent_bg) {
@@ -123,4 +124,18 @@ void draw_string(uint32_t *buffer, int pitch_pixels, int x, int y, const char *s
         cur_x += FONT_WIDTH;
         str++;
     }
+}
+
+void draw_string_clipped(uint32_t *buffer, int pitch_pixels, int x, int y, const char *str, uint32_t fg, int max_width) {
+    int cur_x = x;
+    while (*str && (cur_x + FONT_WIDTH <= x + max_width)) {
+        draw_char(buffer, pitch_pixels, cur_x, y, *str, fg, 0, 1);
+        cur_x += FONT_WIDTH;
+        str++;
+    }
+}
+
+int string_width(const char *str) {
+    if (!str) return 0;
+    return strlen(str) * FONT_WIDTH;
 }
