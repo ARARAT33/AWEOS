@@ -8,23 +8,47 @@ KERNEL_BUILD_DIR := $(BUILD_DIR)/linux-x86_64
 ISO_PATH := $(BUILD_DIR)/AWEOS-x86_64.iso
 DISK_IMG_PATH := $(BUILD_DIR)/AWEOS-x86_64-disk.img
 
-.PHONY: all build verify-linux kernel rootfs initramfs iso disk-image image test test-bios test-uefi test-gui qemu qemu-bios qemu-uefi qemu-gui qemu-gui-uefi gui clean verify-linux-readonly
+.PHONY: all build verify-linux kernel rootfs initramfs iso disk-image image test test-bios test-uefi test-gui qemu qemu-bios qemu-uefi qemu-gui qemu-gui-uefi gui aosin installer updater wlin wlin-win32 clean verify-linux-readonly
 
 all: build
 
-build: verify-linux iso disk-image
+build: verify-linux aosin installer updater wlin wlin-win32 iso disk-image
 
 verify-linux-readonly:
 	@./scripts/verify-linux-readonly.sh
 
 verify-linux: verify-linux-readonly
 
+aosin:
+	@mkdir -p $(BUILD_DIR)
+	@gcc -Isrc/aosin -Wall -Wextra -O2 src/core/*.c src/aosin/aosin_core.c src/aosin/main.c -o $(BUILD_DIR)/aosin
+
+installer:
+	@mkdir -p $(BUILD_DIR)
+	@gcc -Isrc/core -Isrc/installer -Wall -Wextra -O2 src/core/*.c src/installer/installer.c src/installer/main.c -o $(BUILD_DIR)/aweos-installer
+
+updater:
+	@mkdir -p $(BUILD_DIR)
+	@gcc -Isrc/core -Isrc/updater -Wall -Wextra -O2 src/core/*.c src/updater/updater.c src/updater/main.c -o $(BUILD_DIR)/aweos-update
+
+wlin:
+	@mkdir -p $(BUILD_DIR)
+	@gcc -Isrc/core -Isrc/wlin -Wall -Wextra -O2 src/core/*.c src/wlin/wlin_core.c src/wlin/main_linux.c -o $(BUILD_DIR)/wlin
+
+wlin-win32:
+	@mkdir -p $(BUILD_DIR)
+	@if command -v x86_64-w64-mingw32-gcc >/dev/null 2>&1; then \
+		x86_64-w64-mingw32-gcc -Isrc/core -Isrc/wlin -Wall -Wextra -O2 src/core/*.c src/wlin/wlin_core.c src/wlin/main_win32.c -o $(BUILD_DIR)/wlin.exe; \
+	else \
+		echo "Warning: x86_64-w64-mingw32-gcc not found, skipping wlin.exe build"; \
+	fi
+
 kernel: verify-linux
 	@./scripts/config-kernel.sh $(KERNEL_SRC) $(KERNEL_BUILD_DIR)
 	@make -C $(KERNEL_SRC) O=$(KERNEL_BUILD_DIR) -j"$$(nproc)" bzImage
 	@test -s $(KERNEL_BUILD_DIR)/arch/x86/boot/bzImage
 
-rootfs:
+rootfs: aosin installer updater wlin
 	@./scripts/build-rootfs.sh $(BUILD_DIR) 64
 
 initramfs:
