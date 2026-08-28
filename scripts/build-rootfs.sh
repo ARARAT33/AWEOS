@@ -124,9 +124,9 @@ EOF
 cp "${ROOTFS_DIR}/etc/profile" "${ROOTFS_DIR}/root/.profile"
 cp "${ROOTFS_DIR}/etc/profile" "${ROOTFS_DIR}/home/aweos/.profile"
 
-# Build & install AWEOS GUI stack binary
+# Build & install AWEOS GUI stack binary (statically linked for standalone execution in rootfs)
 echo "Compiling AWEOS native GUI stack..."
-gcc -Wall -Wextra -O2 "${1}/../src/gui"/*.c -lutil -o "${ROOTFS_DIR}/usr/bin/aweos-wm"
+gcc -static -Wall -Wextra -O2 "${1}/../src/gui"/*.c -lutil -o "${ROOTFS_DIR}/usr/bin/aweos-wm"
 chmod +x "${ROOTFS_DIR}/usr/bin/aweos-wm"
 ln -sf /usr/bin/aweos-wm "${ROOTFS_DIR}/usr/bin/aweos-gui"
 ln -sf /usr/bin/aweos-wm "${ROOTFS_DIR}/usr/bin/aweos-terminal"
