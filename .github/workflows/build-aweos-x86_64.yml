@@ -1,4 +1,4 @@
-name: AWEOS x86_64 Boot Test
+name: AWEOS Full OS End-to-End Build & Test Suite
 
 on:
   workflow_dispatch:
@@ -7,32 +7,35 @@ on:
       - '.github/workflows/build-aweos-x86_64.yml'
       - 'Bootloader/**'
       - 'scripts/**'
+      - 'src/**'
       - 'Makefile'
   pull_request:
     paths:
       - '.github/workflows/build-aweos-x86_64.yml'
       - 'Bootloader/**'
       - 'scripts/**'
+      - 'src/**'
       - 'Makefile'
 
 permissions:
   contents: read
 
 jobs:
-  build-and-test:
+  build-aweos-linux:
+    name: AWEOS Linux OS Build & Verification
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
       - name: Checkout AWEOS
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
-      - name: Install dependencies
+      - name: Install build dependencies
         run: |
           set -eu
           sudo apt-get update
-          sudo apt-get install -y build-essential bc bison flex libssl-dev libelf-dev cpio gzip xz-utils curl xorriso qemu-system-x86 ovmf busybox-static util-linux e2fsprogs parted netcat-openbsd imagemagick
+          sudo apt-get install -y build-essential bc bison flex libssl-dev libelf-dev cpio gzip xz-utils curl xorriso qemu-system-x86 ovmf busybox-static util-linux e2fsprogs parted netcat-openbsd imagemagick gcc-mingw-w64-x86-64
 
       - name: Verify /linux source integrity (Pre-build)
         run: |
@@ -40,10 +43,42 @@ jobs:
           ./scripts/verify-linux-readonly.sh
           git ls-files -s linux | sha256sum > build-linux-before.sha256
 
-      - name: Build AWEOS Bootable ISO & Raw Disk Images
+      - name: Run Core & AOSIN Unit Tests
+        run: |
+          set -eu
+          mkdir -p build build/rootfs_test/var/lib/awepkg
+          gcc -Isrc/core -Wall -Wextra -O2 src/core/*.c src/core/tests/test_core.c -o build/test_core
+          ./build/test_core
+          gcc -Isrc/aosin -Wall -Wextra -O2 src/core/*.c src/aosin/aosin_core.c src/aosin/tests/test_aosin.c -o build/test_aosin
+          ./build/test_aosin
+
+      - name: Build AWEOS OS, ISO, IMG, AOSIN, Updater, Installer, and WLIN Binaries
         run: |
           set -eu
           make build
+
+      - name: Generate Release Manifest & SHA256 Checksums
+        run: |
+          set -eu
+          cat > build/aweos-release-manifest.json <<EOF
+          {
+            "product": "AWEOS",
+            "version": "1.0.0",
+            "architecture": "x86_64",
+            "kernel_version": "6.x-aweos",
+            "build_timestamp": "$(date -u +'%Y-%m-%dT%H:%M:%SZ')",
+            "artifacts": [
+              "AWEOS-x86_64.iso",
+              "AWEOS-x86_64-disk.img",
+              "aosin",
+              "aweos-installer",
+              "aweos-update",
+              "wlin",
+              "wlin.exe"
+            ]
+          }
+          EOF
+          (cd build && sha256sum AWEOS-x86_64.iso AWEOS-x86_64-disk.img aosin aweos-installer aweos-update wlin wlin.exe > aweos-sha256sums.txt)
 
       - name: Verify /linux source integrity (Post-build)
         run: |
@@ -52,7 +87,7 @@ jobs:
           git ls-files -s linux | sha256sum > build-linux-after.sha256
           cmp build-linux-before.sha256 build-linux-after.sha256
 
-      - name: Run QEMU BIOS and UEFI Boot Verification
+      - name: Run QEMU BIOS, UEFI, and GUI Tests
         run: |
           set -eu
           make test
@@ -64,16 +99,42 @@ jobs:
           git ls-files -s linux | sha256sum > build-linux-final.sha256
           cmp build-linux-before.sha256 build-linux-final.sha256
 
-      - name: Upload verified artifacts
+      - name: Upload verified release artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: AWEOS-x86_64-verified
+          name: AWEOS-x86_64-release-artifacts
           path: |
             build/AWEOS-x86_64.iso
             build/AWEOS-x86_64-disk.img
-            build/linux-x86_64/arch/x86/boot/bzImage
+            build/aosin
+            build/aweos-installer
+            build/aweos-update
+            build/wlin
+            build/wlin.exe
+            build/aweos-release-manifest.json
+            build/aweos-sha256sums.txt
             build/qemu-bios.log
             build/qemu-uefi.log
             build/qemu-gui.log
             build/aweos-gui-screenshot.png
           if-no-files-found: error
+
+  build-wlin-windows:
+    name: Native Windows WLIN Artifact Build
+    runs-on: windows-latest
+    steps:
+      - name: Checkout AWEOS
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Build WLIN Native C Executable
+        run: |
+          mkdir build
+          gcc -Isrc/core -Isrc/wlin -Wall -Wextra -O2 src/core/logging.c src/core/storage.c src/core/iso_verify.c src/core/archive.c src/core/boot.c src/core/transaction.c src/wlin/wlin_core.c src/wlin/main_win32.c -o build/wlin-windows-native.exe
+
+      - name: Upload WLIN Windows Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: WLIN-Windows-Native
+          path: build/wlin-windows-native.exe
