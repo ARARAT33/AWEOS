@@ -8,20 +8,24 @@ KERNEL_BUILD_DIR := $(BUILD_DIR)/linux-x86_64
 ISO_PATH := $(BUILD_DIR)/AWEOS-x86_64.iso
 DISK_IMG_PATH := $(BUILD_DIR)/AWEOS-x86_64-disk.img
 
-.PHONY: all build verify-linux kernel rootfs initramfs iso disk-image image test test-bios test-uefi test-gui qemu qemu-bios qemu-uefi qemu-gui qemu-gui-uefi gui aosin installer updater wlin wlin-win32 clean verify-linux-readonly
+.PHONY: all build verify-linux kernel rootfs initramfs iso disk-image image test test-bios test-uefi test-gui test-ayui qemu qemu-bios qemu-uefi qemu-gui qemu-gui-uefi qemu-ayui ayui gui aosin installer updater wlin wlin-win32 clean verify-linux-readonly
 
 all: build
 
-build: verify-linux aosin installer updater wlin wlin-win32 iso disk-image
+build: verify-linux ayui aosin installer updater wlin wlin-win32 iso disk-image
 
 verify-linux-readonly:
 	@./scripts/verify-linux-readonly.sh
 
 verify-linux: verify-linux-readonly
 
+ayui:
+	@mkdir -p $(BUILD_DIR)
+	@gcc -Isrc/gui -Isrc/apps -Isrc/core -Wall -Wextra -O2 src/gui/*.c src/apps/*.c src/core/*.c -lutil -o $(BUILD_DIR)/aweos-ayui
+
 aosin:
 	@mkdir -p $(BUILD_DIR)
-	@gcc -Isrc/aosin -Wall -Wextra -O2 src/core/*.c src/aosin/aosin_core.c src/aosin/main.c -o $(BUILD_DIR)/aosin
+	@gcc -Isrc/aosin -Isrc/core -Wall -Wextra -O2 src/core/*.c src/aosin/aosin_core.c src/aosin/main.c -o $(BUILD_DIR)/aosin
 
 installer:
 	@mkdir -p $(BUILD_DIR)
@@ -48,7 +52,7 @@ kernel: verify-linux
 	@make -C $(KERNEL_SRC) O=$(KERNEL_BUILD_DIR) -j"$$(nproc)" bzImage
 	@test -s $(KERNEL_BUILD_DIR)/arch/x86/boot/bzImage
 
-rootfs: aosin installer updater wlin
+rootfs: ayui aosin installer updater wlin
 	@./scripts/build-rootfs.sh $(BUILD_DIR) 64
 
 initramfs:
@@ -75,6 +79,8 @@ test-uefi: iso
 test-gui: iso
 	@./scripts/run-qemu-tests.sh $(BUILD_DIR) gui
 
+test-ayui: test-gui
+
 gui: qemu-gui
 
 qemu: qemu-gui
@@ -84,6 +90,8 @@ qemu-bios: iso
 
 qemu-gui: iso
 	@qemu-system-x86_64 -machine q35 -m 512M -cdrom $(ISO_PATH) -vga std -serial stdio -net nic,model=virtio -net user
+
+qemu-ayui: qemu-gui
 
 qemu-uefi: iso
 	@UEFI=$$(if [ -f /usr/share/ovmf/OVMF.fd ]; then echo /usr/share/ovmf/OVMF.fd; elif [ -f /usr/share/OVMF/OVMF_CODE_4M.fd ]; then echo /usr/share/OVMF/OVMF_CODE_4M.fd; else echo /usr/share/OVMF/OVMF_CODE.fd; fi); \

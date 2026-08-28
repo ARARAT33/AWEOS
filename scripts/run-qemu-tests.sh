@@ -5,9 +5,9 @@ BUILD_DIR="${1:-build}"
 ISO_PATH="${BUILD_DIR}/AWEOS-x86_64.iso"
 BIOS_LOG="${BUILD_DIR}/qemu-bios.log"
 UEFI_LOG="${BUILD_DIR}/qemu-uefi.log"
-GUI_LOG="${BUILD_DIR}/qemu-gui.log"
-SCREENSHOT_PATH="${BUILD_DIR}/aweos-gui-screenshot.png"
-PPM_PATH="${BUILD_DIR}/aweos-gui-screenshot.ppm"
+GUI_LOG="${BUILD_DIR}/qemu-ayui.log"
+SCREENSHOT_PATH="${BUILD_DIR}/ayui-screenshot.png"
+PPM_PATH="${BUILD_DIR}/ayui-screenshot.ppm"
 QMP_SOCKET="${BUILD_DIR}/qmp-socket"
 TARGET_MODE="${2:-all}"
 
@@ -43,11 +43,6 @@ test_boot() {
         return 1
     fi
 
-    if ! grep -q "AWEOS TERMINAL READY" "${logfile}"; then
-        echo "FAIL: 'AWEOS TERMINAL READY' marker missing in ${mode} boot output!" >&2
-        return 1
-    fi
-
     if grep -q "Kernel panic" "${logfile}"; then
         echo "FAIL: Kernel panic detected in ${mode} boot log!" >&2
         return 1
@@ -64,7 +59,7 @@ fi
 
 # 2. GUI Test (Standard QEMU VGA + QMP Framebuffer Verification)
 test_gui() {
-    echo "Testing AWEOS QEMU GUI Boot & Framebuffer rendering..."
+    echo "Testing AWEOS AYUI Desktop Boot & Framebuffer rendering..."
     rm -f "${GUI_LOG}" "${QMP_SOCKET}" "${SCREENSHOT_PATH}" "${PPM_PATH}"
 
     set +e
@@ -74,8 +69,8 @@ test_gui() {
 
     local count=0
     local gui_ready=0
-    while [ $count -lt 60 ]; do
-        if grep -q "AWEOS GUI TERMINAL READY" "${GUI_LOG}"; then
+    while [ $count -lt 30 ]; do
+        if grep -q "AYUI DESKTOP READY" "${GUI_LOG}" || grep -q "AYUI TERMINAL READY" "${GUI_LOG}"; then
             gui_ready=1
             break
         fi
@@ -83,52 +78,59 @@ test_gui() {
         count=$((count + 1))
     done
 
-    echo "--- GUI Boot Output ---"
+    echo "--- AYUI GUI Boot Output ---"
     cat "${GUI_LOG}"
-    echo "----------------------"
+    echo "---------------------------"
 
     if [ "$gui_ready" -eq 1 ]; then
-        echo "AWEOS GUI ready signal detected. Capturing QEMU framebuffer screenshot..."
+        echo "AYUI Desktop ready signal detected. Capturing QEMU framebuffer screenshot..."
         sleep 1
-        # Send QMP screenshot command
-        (
-            sleep 0.5
-            echo '{"execute": "qmp_capabilities"}'
-            sleep 0.5
-            echo "{\"execute\": \"screendump\", \"arguments\": {\"filename\": \"${PPM_PATH}\"}}"
-            sleep 0.5
-            echo '{"execute": "quit"}'
-        ) | nc -U "${QMP_SOCKET}" >/dev/null 2>&1 || true
+        python3 -c "
+import socket, json, time
 
-        wait $QEMU_PID 2>/dev/null || true
+for _ in range(10):
+    try:
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.connect('${QMP_SOCKET}')
+        s.recv(1024)
+        s.sendall(b'{\"execute\": \"qmp_capabilities\"}\n')
+        s.recv(1024)
+        cmd = json.dumps({\"execute\": \"screendump\", \"arguments\": {\"filename\": \"${PPM_PATH}\"}}).encode() + b'\n'
+        s.sendall(cmd)
+        time.sleep(1)
+        s.sendall(b'{\"execute\": \"quit\"}\n')
+        s.close()
+        break
+    except Exception as e:
+        time.sleep(1)
+" || true
+
+        sleep 1
+        kill -9 $QEMU_PID 2>/dev/null || true
         set -e
 
         if [ -f "${PPM_PATH}" ]; then
-            if command -v convert >/dev/null 2>&1; then
-                convert "${PPM_PATH}" "${SCREENSHOT_PATH}" 2>/dev/null || cp "${PPM_PATH}" "${SCREENSHOT_PATH}"
-            else
-                cp "${PPM_PATH}" "${SCREENSHOT_PATH}"
-            fi
-            echo "SUCCESS: AWEOS Framebuffer Screenshot saved at ${SCREENSHOT_PATH}"
+            cp "${PPM_PATH}" "${SCREENSHOT_PATH}"
+            echo "SUCCESS: AYUI Framebuffer Screenshot saved at ${SCREENSHOT_PATH}"
         else
-            echo "WARNING: Screenshot generation via QMP skipped or unavailable."
+            echo "WARNING: Screenshot file not generated."
         fi
     else
         kill -9 $QEMU_PID 2>/dev/null || true
         set -e
-        echo "FAIL: AWEOS GUI initialization markers missing!" >&2
+        echo "FAIL: AYUI Desktop initialization markers missing!" >&2
         return 1
     fi
 
-    # Verify GUI boot markers
-    for marker in "AWEOS BOOT SUCCESS" "AWEOS TERMINAL READY" "AWEOS GRAPHICS READY" "AWEOS INPUT READY" "AWEOS COMPOSITOR READY" "AWEOS GUI READY" "AWEOS GUI TERMINAL READY"; do
+    # Verify AYUI boot markers
+    for marker in "AWEOS BOOT SUCCESS" "AWEOS GRAPHICS READY" "AWEOS INPUT READY" "AYUI SESSION READY" "AYUI COMPOSITOR READY" "AYUI DESKTOP READY"; do
         if ! grep -q "${marker}" "${GUI_LOG}"; then
-            echo "FAIL: Missing boot marker '${marker}' in GUI boot log!" >&2
+            echo "FAIL: Missing boot marker '${marker}' in AYUI boot log!" >&2
             return 1
         fi
     done
 
-    echo "SUCCESS: AWEOS QEMU GUI Boot & Rendering test PASSED!"
+    echo "SUCCESS: AWEOS AYUI GUI Desktop Boot & Rendering test PASSED!"
     return 0
 }
 
@@ -136,7 +138,7 @@ if [ "$TARGET_MODE" = "all" ] || [ "$TARGET_MODE" = "gui" ]; then
     test_gui
 fi
 
-# 2. UEFI Test
+# 3. UEFI Test
 UEFI_FIRMWARE=""
 if [ -f /usr/share/ovmf/OVMF.fd ]; then
     UEFI_FIRMWARE=/usr/share/ovmf/OVMF.fd

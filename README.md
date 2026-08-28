@@ -1,7 +1,7 @@
 # AWEOS Architecture & Complete OS Stack Documentation
 
 ## Overview
-AWEOS is a complete, bootable x86_64 Linux operating system featuring a native C graphical stack, double-buffered framebuffer renderer, compositor, window manager, PTY-backed terminal emulator, AOSIN package system (`.asp`, `.asa`, `.aosin`), safe OS system updater (`aweos-update`), standalone graphical installer (`aweos-installer`), cross-platform USB-less migration installer (`wlin`), and headless fallback, powered by the upstream Linux kernel source and the Limine bootloader.
+AWEOS is a complete, bootable x86_64 Linux operating system featuring **AYUI**, a native C graphical desktop environment, double-buffered framebuffer renderer, compositor, window manager, PTY-backed terminal emulator, AOSIN package system (`.asp`, `.asa`, `.aosin`), safe OS system updater (`aweos-update`), standalone graphical installer (`aweos-installer`), cross-platform USB-less migration installer (`wlin`), and headless fallback, powered by the upstream Linux kernel source and the Limine bootloader.
 
 ## Core Rules & Isolation Policy
 - **`/linux` Read-Only Rule**: The upstream Linux kernel source tree in `/linux` is strictly read-only. No files inside `/linux` are added, modified, formatted, patched, or created.
@@ -26,9 +26,9 @@ AWEOS is a complete, bootable x86_64 Linux operating system featuring a native C
               │                         │
       graphics + input stack            │
               │                         │
-       AWEOS compositor                 │
+         AYUI compositor                │
               │                         │
-        AWEOS GUI shell                 │
+         AYUI desktop shell             │
               │                         │
      ┌────────┼─────────────┐            │
      │        │             │            │
@@ -36,7 +36,7 @@ AWEOS is a complete, bootable x86_64 Linux operating system featuring a native C
      │                      │            │
      └──────────────┬───────┘            │
                     │                    │
-               AWEOS userspace           │
+               AYUI userspace            │
                     │                    │
           package/update framework       │
                     │                    │
@@ -57,9 +57,11 @@ Native AWEOS package management system supporting three formal format specificat
 - **`.asa` (AWEOS Standalone Application)**: Self-contained application bundles.
 - **`.aosin` (AOSIN Installer Archive)**: Multi-package installation bundles with manifests and permission bounds.
 - **`aosin` CLI Tool**: Query, install, remove, and verify packages registered under `/var/lib/awepkg/`.
+- **AYUI Integration**: Dynamic package scanning in `/var/lib/awepkg/*.meta` automatically populates the AYUI desktop application launcher menu.
 
-## Native GUI & Compositor Architecture (`src/gui/`, `src/apps/`)
+## AYUI Native Desktop Environment (`src/gui/`, `src/apps/`)
 - Built independently without external Desktop Environments (GNOME, KDE, Xfce, LXQt, etc.).
+- **Executable**: `/usr/bin/aweos-ayui` (symlinked as `aweos-wm`, `aweos-gui`, `start-ayui`, `aweos-terminal`).
 - **Graphics Abstraction**: Double-buffered `/dev/fb0` Linux framebuffer driver with resolution adaptation.
 - **Input System**: Linux `/dev/input/event*` evdev keyboard/mouse input normalization with cursor tracking.
 - **Compositor & Window Manager**: Surface layout, title bar controls, focus handling, z-ordering, and application launcher.
@@ -74,20 +76,21 @@ Native AWEOS package management system supporting three formal format specificat
 
 ## WLIN Cross-OS Installation Tool (`src/wlin/`)
 - **Cross-Platform Installer**: USB-less installation tool for Windows and Linux hosts.
-- **Windows Backend (`wlin.exe`)**: Compiled natively via MinGW-w64 (`x86_64-w64-mingw32-gcc`).
+- **Windows Backend (`wlin.exe`)**: Compiled natively via MinGW-w64 (`x86_64-w64-mingw32-gcc`) with Win32 GUI controls (`CreateWindowEx`).
 - **Linux Backend (`wlin`)**: Native C Linux application.
 - **USB-Less Boot Staging**: Validates AWEOS ISO, stages kernel/initramfs onto boot staging partition, configures EFI/Limine boot path, and prepares computer to reboot directly into AWEOS installer.
 
 ## Build System Usage
 
-- `make` or `make build`: Verify `/linux` immutability, build kernel out-of-tree, core libraries, GUI, AOSIN, installer, updater, WLIN (Linux & Win32), rootfs, initramfs, ISO (`build/AWEOS-x86_64.iso`), and raw disk image (`build/AWEOS-x86_64-disk.img`).
+- `make` or `make build`: Verify `/linux` immutability, build kernel out-of-tree, core libraries, AYUI GUI, AOSIN, installer, updater, WLIN (Linux & Win32), rootfs, initramfs, ISO (`build/AWEOS-x86_64.iso`), and raw disk image (`build/AWEOS-x86_64-disk.img`).
+- `make ayui`: Build `aweos-ayui` desktop session executable.
 - `make aosin`: Build `aosin` package management binary.
 - `make installer`: Build `aweos-installer` standalone installer binary.
 - `make updater`: Build `aweos-update` OS system updater binary.
 - `make wlin`: Build `wlin` Linux migration binary.
 - `make wlin-win32`: Build `wlin.exe` Windows MinGW migration binary.
 - `make verify-linux-readonly`: Execute read-only integrity check on `/linux`.
-- `make test`: Run automated QEMU BIOS, UEFI, and GUI verification tests.
-- `make test-gui`: Run automated QEMU GUI boot marker test and QMP screenshot capture (`build/aweos-gui-screenshot.png`).
-- `make qemu-gui`: Launch interactive QEMU graphical desktop boot mode.
+- `make test`: Run automated QEMU BIOS, UEFI, and AYUI GUI verification tests.
+- `make test-gui` / `make test-ayui`: Run automated QEMU AYUI GUI boot marker test and QMP screenshot capture (`build/ayui-screenshot.png`).
+- `make qemu-gui` / `make qemu-ayui`: Launch interactive QEMU graphical desktop boot mode.
 - `make clean`: Clean build artifacts in `build/`.
