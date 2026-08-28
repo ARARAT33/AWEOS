@@ -10,7 +10,6 @@ echo "Assembling AWEOS x86_64 ISO..."
 rm -rf "${ISO_DIR}"
 mkdir -p "${ISO_DIR}"/boot "${ISO_DIR}"/EFI/BOOT
 
-# Ensure kernel and initramfs exist
 if [ ! -f "${BUILD_DIR}/linux-x86_64/arch/x86/boot/bzImage" ]; then
     echo "Error: bzImage not found in ${BUILD_DIR}/linux-x86_64/arch/x86/boot/bzImage!" >&2
     exit 1
@@ -21,11 +20,18 @@ if [ ! -f "${BUILD_DIR}/aweos-initramfs.cpio.gz" ]; then
     exit 1
 fi
 
-# Copy kernel & initramfs
+if [ ! -f "${BUILD_DIR}/rootfs.img" ]; then
+    echo "Error: rootfs.img not found in ${BUILD_DIR}/rootfs.img!" >&2
+    exit 1
+fi
+
+# Copy kernel, initramfs, and persistent rootfs image
 cp "${BUILD_DIR}/linux-x86_64/arch/x86/boot/bzImage" "${ISO_DIR}/boot/bzImage"
 cp "${BUILD_DIR}/aweos-initramfs.cpio.gz" "${ISO_DIR}/boot/aweos-initramfs.cpio.gz"
+cp "${BUILD_DIR}/rootfs.img" "${ISO_DIR}/boot/rootfs.img"
+cp "${BUILD_DIR}/rootfs.img" "${ISO_DIR}/rootfs.img"
 
-# Copy Limine bootloader binaries from Bootloader/x86_64/
+# Copy Limine bootloader binaries
 cp Bootloader/x86_64/limine-bios.sys "${ISO_DIR}/boot/"
 cp Bootloader/x86_64/limine-bios-cd.bin "${ISO_DIR}/"
 cp Bootloader/x86_64/limine-uefi-cd.bin "${ISO_DIR}/"
@@ -33,7 +39,6 @@ cp Bootloader/x86_64/BOOTX64.EFI "${ISO_DIR}/EFI/BOOT/"
 cp Bootloader/x86_64/limine.conf "${ISO_DIR}/"
 cp Bootloader/x86_64/limine.conf "${ISO_DIR}/boot/"
 
-# Build hybrid ISO using xorriso
 xorriso -as mkisofs \
     -b limine-bios-cd.bin \
     -no-emul-boot \

@@ -32,17 +32,15 @@ jobs:
         run: |
           set -eu
           sudo apt-get update
-          sudo apt-get install -y build-essential bc bison flex libssl-dev libelf-dev cpio gzip xz-utils curl xorriso qemu-system-x86 ovmf busybox-static
+          sudo apt-get install -y build-essential bc bison flex libssl-dev libelf-dev cpio gzip xz-utils curl xorriso qemu-system-x86 ovmf busybox-static util-linux e2fsprogs parted
 
-      - name: Snapshot and Verify /linux source integrity (Pre-build)
+      - name: Verify /linux source integrity (Pre-build)
         run: |
           set -eu
-          test -f linux/Makefile
-          test -f linux/Kconfig
-          test -z "$(git status --porcelain -- linux)"
+          ./scripts/verify-linux-readonly.sh
           git ls-files -s linux | sha256sum > build-linux-before.sha256
 
-      - name: Build AWEOS Bootable ISO
+      - name: Build AWEOS Bootable ISO & Raw Disk Images
         run: |
           set -eu
           make build
@@ -50,7 +48,7 @@ jobs:
       - name: Verify /linux source integrity (Post-build)
         run: |
           set -eu
-          test -z "$(git status --porcelain -- linux)"
+          ./scripts/verify-linux-readonly.sh
           git ls-files -s linux | sha256sum > build-linux-after.sha256
           cmp build-linux-before.sha256 build-linux-after.sha256
 
@@ -62,7 +60,7 @@ jobs:
       - name: Verify /linux source integrity (Post-test)
         run: |
           set -eu
-          test -z "$(git status --porcelain -- linux)"
+          ./scripts/verify-linux-readonly.sh
           git ls-files -s linux | sha256sum > build-linux-final.sha256
           cmp build-linux-before.sha256 build-linux-final.sha256
 
@@ -72,6 +70,7 @@ jobs:
           name: AWEOS-x86_64-verified
           path: |
             build/AWEOS-x86_64.iso
+            build/AWEOS-x86_64-disk.img
             build/linux-x86_64/arch/x86/boot/bzImage
             build/qemu-bios.log
             build/qemu-uefi.log
