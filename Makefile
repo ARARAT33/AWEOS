@@ -8,7 +8,7 @@ KERNEL_BUILD_DIR := $(BUILD_DIR)/linux-x86_64
 ISO_PATH := $(BUILD_DIR)/AWEOS-x86_64.iso
 DISK_IMG_PATH := $(BUILD_DIR)/AWEOS-x86_64-disk.img
 
-.PHONY: all build verify-linux kernel rootfs initramfs iso disk-image image test test-bios test-uefi qemu qemu-bios qemu-uefi clean verify-linux-readonly
+.PHONY: all build verify-linux kernel rootfs initramfs iso disk-image image test test-bios test-uefi test-gui qemu qemu-bios qemu-uefi qemu-gui qemu-gui-uefi gui clean verify-linux-readonly
 
 all: build
 
@@ -48,14 +48,24 @@ test-bios: iso
 test-uefi: iso
 	@./scripts/run-qemu-tests.sh $(BUILD_DIR) uefi
 
-qemu: qemu-bios
+test-gui: iso
+	@./scripts/run-qemu-tests.sh $(BUILD_DIR) gui
+
+gui: qemu-gui
+
+qemu: qemu-gui
 
 qemu-bios: iso
 	@qemu-system-x86_64 -machine q35 -m 512M -cdrom $(ISO_PATH) -serial stdio -net nic,model=virtio -net user
 
+qemu-gui: iso
+	@qemu-system-x86_64 -machine q35 -m 512M -cdrom $(ISO_PATH) -vga std -serial stdio -net nic,model=virtio -net user
+
 qemu-uefi: iso
 	@UEFI=$$(if [ -f /usr/share/ovmf/OVMF.fd ]; then echo /usr/share/ovmf/OVMF.fd; elif [ -f /usr/share/OVMF/OVMF_CODE_4M.fd ]; then echo /usr/share/OVMF/OVMF_CODE_4M.fd; else echo /usr/share/OVMF/OVMF_CODE.fd; fi); \
-	qemu-system-x86_64 -machine q35 -m 512M -bios "$$UEFI" -cdrom $(ISO_PATH) -serial stdio -net nic,model=virtio -net user
+	qemu-system-x86_64 -machine q35 -m 512M -bios "$$UEFI" -cdrom $(ISO_PATH) -vga std -serial stdio -net nic,model=virtio -net user
+
+qemu-gui-uefi: qemu-uefi
 
 clean:
 	@rm -rf $(BUILD_DIR)
