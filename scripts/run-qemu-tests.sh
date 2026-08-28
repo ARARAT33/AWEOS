@@ -59,7 +59,7 @@ test_boot() {
 
 # 1. BIOS Test
 if [ "$TARGET_MODE" = "all" ] || [ "$TARGET_MODE" = "bios" ]; then
-    test_boot "BIOS" "${BIOS_LOG}" qemu-system-x86_64 -machine q35 -m 512M -append "aweos.mode=headless" -cdrom "${ISO_PATH}" -display none -serial stdio -no-reboot -net nic,model=virtio -net user
+    test_boot "BIOS" "${BIOS_LOG}" qemu-system-x86_64 -machine q35 -m 512M -cdrom "${ISO_PATH}" -display none -serial stdio -no-reboot -net nic,model=virtio -net user
 fi
 
 # 2. GUI Test (Standard QEMU VGA + QMP Framebuffer Verification)
