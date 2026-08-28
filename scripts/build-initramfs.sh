@@ -19,6 +19,17 @@ fi
 cp "$BUSYBOX_BIN" "${INITRAMFS_DIR}/bin/busybox"
 chmod +x "${INITRAMFS_DIR}/bin/busybox"
 
+# Copy dynamic interpreter and shared libraries if busybox is dynamically linked
+mkdir -p "${INITRAMFS_DIR}"/lib64 "${INITRAMFS_DIR}"/lib/x86_64-linux-gnu
+if [ -f /lib64/ld-linux-x86-64.so.2 ]; then
+    cp /lib64/ld-linux-x86-64.so.2 "${INITRAMFS_DIR}/lib64/"
+fi
+for lib in /lib/x86_64-linux-gnu/libc.so.6 /lib/x86_64-linux-gnu/libresolv.so.2 /lib/x86_64-linux-gnu/libm.so.6 /lib/x86_64-linux-gnu/libutil.so.1; do
+    if [ -f "$lib" ]; then
+        cp "$lib" "${INITRAMFS_DIR}/lib/x86_64-linux-gnu/"
+    fi
+done
+
 (
     cd "${INITRAMFS_DIR}"
     for applet in $(./bin/busybox --list); do
@@ -82,9 +93,9 @@ done
 if [ "$ROOTFS_MOUNTED" -eq 0 ]; then
     echo "Searching boot media for rootfs.img..."
     mkdir -p /mnt/boot
-    for dev in /dev/sr0 /dev/sr1 /dev/cdrom /dev/vda /dev/sda /dev/sda1; do
+    for dev in /dev/sr0 /dev/sr1 /dev/cdrom /dev/vda /dev/sda /dev/sda1 /dev/sdb /dev/sdb1; do
         if [ -b "$dev" ]; then
-            if mount -t iso9660 -o ro "$dev" /mnt/boot 2>/dev/null || mount -t vfat -o ro "$dev" /mnt/boot 2>/dev/null; then
+            if mount -t iso9660 -o ro "$dev" /mnt/boot 2>/dev/null || mount -t vfat -o ro "$dev" /mnt/boot 2>/dev/null || mount -t ext4 -o ro "$dev" /mnt/boot 2>/dev/null; then
                 if [ -f "/mnt/boot/rootfs.img" ] || [ -f "/mnt/boot/boot/rootfs.img" ]; then
                     IMG="/mnt/boot/rootfs.img"
                     [ -f "$IMG" ] || IMG="/mnt/boot/boot/rootfs.img"

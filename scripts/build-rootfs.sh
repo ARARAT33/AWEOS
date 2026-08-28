@@ -20,6 +20,17 @@ fi
 cp "$BUSYBOX_BIN" "${ROOTFS_DIR}/bin/busybox"
 chmod +x "${ROOTFS_DIR}/bin/busybox"
 
+# Copy dynamic interpreter and shared libraries for rootfs
+mkdir -p "${ROOTFS_DIR}"/lib64 "${ROOTFS_DIR}"/lib/x86_64-linux-gnu
+if [ -f /lib64/ld-linux-x86-64.so.2 ]; then
+    cp /lib64/ld-linux-x86-64.so.2 "${ROOTFS_DIR}/lib64/"
+fi
+for lib in /lib/x86_64-linux-gnu/libc.so.6 /lib/x86_64-linux-gnu/libresolv.so.2 /lib/x86_64-linux-gnu/libm.so.6 /lib/x86_64-linux-gnu/libutil.so.1; do
+    if [ -f "$lib" ]; then
+        cp "$lib" "${ROOTFS_DIR}/lib/x86_64-linux-gnu/"
+    fi
+done
+
 # Install busybox symlinks
 (
     cd "${ROOTFS_DIR}"
