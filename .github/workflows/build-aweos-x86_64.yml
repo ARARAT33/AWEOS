@@ -8,6 +8,9 @@ on:
       - 'Bootloader/**'
       - 'scripts/**'
       - 'src/**'
+      - 'AWEUI/**'
+      - 'APPS/**'
+      - 'Cargo.toml'
       - 'Makefile'
   pull_request:
     paths:
@@ -15,6 +18,9 @@ on:
       - 'Bootloader/**'
       - 'scripts/**'
       - 'src/**'
+      - 'AWEUI/**'
+      - 'APPS/**'
+      - 'Cargo.toml'
       - 'Makefile'
 
 permissions:
@@ -35,7 +41,7 @@ jobs:
         run: |
           set -eu
           sudo apt-get update
-          sudo apt-get install -y build-essential bc bison flex libssl-dev libelf-dev cpio gzip xz-utils curl xorriso qemu-system-x86 ovmf busybox-static util-linux e2fsprogs parted netcat-openbsd imagemagick gcc-mingw-w64-x86-64 python3
+          sudo apt-get install -y build-essential bc bison flex libssl-dev libelf-dev cpio gzip xz-utils curl xorriso qemu-system-x86 ovmf busybox-static util-linux e2fsprogs parted netcat-openbsd imagemagick gcc-mingw-w64-x86-64 python3 libudev-dev libinput-dev libxkbcommon-dev libpixman-1-dev libgbm-dev libdrm-dev libdbus-1-dev libsystemd-dev
 
       - name: Verify /linux source integrity (Pre-build)
         run: |
@@ -52,7 +58,7 @@ jobs:
           gcc -Isrc/aosin -Wall -Wextra -O2 src/core/*.c src/aosin/aosin_core.c src/aosin/tests/test_aosin.c -o build/test_aosin
           ./build/test_aosin
 
-      - name: Build AWEOS OS, AYUI Desktop, ISO, IMG, AOSIN, Updater, Installer, and WLIN Binaries
+      - name: Build AWEOS OS, AYUI Desktop, AWEUI Wayland Desktop, ISO, IMG, AOSIN, Updater, Installer, and WLIN Binaries
         run: |
           set -eu
           make build
@@ -65,13 +71,14 @@ jobs:
             "product": "AWEOS",
             "version": "1.0.0",
             "architecture": "x86_64",
-            "desktop_environment": "AYUI",
+            "desktop_environments": ["AYUI", "AWEUI"],
             "kernel_version": "6.x-aweos",
             "build_timestamp": "$(date -u +'%Y-%m-%dT%H:%M:%SZ')",
             "artifacts": [
               "AWEOS-x86_64.iso",
               "AWEOS-x86_64-disk.img",
               "aweos-ayui",
+              "aweui",
               "aosin",
               "aweos-installer",
               "aweos-update",
@@ -80,7 +87,7 @@ jobs:
             ]
           }
           EOF
-          (cd build && sha256sum AWEOS-x86_64.iso AWEOS-x86_64-disk.img aweos-ayui aosin aweos-installer aweos-update wlin wlin.exe > aweos-sha256sums.txt)
+          (cd build && sha256sum AWEOS-x86_64.iso AWEOS-x86_64-disk.img aweos-ayui aweui aosin aweos-installer aweos-update wlin wlin.exe > aweos-sha256sums.txt)
 
       - name: Verify /linux source integrity (Post-build)
         run: |
@@ -89,7 +96,7 @@ jobs:
           git ls-files -s linux | sha256sum > build-linux-after.sha256
           cmp build-linux-before.sha256 build-linux-after.sha256
 
-      - name: Run QEMU BIOS, UEFI, and AYUI GUI Tests
+      - name: Run QEMU BIOS, UEFI, AYUI, and AWEUI Tests
         run: |
           set -eu
           make test
@@ -109,6 +116,7 @@ jobs:
             build/AWEOS-x86_64.iso
             build/AWEOS-x86_64-disk.img
             build/aweos-ayui
+            build/aweui
             build/aosin
             build/aweos-installer
             build/aweos-update
