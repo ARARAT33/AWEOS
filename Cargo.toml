@@ -1,0 +1,15 @@
+[workspace]
+members = [
+    "AWEUI",
+    "AWEUI/framework",
+    "APPS/SYSTEM/aweui-settings",
+    "APPS/SYSTEM/aweui-control-center",
+    "APPS/SYSTEM/aweui-file-manager",
+    "APPS/SYSTEM/aweui-terminal",
+    "APPS/SYSTEM/aweui-system-monitor",
+    "APPS/SYSTEM/aweui-diagnostics",
+    "APPS/SYSTEM/aweui-text-editor",
+    "APPS/SYSTEM/aweui-calculator",
+    "APPS/USER/aweui-user-app-template",
+]
+resolver = "2"

@@ -9,7 +9,7 @@ IMG_SIZE_MB="${2:-64}"
 echo "Building AWEOS Root Filesystem in ${ROOTFS_DIR}..."
 
 rm -rf "${ROOTFS_DIR}"
-mkdir -p "${ROOTFS_DIR}"/{bin,sbin,usr/bin,usr/sbin,usr/lib,usr/share,etc,dev,proc,sys,run,tmp,var/log,var/cache,var/lib/awepkg,var/tmp,home/aweos,root,opt,mnt,media,srv,boot,etc/aweos,etc/init.d}
+mkdir -p "${ROOTFS_DIR}"/{bin,sbin,usr/bin,usr/sbin,usr/lib,usr/share,etc,dev,proc,sys,run,tmp,var/log,var/cache,var/lib/awepkg,var/tmp,home/aweos,root,opt,mnt,media,srv,boot,etc/aweos,etc/aweui,etc/init.d}
 
 BUSYBOX_BIN="$(which busybox 2>/dev/null || true)"
 if [ -z "$BUSYBOX_BIN" ]; then
@@ -135,7 +135,7 @@ EOF
 cp "${ROOTFS_DIR}/etc/profile" "${ROOTFS_DIR}/root/.profile"
 cp "${ROOTFS_DIR}/etc/profile" "${ROOTFS_DIR}/home/aweos/.profile"
 
-# Build & install AWEOS GUI stack binary (statically linked for standalone execution in rootfs)
+# Build & install AWEOS GUI stack binary (AYUI)
 echo "Compiling AWEOS native GUI stack (AYUI)..."
 gcc -static -Wall -Wextra -O2 "${1}/../src/gui"/*.c "${1}/../src/apps"/*.c "${1}/../src/core"/*.c -I"${1}/../src/gui" -I"${1}/../src/apps" -I"${1}/../src/core" -lutil -o "${ROOTFS_DIR}/usr/bin/aweos-ayui"
 chmod +x "${ROOTFS_DIR}/usr/bin/aweos-ayui"
@@ -143,6 +143,21 @@ ln -sf /usr/bin/aweos-ayui "${ROOTFS_DIR}/usr/bin/aweos-wm"
 ln -sf /usr/bin/aweos-ayui "${ROOTFS_DIR}/usr/bin/aweos-gui"
 ln -sf /usr/bin/aweos-ayui "${ROOTFS_DIR}/usr/bin/start-ayui"
 ln -sf /usr/bin/aweos-ayui "${ROOTFS_DIR}/usr/bin/aweos-terminal"
+
+# Install AWEUI Wayland Desktop Environment binaries if compiled in BUILD_DIR
+if [ -f "${BUILD_DIR}/aweui" ]; then
+    echo "Installing AWEUI Wayland Desktop Environment binaries into rootfs..."
+    cp "${BUILD_DIR}/aweui" "${ROOTFS_DIR}/usr/bin/aweui"
+    chmod +x "${ROOTFS_DIR}/usr/bin/aweui"
+    ln -sf /usr/bin/aweui "${ROOTFS_DIR}/usr/bin/start-aweui"
+
+    for app_bin in aweui-settings aweui-control-center aweui-file-manager aweui-terminal aweui-system-monitor aweui-diagnostics aweui-text-editor aweui-calculator; do
+        if [ -f "${BUILD_DIR}/${app_bin}" ]; then
+            cp "${BUILD_DIR}/${app_bin}" "${ROOTFS_DIR}/usr/bin/${app_bin}"
+            chmod +x "${ROOTFS_DIR}/usr/bin/${app_bin}"
+        fi
+    done
+fi
 
 # Copy AWEOS utilities into rootfs
 cp "${1}/../scripts/aweos-info.sh" "${ROOTFS_DIR}/usr/bin/aweos"
@@ -220,13 +235,21 @@ AWEOS TERMINAL READY
 
 LOGO
 
-# Check kernel cmdline for boot mode override (aweos.mode=gui vs aweos.mode=headless)
+# Check kernel cmdline for boot mode override (aweos.mode=gui vs aweos.mode=headless vs aweos.mode=aweui)
 MODE="gui"
-if grep -q "aweos.mode=headless" /proc/cmdline 2>/dev/null; then
+if grep -q "aweos.mode=aweui" /proc/cmdline 2>/dev/null; then
+    MODE="aweui"
+elif grep -q "aweos.mode=headless" /proc/cmdline 2>/dev/null; then
     MODE="headless"
 fi
 
-if [ "$MODE" = "gui" ] && [ -x /usr/bin/aweos-ayui ] && [ -e /dev/fb0 ]; then
+if [ "$MODE" = "aweui" ] && [ -x /usr/bin/aweui ]; then
+    echo "Starting AWEUI Wayland Desktop Session..."
+    /usr/bin/aweui || {
+        echo "WARNING: AWEUI Wayland initialization failed! Falling back to terminal..."
+        exec /bin/busybox cttyhack /bin/sh
+    }
+elif [ "$MODE" = "gui" ] && [ -x /usr/bin/aweos-ayui ] && [ -e /dev/fb0 ]; then
     echo "Starting AYUI Desktop Session..."
     /usr/bin/aweos-ayui || {
         echo "WARNING: AYUI GUI initialization failed! Falling back to terminal..."
