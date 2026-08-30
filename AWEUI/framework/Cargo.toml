@@ -1,0 +1,12 @@
+[package]
+name = "aweui-framework"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+wayland-client = "0.31"
+wayland-protocols = { version = "0.31", features = ["client", "staging"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+nix = { version = "0.27", features = ["mman", "signal", "fs", "process", "socket"] }

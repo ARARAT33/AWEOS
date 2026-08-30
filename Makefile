@@ -8,16 +8,29 @@ KERNEL_BUILD_DIR := $(BUILD_DIR)/linux-x86_64
 ISO_PATH := $(BUILD_DIR)/AWEOS-x86_64.iso
 DISK_IMG_PATH := $(BUILD_DIR)/AWEOS-x86_64-disk.img
 
-.PHONY: all build verify-linux kernel rootfs initramfs iso disk-image image test test-bios test-uefi test-gui test-ayui qemu qemu-bios qemu-uefi qemu-gui qemu-gui-uefi qemu-ayui ayui gui aosin installer updater wlin wlin-win32 clean verify-linux-readonly
+.PHONY: all build verify-linux kernel rootfs initramfs iso disk-image image test test-bios test-uefi test-gui test-ayui test-aweui aweui ayui gui aosin installer updater wlin wlin-win32 clean verify-linux-readonly
 
 all: build
 
-build: verify-linux ayui aosin installer updater wlin wlin-win32 iso disk-image
+build: verify-linux aweui ayui aosin installer updater wlin wlin-win32 iso disk-image
 
 verify-linux-readonly:
 	@./scripts/verify-linux-readonly.sh
 
 verify-linux: verify-linux-readonly
+
+aweui:
+	@mkdir -p $(BUILD_DIR)
+	@cargo build --workspace --release
+	@cp target/release/aweui $(BUILD_DIR)/aweui
+	@cp target/release/aweui-settings $(BUILD_DIR)/aweui-settings
+	@cp target/release/aweui-control-center $(BUILD_DIR)/aweui-control-center
+	@cp target/release/aweui-file-manager $(BUILD_DIR)/aweui-file-manager
+	@cp target/release/aweui-terminal $(BUILD_DIR)/aweui-terminal
+	@cp target/release/aweui-system-monitor $(BUILD_DIR)/aweui-system-monitor
+	@cp target/release/aweui-diagnostics $(BUILD_DIR)/aweui-diagnostics
+	@cp target/release/aweui-text-editor $(BUILD_DIR)/aweui-text-editor
+	@cp target/release/aweui-calculator $(BUILD_DIR)/aweui-calculator
 
 ayui:
 	@mkdir -p $(BUILD_DIR)
@@ -52,7 +65,7 @@ kernel: verify-linux
 	@make -C $(KERNEL_SRC) O=$(KERNEL_BUILD_DIR) -j"$$(nproc)" bzImage
 	@test -s $(KERNEL_BUILD_DIR)/arch/x86/boot/bzImage
 
-rootfs: ayui aosin installer updater wlin
+rootfs: aweui ayui aosin installer updater wlin
 	@./scripts/build-rootfs.sh $(BUILD_DIR) 64
 
 initramfs:
@@ -67,8 +80,11 @@ disk-image: rootfs kernel initramfs
 
 image: iso disk-image
 
-test: iso
+test: iso test-aweui
 	@./scripts/run-qemu-tests.sh $(BUILD_DIR)
+
+test-aweui:
+	@cargo test --workspace
 
 test-bios: iso
 	@./scripts/run-qemu-tests.sh $(BUILD_DIR) bios
