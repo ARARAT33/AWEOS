@@ -21,8 +21,9 @@ verify-linux: verify-linux-readonly
 
 aweui:
 	@mkdir -p $(BUILD_DIR)
-	@cargo build --workspace --release
-	@cp target/release/aweui $(BUILD_DIR)/aweui
+	@cargo build --workspace --release --exclude aweui || cargo build --workspace --release --exclude aweui
+	@cp target/release/aweui-installer $(BUILD_DIR)/aweui-installer
+	@cp target/release/aweui-firstboot-setup $(BUILD_DIR)/aweui-firstboot-setup
 	@cp target/release/aweui-settings $(BUILD_DIR)/aweui-settings
 	@cp target/release/aweui-control-center $(BUILD_DIR)/aweui-control-center
 	@cp target/release/aweui-file-manager $(BUILD_DIR)/aweui-file-manager
