@@ -87,12 +87,12 @@ fn install_limine_bootloader(target_mount: &Path, _disk: &DiskInfo, mode: BootMo
             let efi_dir = boot_dir.join("efi/EFI/BOOT");
             fs::create_dir_all(&efi_dir).map_err(|e| e.to_string())?;
             format!(
-                "TIMEOUT=3\n\n:AWEOS Installed System\n    PROTOCOL=linux\n    KERNEL_PATH=boot():/boot/bzImage\n    MODULE_PATH=boot():/boot/aweos-initramfs.cpio.gz\n    CMDLINE=aweos.mode=aweui quiet\n"
+                "TIMEOUT=3\n\n:AWEOS Installed System\n    PROTOCOL=linux\n    KERNEL_PATH=boot():/boot/bzImage\n    MODULE_PATH=boot():/boot/aweos-initramfs.cpio.gz\n    CMDLINE=aweos.mode=aweui console=tty0 console=ttyS0,115200n8 quiet\n"
             )
         }
         BootMode::Bios => {
             format!(
-                "TIMEOUT=3\n\n:AWEOS Installed System\n    PROTOCOL=linux\n    KERNEL_PATH=boot():/boot/bzImage\n    MODULE_PATH=boot():/boot/aweos-initramfs.cpio.gz\n    CMDLINE=aweos.mode=aweui quiet\n"
+                "TIMEOUT=3\n\n:AWEOS Installed System\n    PROTOCOL=linux\n    KERNEL_PATH=boot():/boot/bzImage\n    MODULE_PATH=boot():/boot/aweos-initramfs.cpio.gz\n    CMDLINE=aweos.mode=aweui console=tty0 console=ttyS0,115200n8 quiet\n"
             )
         }
     };
