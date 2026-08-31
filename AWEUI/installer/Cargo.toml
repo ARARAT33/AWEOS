@@ -1,0 +1,12 @@
+[package]
+name = "aweui-installer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+aweui-framework = { path = "../framework" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+nix = { version = "0.27", features = ["mman", "signal", "fs", "process", "socket", "mount", "user"] }
+pwhash = "1.0"

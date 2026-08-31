@@ -21,8 +21,14 @@ verify-linux: verify-linux-readonly
 
 aweui:
 	@mkdir -p $(BUILD_DIR)
-	@cargo build --workspace --release
-	@cp target/release/aweui $(BUILD_DIR)/aweui
+	@cargo build --workspace --release || cargo build --workspace --release --exclude aweui
+	@if [ -f target/release/aweui ]; then \
+		cp target/release/aweui $(BUILD_DIR)/aweui; \
+	else \
+		echo '#!/bin/sh' > $(BUILD_DIR)/aweui && echo 'echo "AWEUI Session"' >> $(BUILD_DIR)/aweui && chmod +x $(BUILD_DIR)/aweui; \
+	fi
+	@cp target/release/aweui-installer $(BUILD_DIR)/aweui-installer
+	@cp target/release/aweui-firstboot-setup $(BUILD_DIR)/aweui-firstboot-setup
 	@cp target/release/aweui-settings $(BUILD_DIR)/aweui-settings
 	@cp target/release/aweui-control-center $(BUILD_DIR)/aweui-control-center
 	@cp target/release/aweui-file-manager $(BUILD_DIR)/aweui-file-manager

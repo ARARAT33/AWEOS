@@ -151,7 +151,7 @@ if [ -f "${BUILD_DIR}/aweui" ]; then
     chmod +x "${ROOTFS_DIR}/usr/bin/aweui"
     ln -sf /usr/bin/aweui "${ROOTFS_DIR}/usr/bin/start-aweui"
 
-    for app_bin in aweui-settings aweui-control-center aweui-file-manager aweui-terminal aweui-system-monitor aweui-diagnostics aweui-text-editor aweui-calculator; do
+    for app_bin in aweui-installer aweui-firstboot-setup aweui-settings aweui-control-center aweui-file-manager aweui-terminal aweui-system-monitor aweui-diagnostics aweui-text-editor aweui-calculator; do
         if [ -f "${BUILD_DIR}/${app_bin}" ]; then
             cp "${BUILD_DIR}/${app_bin}" "${ROOTFS_DIR}/usr/bin/${app_bin}"
             chmod +x "${ROOTFS_DIR}/usr/bin/${app_bin}"
@@ -235,20 +235,34 @@ AWEOS TERMINAL READY
 
 LOGO
 
-# Check kernel cmdline for boot mode override (aweos.mode=gui vs aweos.mode=headless vs aweos.mode=aweui)
+# Check kernel cmdline for boot mode override (aweos.mode=installer vs aweos.mode=aweui vs aweos.mode=gui vs aweos.mode=headless)
 MODE="gui"
-if grep -q "aweos.mode=aweui" /proc/cmdline 2>/dev/null; then
+if grep -q "aweos.mode=installer" /proc/cmdline 2>/dev/null; then
+    MODE="installer"
+elif grep -q "aweos.mode=aweui" /proc/cmdline 2>/dev/null; then
     MODE="aweui"
 elif grep -q "aweos.mode=headless" /proc/cmdline 2>/dev/null; then
     MODE="headless"
 fi
 
-if [ "$MODE" = "aweui" ] && [ -x /usr/bin/aweui ]; then
-    echo "Starting AWEUI Wayland Desktop Session..."
-    /usr/bin/aweui || {
-        echo "WARNING: AWEUI Wayland initialization failed! Falling back to terminal..."
+if [ "$MODE" = "installer" ] && [ -x /usr/bin/aweui-installer ]; then
+    echo "Starting AWEOS Graphical Installer..."
+    /usr/bin/aweui-installer --auto || {
+        echo "WARNING: AWEOS Installer failed! Falling back to terminal..."
         exec /bin/busybox cttyhack /bin/sh
     }
+elif [ "$MODE" = "aweui" ]; then
+    if [ -x /usr/bin/aweui-firstboot-setup ] && [ -f /etc/aweos/first_boot ] && grep -q "fresh_install=true" /etc/aweos/first_boot 2>/dev/null; then
+        echo "Launching First-Boot Setup Wizard..."
+        /usr/bin/aweui-firstboot-setup || true
+    fi
+    if [ -x /usr/bin/aweui ]; then
+        echo "Starting AWEUI Wayland Desktop Session..."
+        /usr/bin/aweui || {
+            echo "WARNING: AWEUI Wayland initialization failed! Falling back to terminal..."
+            exec /bin/busybox cttyhack /bin/sh
+        }
+    fi
 elif [ "$MODE" = "gui" ] && [ -x /usr/bin/aweos-ayui ] && [ -e /dev/fb0 ]; then
     echo "Starting AYUI Desktop Session..."
     /usr/bin/aweos-ayui || {

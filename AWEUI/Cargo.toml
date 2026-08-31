@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-smithay = { version = "0.3", features = ["input", "renderer_gl", "wayland_frontend", "backend_winit", "backend_drm", "backend_libinput"] }
+smithay = { version = "0.3", default-features = false, features = ["input", "renderer_gl", "wayland_frontend", "backend_winit"] }
 wayland-server = "0.31"
 wayland-protocols = { version = "0.31", features = ["staging", "unstable", "client", "server"] }
 calloop = "0.13"
