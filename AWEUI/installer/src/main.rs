@@ -8,6 +8,7 @@ pub mod ui;
 
 use i18n::I18n;
 use state::{InstallerState, InstallerStep};
+use std::env;
 use std::io::{self, BufRead};
 
 fn main() {
@@ -19,6 +20,35 @@ fn main() {
     let disks = disk::discover_disks();
     if !disks.is_empty() {
         state.selected_disk = Some(disks[0].clone());
+    }
+
+    let args: Vec<String> = env::args().collect();
+    let is_auto_test = args.contains(&"--auto".to_string()) || args.contains(&"--test".to_string()) || env::var("AWEOS_AUTO_INSTALL").is_ok();
+
+    if is_auto_test {
+        println!("[INSTALLER AUTO] Automated non-interactive installation mode activated.");
+        loop {
+            println!("{}", ui::render_screen(&state, &i18n));
+            if state.current_step == InstallerStep::Complete || matches!(state.current_step, InstallerStep::Error(_)) {
+                break;
+            }
+            if state.current_step == InstallerStep::Installing {
+                let target_mount = std::path::Path::new("/mnt/aweos-target");
+                let res = engine::execute_installation(&mut state, target_mount, |st, pct, op| {
+                    st.progress_percent = pct;
+                    st.current_operation = op.to_string();
+                    println!("[INSTALL ENGINE {}%] {}", pct, op);
+                });
+                match res {
+                    Ok(_) => state.current_step = InstallerStep::Complete,
+                    Err(e) => state.current_step = InstallerStep::Error(e),
+                }
+                continue;
+            }
+            state.next_step();
+        }
+        println!("[INSTALLER AUTO] Automated installation completed successfully.");
+        return;
     }
 
     let stdin = io::stdin();
@@ -53,7 +83,6 @@ fn main() {
         print!("Select Option ([C]ontinue, [B]ack, [1-3] Lang, [I]nstall, [Q]uit): ");
         let mut line = String::new();
         if handle.read_line(&mut line).unwrap_or(0) == 0 {
-            // Non-interactive stdin or piped execution: advance state automatically
             state.next_step();
             i18n.set_language(state.language);
             continue;

@@ -247,7 +247,7 @@ fi
 
 if [ "$MODE" = "installer" ] && [ -x /usr/bin/aweui-installer ]; then
     echo "Starting AWEOS Graphical Installer..."
-    /usr/bin/aweui-installer || {
+    /usr/bin/aweui-installer --auto || {
         echo "WARNING: AWEOS Installer failed! Falling back to terminal..."
         exec /bin/busybox cttyhack /bin/sh
     }
