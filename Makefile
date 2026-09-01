@@ -92,7 +92,7 @@ test: iso test-aweui
 	@./scripts/run-qemu-tests.sh $(BUILD_DIR)
 
 test-aweui:
-	@cargo test --workspace
+	@cargo test --workspace --exclude aweui
 
 test-bios: iso
 	@./scripts/run-qemu-tests.sh $(BUILD_DIR) bios

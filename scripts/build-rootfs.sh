@@ -9,7 +9,7 @@ IMG_SIZE_MB="${2:-64}"
 echo "Building AWEOS Root Filesystem in ${ROOTFS_DIR}..."
 
 rm -rf "${ROOTFS_DIR}"
-mkdir -p "${ROOTFS_DIR}"/{bin,sbin,usr/bin,usr/sbin,usr/lib,usr/share,etc,dev,proc,sys,run,tmp,var/log,var/cache,var/lib/awepkg,var/tmp,home/aweos,root,opt,mnt,media,srv,boot,etc/aweos,etc/aweui,etc/init.d}
+mkdir -p "${ROOTFS_DIR}"/{bin,sbin,usr/bin,usr/sbin,usr/lib,usr/share,etc,dev,proc,sys,run,tmp,var/log,var/cache,var/lib/awepkg,var/tmp,home/aweos,root,opt,mnt,mnt/aweos-target,media,srv,boot,etc/aweos,etc/aweui,etc/init.d}
 
 BUSYBOX_BIN="$(which busybox 2>/dev/null || true)"
 if [ -z "$BUSYBOX_BIN" ]; then
@@ -25,7 +25,7 @@ mkdir -p "${ROOTFS_DIR}"/lib64 "${ROOTFS_DIR}"/lib/x86_64-linux-gnu
 if [ -f /lib64/ld-linux-x86-64.so.2 ]; then
     cp /lib64/ld-linux-x86-64.so.2 "${ROOTFS_DIR}/lib64/"
 fi
-for lib in /lib/x86_64-linux-gnu/libc.so.6 /lib/x86_64-linux-gnu/libresolv.so.2 /lib/x86_64-linux-gnu/libm.so.6 /lib/x86_64-linux-gnu/libutil.so.1; do
+for lib in /lib/x86_64-linux-gnu/libc.so.6 /lib/x86_64-linux-gnu/libresolv.so.2 /lib/x86_64-linux-gnu/libm.so.6 /lib/x86_64-linux-gnu/libutil.so.1 /lib/x86_64-linux-gnu/libgcc_s.so.1 /usr/lib/x86_64-linux-gnu/libgcc_s.so.1; do
     if [ -f "$lib" ]; then
         cp "$lib" "${ROOTFS_DIR}/lib/x86_64-linux-gnu/"
     fi
@@ -249,8 +249,12 @@ if [ "$MODE" = "installer" ] && [ -x /usr/bin/aweui-installer ]; then
     echo "Starting AWEOS Graphical Installer..."
     /usr/bin/aweui-installer --auto || {
         echo "WARNING: AWEOS Installer failed! Falling back to terminal..."
-        exec /bin/busybox cttyhack /bin/sh
     }
+    if [ -x /usr/bin/aweos-ayui ] && [ -e /dev/fb0 ]; then
+        echo "Starting AYUI Desktop Session from Installer ISO..."
+        /usr/bin/aweos-ayui || true
+    fi
+    exec /bin/busybox cttyhack /bin/sh
 elif [ "$MODE" = "aweui" ]; then
     if [ -x /usr/bin/aweui-firstboot-setup ] && [ -f /etc/aweos/first_boot ] && grep -q "fresh_install=true" /etc/aweos/first_boot 2>/dev/null; then
         echo "Launching First-Boot Setup Wizard..."

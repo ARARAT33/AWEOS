@@ -155,7 +155,7 @@ mod tests {
         let state = InstallerState::default();
         let i18n = I18n::new(state.language);
         let rendered = ui::render_screen(&state, &i18n);
-        assert!(rendered.contains("AWEOS INSTALLER UI"));
+        assert!(rendered.contains("AWEOS GRAPHICAL INSTALLER UI"));
         assert!(rendered.contains("WELCOME TO AWEOS"));
     }
 
