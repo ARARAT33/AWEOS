@@ -24,7 +24,7 @@ mkdir -p "${INITRAMFS_DIR}"/lib64 "${INITRAMFS_DIR}"/lib/x86_64-linux-gnu
 if [ -f /lib64/ld-linux-x86-64.so.2 ]; then
     cp /lib64/ld-linux-x86-64.so.2 "${INITRAMFS_DIR}/lib64/"
 fi
-for lib in /lib/x86_64-linux-gnu/libc.so.6 /lib/x86_64-linux-gnu/libresolv.so.2 /lib/x86_64-linux-gnu/libm.so.6 /lib/x86_64-linux-gnu/libutil.so.1; do
+for lib in /lib/x86_64-linux-gnu/libc.so.6 /lib/x86_64-linux-gnu/libresolv.so.2 /lib/x86_64-linux-gnu/libm.so.6 /lib/x86_64-linux-gnu/libutil.so.1 /lib/x86_64-linux-gnu/libgcc_s.so.1 /usr/lib/x86_64-linux-gnu/libgcc_s.so.1; do
     if [ -f "$lib" ]; then
         cp "$lib" "${INITRAMFS_DIR}/lib/x86_64-linux-gnu/"
     fi

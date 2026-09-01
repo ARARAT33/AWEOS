@@ -42,7 +42,7 @@ pub fn discover_disks() -> Vec<DiskInfo> {
         for entry in entries.flatten() {
             let dev_name = entry.file_name().to_string_lossy().to_string();
 
-            if dev_name.starts_with("loop") || dev_name.starts_with("ram") || dev_name.starts_with("zram") {
+            if dev_name.starts_with("loop") || dev_name.starts_with("ram") || dev_name.starts_with("zram") || dev_name.starts_with("sr") || dev_name.starts_with("fd") {
                 continue;
             }
 
