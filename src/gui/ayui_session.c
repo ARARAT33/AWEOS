@@ -57,10 +57,13 @@ void ayui_session_register_apps(ayui_session_t *s) {
         {5, "Network Manager", "1.0", "Network Interface Info", "network", "aweos-net", "System", NULL},
         {6, "Storage Info", "1.0", "Disks and Filesystems", "storage", "aweos-storage", "System", NULL},
         {7, "Package Manager", "1.0", "AOSIN Package Tools", "package", "aosin-gui", "System", NULL},
-        {8, "AWEOS Installer", "1.0", "Graphical OS Installer", "installer", "aweos-installer-gui", "System", NULL},
-        {9, "AWEOS Updater", "1.0", "Safe OS System Updater", "updater", "aweos-update-gui", "System", NULL},
-        {10, "Diagnostics", "1.0", "Environment Verification", "diagnostics", "aweos-diag", "System", NULL},
-        {11, "About AWEOS", "1.0", "About AWEOS Platform", "about", "aweos-about", "System", NULL}
+        {8, "Control Center", "1.0", "Quick Toggles & Settings", "control-center", "aweos-cc", "System", NULL},
+        {9, "System Monitor", "1.0", "Task & Resource Manager", "monitor", "aweos-monitor", "System", NULL},
+        {10, "Text Editor", "1.0", "AYUI Native Text Editor", "editor", "aweos-editor", "System", NULL},
+        {11, "Calculator", "1.0", "AYUI Calculator Utility", "calculator", "aweos-calc", "System", NULL},
+        {12, "Screenshot", "1.0", "Screen Capture Tool", "screenshot", "aweos-screenshot", "System", NULL},
+        {13, "Diagnostics", "1.0", "Environment Verification", "diagnostics", "aweos-diag", "System", NULL},
+        {14, "About AWEOS", "1.0", "About AWEOS Platform", "about", "aweos-about", "System", NULL}
     };
 
     int num = sizeof(system_apps) / sizeof(system_apps[0]);
@@ -133,19 +136,31 @@ void ayui_session_launch_app(ayui_session_t *s, int app_id) {
             if (win) win->render_cb = render_app_package_manager;
             break;
         case 8:
-            win = ayui_wm_create_window(s, 180, 120, 500, 240, "AWEOS Graphical Installer");
-            if (win) win->render_cb = render_app_installer;
+            win = ayui_wm_create_window(s, 170, 115, 480, 220, "Control Center");
+            if (win) win->render_cb = render_app_control_center;
             break;
         case 9:
-            win = ayui_wm_create_window(s, 200, 130, 500, 240, "AWEOS System Updater");
-            if (win) win->render_cb = render_app_updater;
+            win = ayui_wm_create_window(s, 180, 120, 500, 240, "System Monitor & Tasks");
+            if (win) win->render_cb = render_app_system_monitor;
             break;
         case 10:
-            win = ayui_wm_create_window(s, 210, 135, 480, 220, "System Diagnostics");
-            if (win) win->render_cb = render_app_diagnostics;
+            win = ayui_wm_create_window(s, 190, 125, 480, 220, "Text Editor");
+            if (win) win->render_cb = render_app_text_editor;
             break;
         case 11:
-            win = ayui_wm_create_window(s, 220, 140, 480, 220, "About AWEOS");
+            win = ayui_wm_create_window(s, 200, 130, 480, 240, "Calculator");
+            if (win) win->render_cb = render_app_calculator;
+            break;
+        case 12:
+            win = ayui_wm_create_window(s, 210, 135, 480, 220, "Screenshot Utility");
+            if (win) win->render_cb = render_app_screenshot;
+            break;
+        case 13:
+            win = ayui_wm_create_window(s, 220, 140, 480, 220, "System Diagnostics");
+            if (win) win->render_cb = render_app_diagnostics;
+            break;
+        case 14:
+            win = ayui_wm_create_window(s, 230, 145, 480, 220, "About AWEOS");
             if (win) win->render_cb = render_app_about;
             break;
     }
