@@ -15,5 +15,10 @@ void render_app_installer(aweos_fb_t *fb, void *win_ptr);
 void render_app_updater(aweos_fb_t *fb, void *win_ptr);
 void render_app_diagnostics(aweos_fb_t *fb, void *win_ptr);
 void render_app_about(aweos_fb_t *fb, void *win_ptr);
+void render_app_text_editor(aweos_fb_t *fb, void *win_ptr);
+void render_app_calculator(aweos_fb_t *fb, void *win_ptr);
+void render_app_control_center(aweos_fb_t *fb, void *win_ptr);
+void render_app_system_monitor(aweos_fb_t *fb, void *win_ptr);
+void render_app_screenshot(aweos_fb_t *fb, void *win_ptr);
 
 #endif /* AWEOS_APPS_H */

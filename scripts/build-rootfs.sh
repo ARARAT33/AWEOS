@@ -257,8 +257,12 @@ if [ "$MODE" = "installer" ] && [ -x /usr/bin/aweui-installer ]; then
     exec /bin/busybox cttyhack /bin/sh
 elif [ "$MODE" = "aweui" ]; then
     if [ -x /usr/bin/aweui-firstboot-setup ] && [ -f /etc/aweos/first_boot ] && grep -q "fresh_install=true" /etc/aweos/first_boot 2>/dev/null; then
-        echo "Launching First-Boot Setup Wizard..."
+        echo "Launching AYUI First-Boot Setup Wizard..."
         /usr/bin/aweui-firstboot-setup || true
+    fi
+    if [ -x /usr/bin/aweos-ayui ] && [ -e /dev/fb0 ]; then
+        echo "Starting AYUI Desktop Session on installed target..."
+        /usr/bin/aweos-ayui || true
     fi
     if [ -x /usr/bin/aweui ]; then
         echo "Starting AWEUI Wayland Desktop Session..."

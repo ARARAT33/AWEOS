@@ -162,3 +162,83 @@ void render_app_about(aweos_fb_t *fb, void *win_ptr) {
     draw_string(fb->back_buffer, fb->pitch_pixels, win->x + 20, client_y + 70, "Desktop Environment: AYUI Native C Stack", COLOR_TEXT, 0, 1);
     draw_string(fb->back_buffer, fb->pitch_pixels, win->x + 20, client_y + 95, "Zero External Desktop Environment Dependencies", COLOR_GREEN, 0, 1);
 }
+
+void render_app_text_editor(aweos_fb_t *fb, void *win_ptr) {
+    ayui_window_t *win = (ayui_window_t *)win_ptr;
+    int client_y = win->y + 24;
+
+    draw_string(fb->back_buffer, fb->pitch_pixels, win->x + 15, client_y + 12, "AYUI Native Text Editor", COLOR_YELLOW, 0, 1);
+    aweos_gfx_fill_rect(fb, win->x + 15, client_y + 32, win->width - 30, 1, COLOR_BORDER);
+
+    draw_string(fb->back_buffer, fb->pitch_pixels, win->x + 20, client_y + 45, "File: /etc/aweos/config", COLOR_WHITE, 0, 1);
+    draw_string(fb->back_buffer, fb->pitch_pixels, win->x + 20, client_y + 70, "1 | # AWEOS System Configuration", COLOR_TEXT, 0, 1);
+    draw_string(fb->back_buffer, fb->pitch_pixels, win->x + 20, client_y + 90, "2 | AUTOLOGIN=true", COLOR_TEXT, 0, 1);
+    draw_string(fb->back_buffer, fb->pitch_pixels, win->x + 20, client_y + 110, "3 | HOSTNAME=aweos-pc", COLOR_TEXT, 0, 1);
+    draw_string(fb->back_buffer, fb->pitch_pixels, win->x + 20, client_y + 130, "4 | DESKTOP=AYUI", COLOR_GREEN, 0, 1);
+}
+
+void render_app_calculator(aweos_fb_t *fb, void *win_ptr) {
+    ayui_window_t *win = (ayui_window_t *)win_ptr;
+    int client_y = win->y + 24;
+
+    draw_string(fb->back_buffer, fb->pitch_pixels, win->x + 15, client_y + 12, "AYUI Calculator", COLOR_YELLOW, 0, 1);
+    aweos_gfx_fill_rect(fb, win->x + 15, client_y + 32, win->width - 30, 1, COLOR_BORDER);
+
+    /* Display box */
+    aweos_gfx_fill_rect(fb, win->x + 20, client_y + 45, win->width - 40, 32, COLOR_TITLE);
+    aweos_gfx_draw_rect(fb, win->x + 20, client_y + 45, win->width - 40, 32, COLOR_BORDER);
+    draw_string(fb->back_buffer, fb->pitch_pixels, win->x + win->width - 120, client_y + 54, "1024 * 64 = 65536", COLOR_GREEN, 0, 1);
+
+    /* Keypad Grid */
+    const char *keys[] = {"7", "8", "9", "/", "4", "5", "6", "*", "1", "2", "3", "-", "C", "0", "=", "+"};
+    for (int i = 0; i < 16; i++) {
+        int r = i / 4;
+        int c = i % 4;
+        int kx = win->x + 20 + c * 75;
+        int ky = client_y + 90 + r * 30;
+        aweos_gfx_fill_rect(fb, kx, ky, 65, 24, COLOR_BORDER);
+        draw_string(fb->back_buffer, fb->pitch_pixels, kx + 26, ky + 5, keys[i], COLOR_WHITE, 0, 1);
+    }
+}
+
+void render_app_control_center(aweos_fb_t *fb, void *win_ptr) {
+    ayui_window_t *win = (ayui_window_t *)win_ptr;
+    int client_y = win->y + 24;
+
+    draw_string(fb->back_buffer, fb->pitch_pixels, win->x + 15, client_y + 12, "AYUI Control Center", COLOR_YELLOW, 0, 1);
+    aweos_gfx_fill_rect(fb, win->x + 15, client_y + 32, win->width - 30, 1, COLOR_BORDER);
+
+    draw_string(fb->back_buffer, fb->pitch_pixels, win->x + 20, client_y + 45, "Quick Toggles:", COLOR_WHITE, 0, 1);
+    draw_string(fb->back_buffer, fb->pitch_pixels, win->x + 20, client_y + 70, "[ON]  Wi-Fi / Ethernet", COLOR_GREEN, 0, 1);
+    draw_string(fb->back_buffer, fb->pitch_pixels, win->x + 20, client_y + 95, "[ON]  Audio Volume (100%)", COLOR_GREEN, 0, 1);
+    draw_string(fb->back_buffer, fb->pitch_pixels, win->x + 20, client_y + 120, "[OFF] Dark Mode Toggle", COLOR_TEXT, 0, 1);
+}
+
+void render_app_system_monitor(aweos_fb_t *fb, void *win_ptr) {
+    ayui_window_t *win = (ayui_window_t *)win_ptr;
+    int client_y = win->y + 24;
+
+    draw_string(fb->back_buffer, fb->pitch_pixels, win->x + 15, client_y + 12, "AYUI System & Process Monitor", COLOR_YELLOW, 0, 1);
+    aweos_gfx_fill_rect(fb, win->x + 15, client_y + 32, win->width - 30, 1, COLOR_BORDER);
+
+    draw_string(fb->back_buffer, fb->pitch_pixels, win->x + 20, client_y + 45, "CPU Usage: [||||        ] 28%", COLOR_GREEN, 0, 1);
+    draw_string(fb->back_buffer, fb->pitch_pixels, win->x + 20, client_y + 68, "RAM Usage: [||||||||    ] 128MB / 512MB", COLOR_GREEN, 0, 1);
+
+    draw_string(fb->back_buffer, fb->pitch_pixels, win->x + 20, client_y + 95, "PID   USER    CPU%   MEM%   COMMAND", COLOR_WHITE, 0, 1);
+    draw_string(fb->back_buffer, fb->pitch_pixels, win->x + 20, client_y + 115, "1     root    0.1    0.5    /sbin/init", COLOR_TEXT, 0, 1);
+    draw_string(fb->back_buffer, fb->pitch_pixels, win->x + 20, client_y + 135, "42    aweos   2.4    8.2    /usr/bin/aweos-ayui", COLOR_GREEN, 0, 1);
+}
+
+void render_app_screenshot(aweos_fb_t *fb, void *win_ptr) {
+    ayui_window_t *win = (ayui_window_t *)win_ptr;
+    int client_y = win->y + 24;
+
+    draw_string(fb->back_buffer, fb->pitch_pixels, win->x + 15, client_y + 12, "AYUI Screen Capture Utility", COLOR_YELLOW, 0, 1);
+    aweos_gfx_fill_rect(fb, win->x + 15, client_y + 32, win->width - 30, 1, COLOR_BORDER);
+
+    draw_string(fb->back_buffer, fb->pitch_pixels, win->x + 20, client_y + 45, "Capture Target: Full Screen (/dev/fb0)", COLOR_WHITE, 0, 1);
+    draw_string(fb->back_buffer, fb->pitch_pixels, win->x + 20, client_y + 70, "Output File: /tmp/ayui-screenshot.png", COLOR_GREEN, 0, 1);
+
+    aweos_gfx_fill_rect(fb, win->x + 20, client_y + 105, 160, 26, COLOR_ACCENT);
+    draw_string(fb->back_buffer, fb->pitch_pixels, win->x + 35, client_y + 111, "Take Screenshot", COLOR_WHITE, 0, 1);
+}

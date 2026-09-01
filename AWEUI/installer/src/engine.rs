@@ -29,15 +29,21 @@ where
     progress_cb(state, 30, "Mounting target root filesystem...");
     fs::create_dir_all(target_mount).map_err(|e| e.to_string())?;
 
-    // Determine target root partition path
     let root_part = if disk.device.ends_with(|c: char| c.is_numeric()) {
         if boot_mode == BootMode::Uefi { format!("{}p2", disk.device) } else { format!("{}p1", disk.device) }
     } else {
         if boot_mode == BootMode::Uefi { format!("{}2", disk.device) } else { format!("{}1", disk.device) }
     };
 
-    if Path::new(&root_part).exists() {
-        let _ = Command::new("mount").args(["-t", "ext4", &root_part, target_mount.to_str().unwrap()]).status();
+    let is_real_block_dev = Path::new(&root_part).exists();
+    if is_real_block_dev {
+        let mount_status = Command::new("mount")
+            .args(["-t", "ext4", &root_part, target_mount.to_str().unwrap()])
+            .status()
+            .map_err(|e| format!("Mount command failed: {}", e))?;
+        if !mount_status.success() {
+            return Err(format!("Failed to mount target partition {} at {}", root_part, target_mount.display()));
+        }
     }
 
     progress_cb(state, 45, "Installing AWEOS base system payload into target...");
@@ -68,11 +74,22 @@ where
     };
     generate_target_configs(target_mount, &config)?;
 
+    // Set fresh_install=true state file for first-boot setup wizard on target disk
+    let aweos_config_dir = target_mount.join("etc/aweos");
+    let _ = fs::create_dir_all(&aweos_config_dir);
+    let _ = fs::write(aweos_config_dir.join("first_boot"), "fresh_install=true\n");
+
     progress_cb(state, 80, "Configuring Limine v12.x bootloader for target disk...");
     install_limine_bootloader(target_mount, &disk, boot_mode)?;
 
     progress_cb(state, 95, "Verifying target installation integrity...");
     verify_target_system(target_mount)?;
+
+    progress_cb(state, 98, "Cleaning up and unmounting target filesystem...");
+    if is_real_block_dev {
+        let _ = Command::new("sync").status();
+        let _ = Command::new("umount").arg(target_mount.to_str().unwrap()).status();
+    }
 
     progress_cb(state, 100, "AWEOS Installation Complete!");
     Ok(())
