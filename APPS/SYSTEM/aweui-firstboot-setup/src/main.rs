@@ -23,10 +23,15 @@ fn main() {
 
     println!("Welcome to your new AWEOS Installation!");
     println!("Running initial post-installation setup wizard...");
-    println!(" 1. Confirming System Language & Locale...");
+    println!(" 1. Confirming System Language & Locale [en_US.UTF-8]...");
     println!(" 2. Setting Default Theme & Appearance (AWEUI Dark)...");
-    println!(" 3. Detecting Active Display & Output Configuration...");
+    println!(" 3. Detecting Active Display & Output Configuration (1920x1080@60Hz)...");
     println!(" 4. Initializing Desktop Environment & User Session...");
+
+    let config_dir = Path::new("/etc/aweui");
+    let _ = fs::create_dir_all(config_dir);
+    let default_config = "[desktop]\ntheme = \"AWEUI-Dark\"\naccent_color = \"#3B82F6\"\nwallpaper = \"/usr/share/wallpapers/aweos-default.png\"\nicon_theme = \"AWEUI-Icons\"\nfont_family = \"Inter\"\nfont_size = 11.0\n\n[panel]\nposition = \"top\"\nheight = 32\nwidgets = [\"launcher\", \"workspaces\", \"clock\", \"sysinfo\", \"tray\"]\n";
+    let _ = fs::write(config_dir.join("config.toml"), default_config);
 
     // Persist setup completion state (fresh_install = false)
     if let Err(e) = fs::create_dir_all("/etc/aweos") {

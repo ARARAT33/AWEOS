@@ -37,6 +37,10 @@ pub fn generate_target_configs(target_root: &Path, config: &SystemConfig) -> Res
     // Localtime / Timezone
     let _ = fs::write(etc.join("timezone"), format!("{}\n", config.timezone));
 
+    // Fstab
+    let fstab_content = "# AWEOS Filesystem Table\nLABEL=aweos-root / ext4 defaults,noatime 0 1\n";
+    let _ = fs::write(etc.join("fstab"), fstab_content);
+
     // Passwd / Group / Shadow
     let passwd_entry = format!(
         "root:x:0:0:root:/root:/bin/sh\n{}:x:1000:1000:{}:/home/{}:/bin/sh\n",

@@ -267,9 +267,16 @@ elif [ "$MODE" = "aweui" ]; then
     if [ -x /usr/bin/aweui ]; then
         echo "Starting AWEUI Wayland Desktop Session..."
         /usr/bin/aweui || {
-            echo "WARNING: AWEUI Wayland initialization failed! Falling back to terminal..."
-            exec /bin/busybox cttyhack /bin/sh
+            echo "WARNING: AWEUI Wayland compositor failed! Launching AYUI Desktop..."
+            if [ -x /usr/bin/aweos-ayui ] && [ -e /dev/fb0 ]; then
+                /usr/bin/aweos-ayui || exec /bin/busybox cttyhack /bin/sh
+            else
+                exec /bin/busybox cttyhack /bin/sh
+            fi
         }
+    elif [ -x /usr/bin/aweos-ayui ] && [ -e /dev/fb0 ]; then
+        echo "Starting AYUI Desktop Session..."
+        /usr/bin/aweos-ayui || exec /bin/busybox cttyhack /bin/sh
     fi
 elif [ "$MODE" = "gui" ] && [ -x /usr/bin/aweos-ayui ] && [ -e /dev/fb0 ]; then
     echo "Starting AYUI Desktop Session..."
