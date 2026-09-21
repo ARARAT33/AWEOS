@@ -8,11 +8,11 @@ KERNEL_BUILD_DIR := $(BUILD_DIR)/linux-x86_64
 ISO_PATH := $(BUILD_DIR)/AWEOS-x86_64.iso
 DISK_IMG_PATH := $(BUILD_DIR)/AWEOS-x86_64-disk.img
 
-.PHONY: all build verify-linux kernel rootfs initramfs iso disk-image image test test-bios test-uefi test-gui test-ayui test-aweui aweui ayui gui aosin installer updater wlin wlin-win32 clean verify-linux-readonly
+.PHONY: all build verify-linux kernel rootfs initramfs iso disk-image image test test-native test-bios test-uefi test-gui test-ayui test-aweui aweui ayui aosin installer updater wlin wlin-win32 verify-artifacts installer updater wlin clean verify-linux-readonly
 
 all: build
 
-build: verify-linux aweui ayui aosin installer updater wlin wlin-win32 iso disk-image
+build: verify-linux aweui ayui aosin installer updater wlin wlin-win32 iso disk-image verify-artifacts
 
 verify-linux-readonly:
 	@./scripts/verify-linux-readonly.sh
@@ -21,24 +21,19 @@ verify-linux: verify-linux-readonly
 
 aweui:
 	@mkdir -p $(BUILD_DIR)
-	@cargo build --workspace --release --exclude aweui
-	@if [ -f target/release/aweui ]; then \
+	@cargo build --workspace --release
+	@set -eu; for binary in \
+		aweui-installer aweui-firstboot-setup aweui-settings aweui-control-center \
+		aweui-file-manager aweui-terminal aweui-system-monitor aweui-diagnostics \
+		aweui-text-editor aweui-calculator; do \
+		test -x target/release/$$binary || { echo "ERROR: missing Rust binary target/release/$$binary" >&2; exit 1; }; \
+		cp target/release/$$binary $(BUILD_DIR)/$$binary; \
+	done
+	@if [ -x target/release/aweui ]; then \
 		cp target/release/aweui $(BUILD_DIR)/aweui; \
-	elif [ -f $(BUILD_DIR)/aweos-ayui ]; then \
-		cp $(BUILD_DIR)/aweos-ayui $(BUILD_DIR)/aweui; \
 	else \
 		cp target/release/aweui-installer $(BUILD_DIR)/aweui; \
 	fi
-	@cp target/release/aweui-installer $(BUILD_DIR)/aweui-installer
-	@cp target/release/aweui-firstboot-setup $(BUILD_DIR)/aweui-firstboot-setup
-	@cp target/release/aweui-settings $(BUILD_DIR)/aweui-settings
-	@cp target/release/aweui-control-center $(BUILD_DIR)/aweui-control-center
-	@cp target/release/aweui-file-manager $(BUILD_DIR)/aweui-file-manager
-	@cp target/release/aweui-terminal $(BUILD_DIR)/aweui-terminal
-	@cp target/release/aweui-system-monitor $(BUILD_DIR)/aweui-system-monitor
-	@cp target/release/aweui-diagnostics $(BUILD_DIR)/aweui-diagnostics
-	@cp target/release/aweui-text-editor $(BUILD_DIR)/aweui-text-editor
-	@cp target/release/aweui-calculator $(BUILD_DIR)/aweui-calculator
 
 ayui:
 	@mkdir -p $(BUILD_DIR)
@@ -68,6 +63,24 @@ wlin-win32:
 		echo "Warning: x86_64-w64-mingw32-gcc not found, skipping wlin.exe build"; \
 	fi
 
+test-native:
+	@mkdir -p $(BUILD_DIR)
+	@gcc -Isrc/core -Wall -Wextra -O2 src/core/*.c src/core/tests/test_core.c -o $(BUILD_DIR)/test_core
+	@$(BUILD_DIR)/test_core
+	@gcc -Isrc/aosin -Isrc/core -Wall -Wextra -O2 src/core/*.c src/aosin/aosin_core.c src/aosin/tests/test_aosin.c -o $(BUILD_DIR)/test_aosin
+	@$(BUILD_DIR)/test_aosin
+
+test-aweui:
+	@cargo test --workspace
+
+verify-artifacts:
+	@set -eu; \
+	for artifact in \
+		$(ISO_PATH) $(DISK_IMG_PATH) $(BUILD_DIR)/aweos-ayui $(BUILD_DIR)/aweui \
+		$(BUILD_DIR)/aosin $(BUILD_DIR)/aweos-installer $(BUILD_DIR)/aweos-update $(BUILD_DIR)/wlin; do \
+		test -s "$$artifact" || { echo "ERROR: missing or empty artifact $$artifact" >&2; exit 1; }; \
+	done
+
 kernel: verify-linux
 	@./scripts/config-kernel.sh $(KERNEL_SRC) $(KERNEL_BUILD_DIR)
 	@make -C $(KERNEL_SRC) O=$(KERNEL_BUILD_DIR) -j"$$(nproc)" bzImage
@@ -88,11 +101,8 @@ disk-image: rootfs kernel initramfs
 
 image: iso disk-image
 
-test: iso test-aweui
+test: test-native test-aweui iso
 	@./scripts/run-qemu-tests.sh $(BUILD_DIR)
-
-test-aweui:
-	@cargo test --workspace --exclude aweui
 
 test-bios: iso
 	@./scripts/run-qemu-tests.sh $(BUILD_DIR) bios
