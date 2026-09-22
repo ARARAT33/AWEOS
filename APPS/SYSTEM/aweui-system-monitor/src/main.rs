@@ -6,15 +6,19 @@ fn main() {
     println!("        AWEUI System Monitor            ");
     println!("========================================");
 
-    if let Ok(meminfo) = fs::read_to_string("/proc/meminfo") {
-        for line in meminfo.lines().take(4) {
-            println!(" {}", line);
+    match fs::read_to_string("/proc/meminfo") {
+        Ok(meminfo) => {
+            for line in meminfo.lines().take(4) {
+                println!(" {}", line);
+            }
         }
-    } else {
-        println!(" Memory Usage: 256MB / 4096MB");
+        Err(e) => {
+            println!(" Memory metrics unavailable: {}", e);
+        }
     }
 
-    if let Ok(loadavg) = fs::read_to_string("/proc/loadavg") {
-        println!(" CPU Load Average: {}", loadavg.trim());
+    match fs::read_to_string("/proc/loadavg") {
+        Ok(loadavg) => println!(" CPU Load Average: {}", loadavg.trim()),
+        Err(e) => println!(" CPU load unavailable: {}", e),
     }
 }

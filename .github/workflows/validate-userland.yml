@@ -1,45 +1,57 @@
 name: Validate AWEOS Userland
 
 on:
+  workflow_dispatch:
   push:
-    branches: [master]
+    paths:
+      - '.github/workflows/validate-userland.yml'
+      - 'AWEUI/**'
+      - 'APPS/**'
+      - 'scripts/**'
+      - 'Cargo.toml'
+      - 'Makefile'
   pull_request:
-    branches: [master]
+    paths:
+      - '.github/workflows/validate-userland.yml'
+      - 'AWEUI/**'
+      - 'APPS/**'
+      - 'scripts/**'
+      - 'Cargo.toml'
+      - 'Makefile'
 
 permissions:
   contents: read
 
 jobs:
-  userland-validation:
+  userland:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - name: Checkout repository without changing /linux
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+      - name: Checkout
+        uses: actions/checkout@v5
 
-      - name: Verify /linux is present and protected
-        shell: bash
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Validate repository boundary
         run: |
           set -euo pipefail
-          test -d linux
-          test -x scripts/verify-linux-readonly.sh
           ./scripts/verify-linux-readonly.sh
 
-      - name: Validate Rust workspace metadata
-        run: cargo metadata --no-deps --format-version 1
+      - name: Run Cargo metadata validation
+        run: cargo metadata --no-deps --format-version 1 >/dev/null
 
-      - name: Compile and run native userland tests
-        run: make test-native
+      - name: Run Rust workspace tests
+        run: cargo test --workspace
 
-      - name: Compile userland binaries
+      - name: Build all Rust userland binaries
+        run: cargo build --workspace --release
+
+      - name: Verify expected binaries
         run: |
-          make ayui aosin installer updater wlin
-
-      - name: Verify generated userland artifacts
-        run: |
-          test -s build/aweos-ayui
-          test -s build/aosin
-          test -s build/aweos-installer
-          test -s build/aweos-update
-          test -s build/wlin
+          set -euo pipefail
+          for binary in             aweui aweui-installer aweui-settings aweui-control-center             aweui-file-manager aweui-terminal aweui-system-monitor             aweui-diagnostics aweui-text-editor aweui-calculator             aweui-firstboot-setup aweui-user-app-template; do
+            test -x "target/release/${binary}"
+          done

@@ -12,24 +12,49 @@ use std::env;
 use std::io::{self, BufRead};
 
 fn main() {
-    println!("Initializing AWEOS Native Wayland Graphical Installer...");
+    println!("Initializing AWEOS Native Wayland Installer...");
 
     let mut state = InstallerState::default();
     let mut i18n = I18n::new(state.language);
 
     let disks = disk::discover_disks();
-    if !disks.is_empty() {
-        state.selected_disk = Some(disks[0].clone());
+    if let Some(disk) = disks.first() {
+        state.selected_disk = Some(disk.clone());
+        println!(
+            "Detected target disk: {} ({:.1} GiB, {} partitions)",
+            disk.device,
+            disk.size_gb,
+            disk.partitions.len()
+        );
+    } else {
+        println!("No block storage devices were detected. Installation cannot proceed until a target disk is available.");
     }
 
     let args: Vec<String> = env::args().collect();
-    let is_auto_test = args.contains(&"--auto".to_string()) || args.contains(&"--test".to_string()) || env::var("AWEOS_AUTO_INSTALL").is_ok();
+    let is_test = args.iter().any(|arg| arg == "--test");
+    let is_auto = args.iter().any(|arg| arg == "--auto");
 
-    if is_auto_test {
-        println!("[INSTALLER AUTO] Automated non-interactive installation mode activated.");
+    if is_test {
+        println!("[INSTALLER TEST] Running navigation/configuration smoke test; no disks will be modified.");
+        while state.current_step != InstallerStep::Summary {
+            state.next_step();
+        }
+        println!("{}", ui::render_screen(&state, &i18n));
+        println!("[INSTALLER TEST] PASS");
+        return;
+    }
+
+    if is_auto && env::var("AWEOS_ALLOW_DESTRUCTIVE_INSTALL").ok().as_deref() != Some("1") {
+        eprintln!("[INSTALLER AUTO] Refusing destructive unattended installation.");
+        eprintln!("[INSTALLER AUTO] Set AWEOS_ALLOW_DESTRUCTIVE_INSTALL=1 only in a controlled environment.");
+        std::process::exit(2);
+    }
+
+    if is_auto {
+        println!("[INSTALLER AUTO] Destructive non-interactive installation explicitly authorized.");
         loop {
             println!("{}", ui::render_screen(&state, &i18n));
-            if state.current_step == InstallerStep::Complete || matches!(state.current_step, InstallerStep::Error(_)) {
+            if matches!(state.current_step, InstallerStep::Complete | InstallerStep::Error(_)) {
                 break;
             }
             if state.current_step == InstallerStep::Installing {
@@ -47,7 +72,13 @@ fn main() {
             }
             state.next_step();
         }
-        println!("[INSTALLER AUTO] Automated installation completed successfully.");
+
+        if matches!(state.current_step, InstallerStep::Error(_)) {
+            eprintln!("[INSTALLER AUTO] Installation failed: {:?}", state.current_step);
+            std::process::exit(1);
+        }
+
+        println!("[INSTALLER AUTO] Installation completed successfully.");
         return;
     }
 
@@ -70,26 +101,21 @@ fn main() {
             });
 
             match res {
-                Ok(_) => {
-                    state.current_step = InstallerStep::Complete;
-                }
-                Err(e) => {
-                    state.current_step = InstallerStep::Error(e);
-                }
+                Ok(_) => state.current_step = InstallerStep::Complete,
+                Err(e) => state.current_step = InstallerStep::Error(e),
             }
             continue;
         }
 
         print!("Select Option ([C]ontinue, [B]ack, [1-3] Lang, [I]nstall, [Q]uit): ");
+        let _ = std::io::Write::flush(&mut io::stdout());
+
         let mut line = String::new();
         if handle.read_line(&mut line).unwrap_or(0) == 0 {
-            state.next_step();
-            i18n.set_language(state.language);
-            continue;
+            break;
         }
 
-        let input = line.trim().to_uppercase();
-        match input.as_str() {
+        match line.trim().to_uppercase().as_str() {
             "Q" => {
                 println!("Exiting AWEOS Installer.");
                 break;
@@ -106,15 +132,9 @@ fn main() {
                 state.language = i18n::Language::Russian;
                 i18n.set_language(state.language);
             }
-            "B" => {
-                state.prev_step();
-            }
-            "I" if state.current_step == InstallerStep::Summary => {
-                state.current_step = InstallerStep::Installing;
-            }
-            _ => {
-                state.next_step();
-            }
+            "B" => state.prev_step(),
+            "I" if state.current_step == InstallerStep::Summary => state.current_step = InstallerStep::Installing,
+            _ => state.next_step(),
         }
     }
 }
@@ -127,13 +147,10 @@ mod tests {
     fn test_installer_workflow_navigation() {
         let mut state = InstallerState::default();
         assert_eq!(state.current_step, InstallerStep::Welcome);
-
         state.next_step();
         assert_eq!(state.current_step, InstallerStep::Language);
-
         state.next_step();
         assert_eq!(state.current_step, InstallerStep::Keyboard);
-
         state.prev_step();
         assert_eq!(state.current_step, InstallerStep::Language);
     }
@@ -142,10 +159,8 @@ mod tests {
     fn test_i18n_translations() {
         let mut i18n = I18n::new(i18n::Language::English);
         assert_eq!(i18n.t("welcome_title"), "Welcome to AWEOS");
-
         i18n.set_language(i18n::Language::Armenian);
         assert_eq!(i18n.t("welcome_title"), "Բարի գալուստ AWEOS");
-
         i18n.set_language(i18n::Language::Russian);
         assert_eq!(i18n.t("welcome_title"), "Добро пожаловать в AWEOS");
     }
@@ -171,10 +186,9 @@ mod tests {
             is_removable: false,
             partitions: vec![],
         });
-
         let target = std::path::Path::new("build/test-target");
         let res = engine::execute_installation(&mut state, target, |_st, _pct, _op| {});
         assert!(res.is_err());
-        assert!(res.unwrap_err().contains("refusing simulated installation"));
+        assert!(res.unwrap_err().contains("not a real block device"));
     }
 }
