@@ -164,9 +164,12 @@ mod tests {
         let mut state = InstallerState::default();
         state.selected_disk = Some(disk::DiskInfo {
             device: "/dev/aweos-test-nonexistent".to_string(),
+            name: "aweos-test".to_string(),
             model: "test".to_string(),
             size_bytes: 0,
-            partition_table: "test".to_string(),
+            size_gb: 0.0,
+            is_removable: false,
+            partitions: vec![],
         });
 
         let target = std::path::Path::new("build/test-target");
