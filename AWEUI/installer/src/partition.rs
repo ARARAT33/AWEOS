@@ -62,7 +62,7 @@ pub fn partition_and_format_disk(target_dev: &str, mode: BootMode) -> Result<(),
             }
 
             let p1 = if target_dev.ends_with(|c: char| c.is_numeric()) { format!("{}p1", target_dev) } else { format!("{}1", target_dev) };
-            let _ = Command::new("mke2fs").args(["-t", "ext4", "-F", &p1]).status();
+            let ext4 = Command::new("mke2fs").args(["-t", "ext4", "-F", &p1]).status()\n                .map_err(|e| format!("Failed to start mke2fs: {}", e))?;\n            if !ext4.success() { return Err(format!("mke2fs failed for {}", p1)); }
         }
     }
 
