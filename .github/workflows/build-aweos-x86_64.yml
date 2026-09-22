@@ -52,7 +52,7 @@ jobs:
           git clone --depth 1 --branch v12.6.1 https://github.com/Limine-Bootloader/Limine.git /tmp/limine
           cd /tmp/limine
           ./bootstrap
-          ./configure --enable-bios --enable-uefi-x86-64
+          LD_FOR_TARGET=ld ./configure --enable-bios --enable-uefi-x86-64
           make -j"$(nproc)"
           test -x bin/limine
           sudo install -m 0755 bin/limine /usr/local/bin/limine
