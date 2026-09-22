@@ -6,16 +6,19 @@ SHELL := /bin/bash
 BUILD_DIR ?= $(PWD)/build
 KERNEL_SRC := $(PWD)/linux
 KERNEL_BUILD_DIR := $(BUILD_DIR)/linux-x86_64
-ISO_ROOT := $(BUILD_DIR)/iso-root
 ISO_PATH := $(BUILD_DIR)/AWEOS-x86_64.iso
+ROOTFS_IMG := $(BUILD_DIR)/rootfs.img
+ROOTFS_DIR := $(BUILD_DIR)/rootfs
+INITRAMFS := $(BUILD_DIR)/aweos-initramfs.cpio.gz
+LIMINE_TOOL ?= $$(command -v limine || true)
 
 RUST_BINS := aweui aweui-installer aweui-settings aweui-control-center aweui-file-manager              aweui-terminal aweui-system-monitor aweui-diagnostics aweui-text-editor              aweui-calculator aweui-firstboot-setup aweui-user-app-template
 
-.PHONY: all build verify-linux verify-linux-readonly rust-build userland kernel rootfs initramfs iso         test test-rust verify-artifacts clean
+.PHONY: all build verify-linux verify-linux-readonly rust-build userland kernel rootfs         initramfs finalize-rootfs iso disk-image image test test-rust test-qemu         verify-artifacts clean
 
 all: build
 
-build: verify-linux rust-build kernel rootfs initramfs iso verify-artifacts
+build: verify-linux rust-build kernel rootfs initramfs finalize-rootfs iso disk-image verify-artifacts
 
 verify-linux verify-linux-readonly:
 	@./scripts/verify-linux-readonly.sh
@@ -29,7 +32,7 @@ userland: rust-build
 
 kernel: verify-linux
 	@mkdir -p $(KERNEL_BUILD_DIR)
-	@$(MAKE) -C $(KERNEL_SRC) O=$(KERNEL_BUILD_DIR) defconfig
+	@./scripts/config-kernel.sh $(KERNEL_SRC) $(KERNEL_BUILD_DIR)
 	@$(MAKE) -C $(KERNEL_SRC) O=$(KERNEL_BUILD_DIR) -j"$$(nproc)" bzImage
 	@test -s $(KERNEL_BUILD_DIR)/arch/x86/boot/bzImage
 
@@ -39,18 +42,28 @@ rootfs: rust-build
 initramfs: rootfs
 	@./scripts/build-initramfs.sh $(BUILD_DIR)
 
-iso: kernel initramfs
+finalize-rootfs: initramfs
+	@set -euo pipefail; 	test -d "$(ROOTFS_DIR)"; 	mkdir -p "$(ROOTFS_DIR)/boot"; 	cp "$(KERNEL_BUILD_DIR)/arch/x86/boot/bzImage" "$(ROOTFS_DIR)/boot/bzImage"; 	cp "$(INITRAMFS)" "$(ROOTFS_DIR)/boot/aweos-initramfs.cpio.gz"; 	cp Bootloader/x86_64/limine-bios.sys "$(ROOTFS_DIR)/boot/limine-bios.sys"; 	cp Bootloader/x86_64/BOOTX64.EFI "$(ROOTFS_DIR)/boot/BOOTX64.EFI"; 	test -n "$(LIMINE_TOOL)" || { echo "ERROR: limine host utility is required; set LIMINE_TOOL=/path/to/limine or install it in PATH." >&2; exit 1; }; 	cp "$$(readlink -f "$(LIMINE_TOOL)")" "$(ROOTFS_DIR)/usr/bin/limine"; 	chmod 0755 "$(ROOTFS_DIR)/usr/bin/limine"; 	rm -f "$(ROOTFS_IMG)"; 	dd if=/dev/zero of="$(ROOTFS_IMG)" bs=1M count=128 status=none; 	mke2fs -t ext4 -F -d "$(ROOTFS_DIR)" "$(ROOTFS_IMG)" >/dev/null; 	test -s "$(ROOTFS_IMG)"
+
+iso: kernel finalize-rootfs
 	@./scripts/build-iso.sh $(BUILD_DIR)
 	@$(MAKE) verify-linux-readonly
 
+disk-image: kernel finalize-rootfs
+	@./scripts/build-disk-image.sh $(BUILD_DIR)
+
+image: iso disk-image
+
 test: verify-linux test-rust
-	@$(MAKE) verify-linux-readonly
 
 test-rust:
 	@cargo test --workspace
 
+test-qemu: iso
+	@./scripts/run-qemu-tests.sh $(BUILD_DIR)
+
 verify-artifacts:
-	@set -euo pipefail; 	for artifact in $(BUILD_DIR)/aweui $(BUILD_DIR)/aweui-installer $(BUILD_DIR)/aweui-settings 		$(BUILD_DIR)/aweui-control-center $(BUILD_DIR)/aweui-file-manager $(BUILD_DIR)/aweui-terminal 		$(BUILD_DIR)/aweui-system-monitor $(BUILD_DIR)/aweui-diagnostics $(BUILD_DIR)/aweui-text-editor 		$(BUILD_DIR)/aweui-calculator $(BUILD_DIR)/aweui-firstboot-setup $(BUILD_DIR)/aweui-user-app-template 		$(KERNEL_BUILD_DIR)/arch/x86/boot/bzImage $(BUILD_DIR)/aweos-initramfs.cpio.gz $(ISO_PATH); do 		test -s "$$artifact" || { echo "ERROR: missing or empty artifact $$artifact" >&2; exit 1; }; 	done
+	@set -euo pipefail; 	for artifact in 		$(BUILD_DIR)/aweui $(BUILD_DIR)/aweui-installer $(BUILD_DIR)/aweui-settings 		$(BUILD_DIR)/aweui-control-center $(BUILD_DIR)/aweui-file-manager $(BUILD_DIR)/aweui-terminal 		$(BUILD_DIR)/aweui-system-monitor $(BUILD_DIR)/aweui-diagnostics $(BUILD_DIR)/aweui-text-editor 		$(BUILD_DIR)/aweui-calculator $(BUILD_DIR)/aweui-firstboot-setup $(BUILD_DIR)/aweui-user-app-template 		$(KERNEL_BUILD_DIR)/arch/x86/boot/bzImage $(INITRAMFS) $(ROOTFS_IMG) 		$(ISO_PATH) $(BUILD_DIR)/AWEOS-x86_64-disk.img; do 		test -s "$$artifact" || { echo "ERROR: missing or empty artifact $$artifact" >&2; exit 1; }; 	done
 
 clean:
 	@rm -rf $(BUILD_DIR)
