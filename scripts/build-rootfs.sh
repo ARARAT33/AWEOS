@@ -16,8 +16,6 @@ test -n "${BUSYBOX_BIN}" || { echo "ERROR: busybox binary not found" >&2; exit 1
 cp -L "${BUSYBOX_BIN}" "${ROOTFS_DIR}/bin/busybox"
 chmod 0755 "${ROOTFS_DIR}/bin/busybox"
 
-# Populate the rootfs with actual workspace products. Missing binaries are fatal:
-# an image with claimed components that are not really present is not a valid OS build.
 RUST_BINS="
 aweui
 aweui-installer
@@ -35,9 +33,7 @@ aweui-user-app-template
 
 copy_runtime_deps() {
     local binary="$1"
-    if ! command -v ldd >/dev/null 2>&1; then
-        return 0
-    fi
+    command -v ldd >/dev/null 2>&1 || return 0
     ldd "${binary}" 2>/dev/null |
         awk '/=> \/|^\/lib/ {print ($3 ~ /^\// ? $3 : $1)}' |
         while IFS= read -r lib; do
@@ -53,7 +49,6 @@ for binary in ${RUST_BINS}; do
     copy_runtime_deps "${source}"
 done
 
-# Make BusyBox applets available to the base shell/runtime.
 (
     cd "${ROOTFS_DIR}"
     for applet in $(./bin/busybox --list); do
@@ -68,15 +63,12 @@ cat > "${ROOTFS_DIR}/etc/passwd" <<'EOF'
 root:x:0:0:root:/root:/bin/sh
 aweos:x:1000:1000:AWEOS User:/home/aweos:/bin/sh
 EOF
-
 cat > "${ROOTFS_DIR}/etc/group" <<'EOF'
 root:x:0:
 aweos:x:1000:
 tty:x:5:
 wheel:x:10:
 EOF
-
-# Lock live-image passwords instead of shipping a known/default password.
 cat > "${ROOTFS_DIR}/etc/shadow" <<'EOF'
 root:*:19700:0:99999:7:::
 aweos:*:19700:0:99999:7:::
@@ -87,16 +79,13 @@ cat > "${ROOTFS_DIR}/etc/shells" <<'EOF'
 /bin/sh
 /bin/ash
 EOF
-
 cat > "${ROOTFS_DIR}/etc/hostname" <<'EOF'
 aweos
 EOF
-
 cat > "${ROOTFS_DIR}/etc/hosts" <<'EOF'
 127.0.0.1 localhost aweos
 ::1 localhost aweos
 EOF
-
 cat > "${ROOTFS_DIR}/etc/os-release" <<'EOF'
 NAME="AWEOS"
 ID=aweos
@@ -107,11 +96,9 @@ BUILD_ID="x86_64"
 HOME_URL="https://github.com/ARARAT33/AWEOS"
 ARCH=x86_64
 EOF
-
 cat > "${ROOTFS_DIR}/etc/aweos-release" <<'EOF'
 AWEOS 0.1.0 (x86_64)
 EOF
-
 cat > "${ROOTFS_DIR}/etc/aweos/config" <<'EOF'
 AUTOLOGIN=true
 DEFAULT_USER=root
@@ -160,11 +147,9 @@ else
     export PS1='aweos@aweos:\w$ '
 fi
 EOF
-
 cp "${ROOTFS_DIR}/etc/profile" "${ROOTFS_DIR}/root/.profile"
 cp "${ROOTFS_DIR}/etc/profile" "${ROOTFS_DIR}/home/aweos/.profile"
 
-# Minimal .desktop files make the real binaries discoverable by the AWEUI launcher.
 make_desktop() {
     local file="$1" name="$2" exec="$3" comment="$4" categories="$5"
     cat > "${ROOTFS_DIR}/usr/share/applications/${file}" <<EOF
@@ -177,7 +162,6 @@ Categories=${categories}
 Terminal=false
 EOF
 }
-
 make_desktop aweui-terminal.desktop "AWE Terminal" aweui-terminal "System terminal" "System;TerminalEmulator;"
 make_desktop aweui-files.desktop "AWE File Manager" aweui-file-manager "Browse files" "System;FileManager;"
 make_desktop aweui-settings.desktop "AWE Settings" aweui-settings "System settings" "Settings;System;"
@@ -186,14 +170,6 @@ make_desktop aweui-calculator.desktop "AWE Calculator" "aweui-calculator -i" "Sc
 make_desktop aweui-monitor.desktop "AWE System Monitor" aweui-system-monitor "System resource monitor" "System;Monitor;"
 make_desktop aweui-editor.desktop "AWE Text Viewer" aweui-text-editor "View a text file" "Utility;TextEditor;"
 
-cat > "${ROOTFS_DIR}/var/lib/awepkg/base-system.meta" <<'EOF'
-PKG_NAME=base-system
-PKG_VER=0.1.0
-PKG_DESC=AWEOS Base Userspace
-ARCH=x86_64
-EOF
-
-# Useful command-line helpers are part of the source tree and copied verbatim.
 for helper in aweos-info.sh aweos-diagnostics.sh awepkg.sh; do
     source="scripts/${helper}"
     test -f "${source}" || { echo "ERROR: missing helper ${source}" >&2; exit 1; }
@@ -202,9 +178,14 @@ done
 
 ln -sf /usr/bin/aweos-info "${ROOTFS_DIR}/usr/bin/aweos"
 ln -sf /usr/bin/aweos-info "${ROOTFS_DIR}/usr/bin/aweos-status"
-ln -sf /usr/bin/aweos-diagnostics "${ROOTFS_DIR}/usr/bin/aweos-diagnostics"
 
-# A real init which mounts the kernel virtual filesystems and starts the selected userland.
+cat > "${ROOTFS_DIR}/var/lib/awepkg/base-system.meta" <<'EOF'
+PKG_NAME=base-system
+PKG_VER=0.1.0
+PKG_DESC=AWEOS Base Userspace
+ARCH=x86_64
+EOF
+
 cat > "${ROOTFS_DIR}/sbin/init" <<'EOF'
 #!/bin/sh
 set -eu
@@ -228,11 +209,13 @@ elif grep -qw aweos.mode=headless /proc/cmdline 2>/dev/null; then
     MODE=headless
 fi
 
+echo "AWEOS BOOT SUCCESS: mode=${MODE}"
+
 case "${MODE}" in
     installer)
         exec /usr/bin/aweui-installer
         ;;
-    aweui)
+    aweui|gui)
         if [ -x /usr/bin/aweui-firstboot-setup ] && grep -q '^fresh_install=true' /etc/aweos/first_boot 2>/dev/null; then
             /usr/bin/aweui-firstboot-setup || true
         fi
@@ -241,14 +224,10 @@ case "${MODE}" in
     headless)
         exec /bin/busybox cttyhack /bin/sh
         ;;
-    gui)
-        exec /usr/bin/aweui
-        ;;
 esac
 EOF
 chmod 0755 "${ROOTFS_DIR}/sbin/init"
 
-# A fresh ISO is not an installed system; only the installer-created target gets fresh_install=true.
 cat > "${ROOTFS_DIR}/etc/aweos/first_boot" <<'EOF'
 fresh_install=false
 EOF
@@ -260,6 +239,5 @@ echo "Creating persistent ext4 rootfs image ${ROOTFS_IMG} (${IMG_SIZE_MB} MiB)..
 rm -f "${ROOTFS_IMG}"
 dd if=/dev/zero of="${ROOTFS_IMG}" bs=1M count="${IMG_SIZE_MB}" status=none
 mke2fs -t ext4 -F -d "${ROOTFS_DIR}" "${ROOTFS_IMG}" >/dev/null
-
 test -s "${ROOTFS_IMG}"
 echo "AWEOS rootfs built successfully."
