@@ -10,6 +10,8 @@ echo "Building AWEOS root filesystem in ${ROOTFS_DIR}..."
 
 rm -rf "${ROOTFS_DIR}"
 mkdir -p "${ROOTFS_DIR}"/{bin,sbin,usr/bin,usr/sbin,usr/lib,usr/share/applications,usr/share/backgrounds,etc,dev,proc,sys,run,tmp,var/log,var/cache,var/lib/awepkg,var/tmp,home/aweos,root,opt,mnt,media,srv,boot,etc/aweos,etc/aweui}
+mkdir -p "${ROOTFS_DIR}/run/user/0"
+chmod 0700 "${ROOTFS_DIR}/run/user/0"
 
 BUSYBOX_BIN="$(command -v busybox || true)"
 test -n "${BUSYBOX_BIN}" || { echo "ERROR: busybox binary not found" >&2; exit 1; }
@@ -175,7 +177,6 @@ for helper in aweos-info.sh aweos-diagnostics.sh awepkg.sh; do
     test -f "${source}" || { echo "ERROR: missing helper ${source}" >&2; exit 1; }
     install -D -m 0755 "${source}" "${ROOTFS_DIR}/usr/bin/${helper%.sh}"
 done
-
 ln -sf /usr/bin/aweos-info "${ROOTFS_DIR}/usr/bin/aweos"
 ln -sf /usr/bin/aweos-info "${ROOTFS_DIR}/usr/bin/aweos-status"
 
@@ -194,9 +195,14 @@ export PATH=/bin:/sbin:/usr/bin:/usr/sbin
 mount -t proc proc /proc 2>/dev/null || true
 mount -t sysfs sysfs /sys 2>/dev/null || true
 mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
-mkdir -p /dev/pts /run /tmp
+mkdir -p /dev/pts /run /run/user/0 /tmp
 mount -t devpts devpts /dev/pts 2>/dev/null || true
 mount -t tmpfs tmpfs /run 2>/dev/null || true
+mkdir -p /run/user/0
+chmod 0700 /run/user/0
+if [ -z "${XDG_RUNTIME_DIR:-}" ]; then
+    export XDG_RUNTIME_DIR=/run/user/0
+fi
 
 [ -f /etc/hostname ] && hostname -F /etc/hostname 2>/dev/null || true
 
