@@ -160,28 +160,18 @@ mod tests {
     }
 
     #[test]
-    fn test_installation_engine_execution() {
+    fn test_installer_rejects_missing_target_device() {
         let mut state = InstallerState::default();
-        let disks = disk::discover_disks();
-        state.selected_disk = Some(disks[0].clone());
-
-        let test_target = std::path::Path::new("build/test-target");
-        let res = engine::execute_installation(&mut state, test_target, |st, pct, op| {
-            st.progress_percent = pct;
-            st.current_operation = op.to_string();
+        state.selected_disk = Some(disk::DiskInfo {
+            device: "/dev/aweos-test-nonexistent".to_string(),
+            model: "test".to_string(),
+            size_bytes: 0,
+            partition_table: "test".to_string(),
         });
 
-        if let Err(ref e) = res {
-            println!("Engine Execution Error in test: {}", e);
-        }
-
-        assert!(res.is_ok());
-        assert!(test_target.join("etc/hostname").exists());
-        assert!(test_target.join("etc/passwd").exists());
-        assert!(test_target.join("etc/shadow").exists());
-        assert!(test_target.join("boot/limine.conf").exists());
-
-        // Cleanup
-        let _ = std::fs::remove_dir_all(test_target);
+        let target = std::path::Path::new("build/test-target");
+        let res = engine::execute_installation(&mut state, target, |_st, _pct, _op| {});
+        assert!(res.is_err());
+        assert!(res.unwrap_err().contains("refusing simulated installation"));
     }
 }
