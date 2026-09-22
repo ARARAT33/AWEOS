@@ -11,37 +11,35 @@ pub struct SystemConfig {
     pub timezone: String,
 }
 
-pub fn hash_password(password: &str) -> String {
-    // Generate secure SHA-512 shadow hash ($6$salt$hash)
-    let salt = "$6$aweossalt123$";
-    if let Ok(hashed) = pwhash::sha512_crypt::hash_with(salt, password) {
-        hashed
-    } else {
-        format!("$6$aweossalt123${}", password)
+pub fn hash_password(password: &str) -> Result<String, String> {
+    if password.is_empty() {
+        return Err("Password must not be empty.".to_string());
     }
+
+    pwhash::sha512_crypt::hash(password)
+        .map_err(|e| format!("Failed to hash password securely: {}", e))
 }
 
 pub fn generate_target_configs(target_root: &Path, config: &SystemConfig) -> Result<(), String> {
+    if config.username.is_empty() || config.hostname.is_empty() {
+        return Err("Username and hostname must not be empty.".to_string());
+    }
+
     let etc = target_root.join("etc");
     fs::create_dir_all(&etc).map_err(|e| e.to_string())?;
 
-    // Hostname
-    fs::write(etc.join("hostname"), format!("{}\n", config.hostname)).map_err(|e| e.to_string())?;
+    fs::write(etc.join("hostname"), format!("{}\n", config.hostname))
+        .map_err(|e| e.to_string())?;
+    fs::write(etc.join("locale.conf"), format!("LANG={}\n", config.locale))
+        .map_err(|e| e.to_string())?;
+    fs::write(etc.join("vconsole.conf"), format!("KEYMAP={}\n", config.keyboard_layout))
+        .map_err(|e| e.to_string())?;
+    fs::write(etc.join("timezone"), format!("{}\n", config.timezone))
+        .map_err(|e| e.to_string())?;
 
-    // Locale
-    fs::write(etc.join("locale.conf"), format!("LANG={}\n", config.locale)).map_err(|e| e.to_string())?;
-
-    // VConsole
-    fs::write(etc.join("vconsole.conf"), format!("KEYMAP={}\n", config.keyboard_layout)).map_err(|e| e.to_string())?;
-
-    // Localtime / Timezone
-    let _ = fs::write(etc.join("timezone"), format!("{}\n", config.timezone));
-
-    // Fstab
     let fstab_content = "# AWEOS Filesystem Table\nLABEL=aweos-root / ext4 defaults,noatime 0 1\n";
-    let _ = fs::write(etc.join("fstab"), fstab_content);
+    fs::write(etc.join("fstab"), fstab_content).map_err(|e| e.to_string())?;
 
-    // Passwd / Group / Shadow
     let passwd_entry = format!(
         "root:x:0:0:root:/root:/bin/sh\n{}:x:1000:1000:{}:/home/{}:/bin/sh\n",
         config.username, config.full_name, config.username
@@ -60,10 +58,10 @@ pub fn generate_target_configs(target_root: &Path, config: &SystemConfig) -> Res
     );
     fs::write(etc.join("shadow"), shadow_entry).map_err(|e| e.to_string())?;
 
-    // Persistent first boot setup marker
     let aweos_conf = etc.join("aweos");
-    let _ = fs::create_dir_all(&aweos_conf);
-    fs::write(aweos_conf.join("first_boot"), "fresh_install=true\n").map_err(|e| e.to_string())?;
+    fs::create_dir_all(&aweos_conf).map_err(|e| e.to_string())?;
+    fs::write(aweos_conf.join("first_boot"), "fresh_install=true\n")
+        .map_err(|e| e.to_string())?;
 
     Ok(())
 }
