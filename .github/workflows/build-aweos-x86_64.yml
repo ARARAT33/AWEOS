@@ -43,7 +43,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y             build-essential bc bison flex libssl-dev libelf-dev cpio gzip xz-utils             curl xorriso qemu-system-x86 ovmf busybox-static util-linux e2fsprogs             parted netcat-openbsd pkg-config git patch autoconf automake libtool nasm mtools
+          sudo apt-get install -y             build-essential bc bison flex libssl-dev libelf-dev cpio gzip xz-utils             curl xorriso qemu-system-x86 ovmf busybox-static util-linux e2fsprogs             parted netcat-openbsd pkg-config git patch autoconf automake libtool nasm mtools lld
 
       - name: Build Limine host utility
         run: |
