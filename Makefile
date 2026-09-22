@@ -29,11 +29,7 @@ aweui:
 		test -x target/release/$$binary || { echo "ERROR: missing Rust binary target/release/$$binary" >&2; exit 1; }; \
 		cp target/release/$$binary $(BUILD_DIR)/$$binary; \
 	done
-	@if [ -x target/release/aweui ]; then \
-		cp target/release/aweui $(BUILD_DIR)/aweui; \
-	else \
-		cp target/release/aweui-installer $(BUILD_DIR)/aweui; \
-	fi
+	@test -x target/release/aweui || { echo "ERROR: missing AWEUI compositor binary target/release/aweui" >&2; exit 1; }\n\tcp target/release/aweui $(BUILD_DIR)/aweui
 
 ayui:
 	@mkdir -p $(BUILD_DIR)
