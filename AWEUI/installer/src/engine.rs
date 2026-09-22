@@ -17,8 +17,8 @@ where
         .clone();
 
     progress_cb(state, 5, "Re-validating target device identity and safety checks...");
-    if !Path::new(&disk.device).exists() && !disk.device.starts_with("/dev/vda") && !disk.device.starts_with("/dev/vdb") {
-        return Err(format!("Target storage device {} unavailable!", disk.device));
+    if !Path::new(&disk.device).exists() {
+        return Err(format!("Target storage device {} unavailable; refusing simulated installation.", disk.device));
     }
 
     progress_cb(state, 15, "Partitioning and formatting target disk...");
@@ -103,6 +103,12 @@ fn install_limine_bootloader(target_mount: &Path, _disk: &DiskInfo, mode: BootMo
         BootMode::Uefi => {
             let efi_dir = boot_dir.join("efi/EFI/BOOT");
             fs::create_dir_all(&efi_dir).map_err(|e| e.to_string())?;
+            let efi_src = Path::new("Bootloader/x86_64/BOOTX64.EFI");
+            if !efi_src.exists() {
+                return Err("UEFI bootloader binary BOOTX64.EFI is missing from the build tree.".to_string());
+            }
+            fs::copy(efi_src, efi_dir.join("BOOTX64.EFI"))
+                .map_err(|e| format!("Failed to install UEFI bootloader: {}", e))?;
             format!(
                 "TIMEOUT=3\n\n:AWEOS Installed System\n    PROTOCOL=linux\n    KERNEL_PATH=boot():/boot/bzImage\n    MODULE_PATH=boot():/boot/aweos-initramfs.cpio.gz\n    CMDLINE=aweos.mode=aweui console=tty0 console=ttyS0,115200n8 quiet\n"
             )
@@ -117,13 +123,18 @@ fn install_limine_bootloader(target_mount: &Path, _disk: &DiskInfo, mode: BootMo
     fs::write(boot_dir.join("limine.conf"), limine_conf).map_err(|e| e.to_string())?;
 
     let bz_src = Path::new("build/linux-x86_64/arch/x86/boot/bzImage");
-    if bz_src.exists() {
-        let _ = fs::copy(bz_src, boot_dir.join("bzImage"));
+    if !bz_src.exists() {
+        return Err("Kernel bzImage is missing from the build tree.".to_string());
     }
+    fs::copy(bz_src, boot_dir.join("bzImage"))
+        .map_err(|e| format!("Failed to install kernel: {}", e))?;
+
     let initramfs_src = Path::new("build/aweos-initramfs.cpio.gz");
-    if initramfs_src.exists() {
-        let _ = fs::copy(initramfs_src, boot_dir.join("aweos-initramfs.cpio.gz"));
+    if !initramfs_src.exists() {
+        return Err("AWEOS initramfs is missing from the build tree.".to_string());
     }
+    fs::copy(initramfs_src, boot_dir.join("aweos-initramfs.cpio.gz"))
+        .map_err(|e| format!("Failed to install initramfs: {}", e))?;
 
     Ok(())
 }
