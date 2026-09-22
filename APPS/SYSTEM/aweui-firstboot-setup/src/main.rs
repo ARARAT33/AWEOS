@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 
-const DEFAULT_AWEUI_CONFIG: &str = r#"[desktop]
+const DEFAULT_AWEUI_CONFIG: &str = r##"[desktop]
 wallpaper = "/usr/share/backgrounds/aweos-default.png"
 theme = "AWEUI-Dark"
 icon_theme = "AWEUI-Icons"
@@ -28,7 +28,7 @@ position = "top"
 height = 32
 auto_hide = false
 widgets = ["launcher", "workspaces", "window_title", "cpu_ram", "clock", "control_center_toggle"]
-"#;
+"##;
 
 fn detect_display() -> String {
     if let Ok(entries) = fs::read_dir("/sys/class/drm") {
