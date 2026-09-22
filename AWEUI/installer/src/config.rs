@@ -37,8 +37,12 @@ pub fn generate_target_configs(target_root: &Path, config: &SystemConfig) -> Res
     fs::write(etc.join("timezone"), format!("{}\n", config.timezone))
         .map_err(|e| e.to_string())?;
 
-    let fstab_content = "# AWEOS Filesystem Table\nLABEL=aweos-root / ext4 defaults,noatime 0 1\n";
-    fs::write(etc.join("fstab"), fstab_content).map_err(|e| e.to_string())?;
+    let fstab = if Path::new("boot/efi").exists() {
+        "# AWEOS Filesystem Table\nLABEL=aweos-root / ext4 defaults,noatime 0 1\nLABEL=AWEOS-ESP /boot/efi vfat umask=0077 0 2\n"
+    } else {
+        "# AWEOS Filesystem Table\nLABEL=aweos-root / ext4 defaults,noatime 0 1\n"
+    };
+    fs::write(etc.join("fstab"), fstab).map_err(|e| e.to_string())?;
 
     let passwd_entry = format!(
         "root:x:0:0:root:/root:/bin/sh\n{}:x:1000:1000:{}:/home/{}:/bin/sh\n",
