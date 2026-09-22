@@ -1,6 +1,5 @@
 use std::fs;
 use std::path::Path;
-use std::process::Command;
 
 const DEFAULT_AWEUI_CONFIG: &str = r#"[desktop]
 wallpaper = "/usr/share/backgrounds/aweos-default.png"
@@ -32,11 +31,10 @@ widgets = ["launcher", "workspaces", "window_title", "cpu_ram", "clock", "contro
 "#;
 
 fn detect_display() -> String {
-    if let Ok(modes) = fs::read_dir("/sys/class/drm") {
+    if let Ok(entries) = fs::read_dir("/sys/class/drm") {
         let mut found = Vec::new();
-        for entry in modes.flatten() {
-            let modes_path = entry.path().join("modes");
-            if let Ok(contents) = fs::read_to_string(modes_path) {
+        for entry in entries.flatten() {
+            if let Ok(contents) = fs::read_to_string(entry.path().join("modes")) {
                 if let Some(mode) = contents.lines().find(|line| !line.trim().is_empty()) {
                     found.push(format!("{}:{}", entry.file_name().to_string_lossy(), mode.trim()));
                 }
@@ -99,11 +97,6 @@ fn main() {
     }
 
     println!("[FirstBoot] Configuration applied and first-boot state completed.");
-
-    // The init system owns compositor startup. This program only performs one-time setup.
-    if Path::new("/usr/bin/aweui").exists() {
-        let _ = Command::new("/usr/bin/aweui").arg("--version").status();
-    }
 }
 
 #[cfg(test)]
