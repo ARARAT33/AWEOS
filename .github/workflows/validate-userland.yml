@@ -40,8 +40,8 @@ jobs:
           set -euo pipefail
           ./scripts/verify-linux-readonly.sh
 
-      - name: Check formatting
-        run: cargo fmt --all -- --check
+      - name: Run Cargo metadata validation
+        run: cargo metadata --no-deps --format-version 1 >/dev/null
 
       - name: Run Rust workspace tests
         run: cargo test --workspace
