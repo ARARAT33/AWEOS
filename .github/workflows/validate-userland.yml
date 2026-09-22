@@ -1,0 +1,45 @@
+name: Validate AWEOS Userland
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  userland-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository without changing /linux
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify /linux is present and protected
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d linux
+          test -x scripts/verify-linux-readonly.sh
+          ./scripts/verify-linux-readonly.sh
+
+      - name: Validate Rust workspace metadata
+        run: cargo metadata --no-deps --format-version 1
+
+      - name: Compile and run native userland tests
+        run: make test-native
+
+      - name: Compile userland binaries
+        run: |
+          make ayui aosin installer updater wlin
+
+      - name: Verify generated userland artifacts
+        run: |
+          test -s build/aweos-ayui
+          test -s build/aosin
+          test -s build/aweos-installer
+          test -s build/aweos-update
+          test -s build/wlin
