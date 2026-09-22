@@ -1,3 +1,5 @@
+use std::fs;
+use std::os::unix::fs::FileTypeExt;
 use std::path::Path;
 use std::process::Command;
 
@@ -22,6 +24,12 @@ pub struct PartitionInfo {
     pub mountpoint: Option<String>,
 }
 
+fn is_block_device(path: &Path) -> bool {
+    fs::metadata(path)
+        .map(|m| m.file_type().is_block_device())
+        .unwrap_or(false)
+}
+
 fn filesystem_type(device: &str) -> String {
     Command::new("blkid")
         .args(["-o", "value", "-s", "TYPE", device])
@@ -34,24 +42,19 @@ fn filesystem_type(device: &str) -> String {
 }
 
 fn mountpoint(device: &str) -> Option<String> {
-    let mounts = std::fs::read_to_string("/proc/self/mountinfo").ok()?;
+    let mounts = fs::read_to_string("/proc/self/mountinfo").ok()?;
+
     for line in mounts.lines() {
-        let mut fields = line.split_whitespace();
-        let _mount_id = fields.next()?;
-        let _parent_id = fields.next()?;
-        let _major_minor = fields.next()?;
-        let _root = fields.next()?;
-        let mount_point = fields.next()?;
-        let separator = fields.position(|field| field == "-")?;
-        let _ = separator;
-        // The device name is on the line after the '-' separator.
-        let rest: Vec<&str> = line.split_whitespace().collect();
-        if let Some(idx) = rest.iter().position(|f| *f == "-") {
-            if rest.get(idx + 2).map(|s| *s == device).unwrap_or(false) {
-                return Some(mount_point.replace("\\040", " "));
-            }
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        let separator = fields.iter().position(|field| *field == "-")?;
+
+        if fields.get(separator + 2).copied() == Some(device) {
+            return fields
+                .get(4)
+                .map(|mount| mount.replace("\\040", " "));
         }
     }
+
     None
 }
 
@@ -59,7 +62,7 @@ pub fn discover_disks() -> Vec<DiskInfo> {
     let mut disks = Vec::new();
     let sys_block = Path::new("/sys/block");
 
-    let Ok(entries) = std::fs::read_dir(sys_block) else {
+    let Ok(entries) = fs::read_dir(sys_block) else {
         return disks;
     };
 
@@ -75,12 +78,12 @@ pub fn discover_disks() -> Vec<DiskInfo> {
         }
 
         let device_path = format!("/dev/{}", dev_name);
-        if !Path::new(&device_path).is_block_device() {
+        if !is_block_device(Path::new(&device_path)) {
             continue;
         }
 
         let sys_path = entry.path();
-        let sectors = std::fs::read_to_string(sys_path.join("size"))
+        let sectors = fs::read_to_string(sys_path.join("size"))
             .ok()
             .and_then(|s| s.trim().parse::<u64>().ok())
             .unwrap_or(0);
@@ -91,18 +94,17 @@ pub fn discover_disks() -> Vec<DiskInfo> {
 
         let size_bytes = sectors.saturating_mul(512);
         let size_gb = size_bytes as f64 / (1024.0 * 1024.0 * 1024.0);
-        let model = std::fs::read_to_string(sys_path.join("device/model"))
+        let model = fs::read_to_string(sys_path.join("device/model"))
             .ok()
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| "Generic Storage Device".to_string());
-
-        let is_removable = std::fs::read_to_string(sys_path.join("removable"))
+        let is_removable = fs::read_to_string(sys_path.join("removable"))
             .map(|s| s.trim() == "1")
             .unwrap_or(false);
 
         let mut partitions = Vec::new();
-        if let Ok(sub_entries) = std::fs::read_dir(&sys_path) {
+        if let Ok(sub_entries) = fs::read_dir(&sys_path) {
             for sub_entry in sub_entries.flatten() {
                 let sub_path = sub_entry.path();
                 if !sub_path.join("partition").exists() {
@@ -110,7 +112,7 @@ pub fn discover_disks() -> Vec<DiskInfo> {
                 }
 
                 let sub_name = sub_entry.file_name().to_string_lossy().to_string();
-                let p_sectors = std::fs::read_to_string(sub_path.join("size"))
+                let p_sectors = fs::read_to_string(sub_path.join("size"))
                     .ok()
                     .and_then(|s| s.trim().parse::<u64>().ok())
                     .unwrap_or(0);
