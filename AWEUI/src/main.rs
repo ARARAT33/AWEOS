@@ -93,11 +93,16 @@ mod tests {
     }
 
     #[test]
-    fn test_launcher_application_discovery() {
-        let mut l = launcher::Launcher::new();
-        l.scan_applications();
-        let query_res = l.search("term");
-        assert!(query_res.is_empty() || !query_res.is_empty());
+    fn test_launcher_desktop_entry_parsing_and_search() {
+        let desktop = "[Desktop Entry]\nName=AWE Terminal\nExec=aweui-terminal\nComment=System terminal\nCategories=System;TerminalEmulator;\n";
+        let app = launcher::Launcher::parse_desktop_file(desktop).expect("valid desktop entry");
+        assert_eq!(app.name, "AWE Terminal");
+        assert_eq!(app.exec, "aweui-terminal");
+        assert!(app.categories.iter().any(|c| c == "TerminalEmulator"));
+
+        let launcher = launcher::Launcher { apps: vec![app] };
+        assert_eq!(launcher.search("terminal").len(), 1);
+        assert!(launcher.search("does-not-exist").is_empty());
     }
 
     #[test]
