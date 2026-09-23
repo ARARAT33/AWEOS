@@ -34,36 +34,23 @@ pub struct IpcServer {
 impl IpcServer {
     pub fn new(socket_path: &str) -> Self {
         let _ = fs::remove_file(socket_path);
-        Self {
-            socket_path: socket_path.to_string(),
-        }
+        Self { socket_path: socket_path.to_string() }
     }
 
     pub fn start_listener(&self, state_handler: Arc<Mutex<crate::state::AweuiState>>) {
         let socket_path = self.socket_path.clone();
         thread::spawn(move || {
             let listener = match UnixListener::bind(&socket_path) {
-                Ok(l) => l,
-                Err(e) => {
-                    eprintln!("Failed to bind IPC socket {}: {}", socket_path, e);
-                    return;
-                }
+                Ok(listener) => listener,
+                Err(error) => { eprintln!("AYUI IPC bind failed: {error}"); return; }
             };
-
-            for stream in listener.incoming() {
-                if let Ok(mut stream) = stream {
-                    let mut buf = vec![0u8; 4096];
-                    if let Ok(n) = stream.read(&mut buf) {
-                        if n > 0 {
-                            if let Ok(req) = serde_json::from_slice::<IpcRequest>(&buf[..n]) {
-                                let resp = Self::handle_request(req, &state_handler);
-                                if let Ok(resp_bytes) = serde_json::to_vec(&resp) {
-                                    let _ = stream.write_all(&resp_bytes);
-                                }
-                            }
-                        }
-                    }
-                }
+            for mut stream in listener.incoming().flatten() {
+                let mut buf = [0u8; 8192];
+                let Ok(n) = stream.read(&mut buf) else { continue };
+                if n == 0 { continue; }
+                let Ok(req) = serde_json::from_slice::<IpcRequest>(&buf[..n]) else { continue };
+                let response = Self::handle_request(req, &state_handler);
+                if let Ok(bytes) = serde_json::to_vec(&response) { let _ = stream.write_all(&bytes); }
             }
         });
     }
@@ -71,38 +58,35 @@ impl IpcServer {
     fn handle_request(req: IpcRequest, state_arc: &Arc<Mutex<crate::state::AweuiState>>) -> IpcResponse {
         let mut state = state_arc.lock().unwrap();
         match req {
-            IpcRequest::GetStatus => IpcResponse::Success("AWEUI Compositor Active".to_string()),
-            IpcRequest::GetWorkspaces => {
-                let names = state.workspaces.workspaces.iter().map(|w| w.name.clone()).collect();
-                IpcResponse::Workspaces(names)
+            IpcRequest::GetStatus => IpcResponse::Success("AYUI Active".into()),
+            IpcRequest::GetWorkspaces => IpcResponse::Workspaces(
+                state.workspaces.workspaces.iter().map(|w| w.name.clone()).collect()
+            ),
+            IpcRequest::SwitchWorkspace(index) => {
+                state.workspaces.switch_to(index);
+                IpcResponse::Success(format!("Switched to workspace {}", index + 1))
             }
-            IpcRequest::SwitchWorkspace(idx) => {
-                state.workspaces.switch_to(idx);
-                IpcResponse::Success(format!("Switched to workspace {}", idx + 1))
-            }
-            IpcRequest::LaunchApp(app) => {
-                let _ = std::process::Command::new(&app).spawn();
-                IpcResponse::Success(format!("Launched {}", app))
-            }
-            IpcRequest::GetConfig => {
-                let cfg_str = toml::to_string_pretty(&state.config).unwrap_or_default();
-                IpcResponse::Config(cfg_str)
-            }
-            IpcRequest::SetConfig(cfg_str) => {
-                if let Ok(cfg) = toml::from_str(&cfg_str) {
-                    state.config = cfg;
-                    let _ = state.config.save();
-                    IpcResponse::Success("Configuration updated".to_string())
-                } else {
-                    IpcResponse::Error("Invalid configuration syntax".to_string())
-                }
-            }
-            IpcRequest::ToggleControlCenter => {
-                IpcResponse::Success("Control Center toggled".to_string())
-            }
+            IpcRequest::LaunchApp(app) => match state.session.launch_app(&app) {
+                Ok(()) => IpcResponse::Success(format!("Launched {app}")),
+                Err(e) => IpcResponse::Error(e),
+            },
+            IpcRequest::LaunchCommand(command) => match state.session.launch_command(&command) {
+                Ok(()) => IpcResponse::Success("Command launched".into()),
+                Err(e) => IpcResponse::Error(e),
+            },
+            IpcRequest::PowerAction(action) => match crate::session::SessionManager::power_action(&action) {
+                Ok(()) => IpcResponse::Success(format!("Power action: {action}")),
+                Err(e) => IpcResponse::Error(e),
+            },
+            IpcRequest::GetConfig => IpcResponse::Config(toml::to_string_pretty(&state.config).unwrap_or_default()),
+            IpcRequest::SetConfig(config) => match toml::from_str(&config) {
+                Ok(cfg) => { state.config = cfg; let _ = state.config.save(); IpcResponse::Success("Configuration updated".into()) }
+                Err(_) => IpcResponse::Error("Invalid configuration syntax".into()),
+            },
+            IpcRequest::ToggleControlCenter => IpcResponse::Success("Control Center toggle requested".into()),
             IpcRequest::SendNotification { title, body } => {
-                println!("[AWEUI Notification] {}: {}", title, body);
-                IpcResponse::Success("Notification delivered".to_string())
+                println!("[AYUI Notification] {title}: {body}");
+                IpcResponse::Success("Notification delivered".into())
             }
         }
     }
@@ -110,11 +94,9 @@ impl IpcServer {
 
 pub fn send_ipc_request(socket_path: &str, req: IpcRequest) -> Result<IpcResponse, String> {
     let mut stream = UnixStream::connect(socket_path).map_err(|e| e.to_string())?;
-    let req_bytes = serde_json::to_vec(&req).map_err(|e| e.to_string())?;
-    stream.write_all(&req_bytes).map_err(|e| e.to_string())?;
-
-    let mut buf = vec![0u8; 4096];
+    let bytes = serde_json::to_vec(&req).map_err(|e| e.to_string())?;
+    stream.write_all(&bytes).map_err(|e| e.to_string())?;
+    let mut buf = [0u8; 8192];
     let n = stream.read(&mut buf).map_err(|e| e.to_string())?;
-    let resp: IpcResponse = serde_json::from_slice(&buf[..n]).map_err(|e| e.to_string())?;
-    Ok(resp)
+    serde_json::from_slice(&buf[..n]).map_err(|e| e.to_string())
 }
