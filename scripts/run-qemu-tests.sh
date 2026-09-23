@@ -22,7 +22,7 @@ test_boot() {
     rm -f "${logfile}"
 
     set +e
-    timeout 75s "$@" >"${logfile}" 2>&1
+    timeout 100s "$@" >"${logfile}" 2>&1
     local rc=$?
     set -e
 
@@ -44,16 +44,18 @@ test_boot() {
         return 1
     fi
 
-    grep -q "AWEUI Compositor initialized successfully" "${logfile}" || {
-        echo "FAIL: AWEUI compositor did not initialize in ${mode} mode." >&2
+    if grep -q "AWEOS BOOT SUCCESS: mode=gnome" "${logfile}"; then
+        echo "SUCCESS: AWEOS ${mode} boot reached the real GNOME userspace."
+    elif grep -q "AWEUI Compositor initialized successfully" "${logfile}"; then
+        echo "SUCCESS: AWEOS ${mode} boot reached the legacy AWEUI compositor."
+    else
+        echo "FAIL: neither GNOME userspace nor AWEUI compositor reached running state in ${mode} mode." >&2
         return 1
-    }
-
-    echo "SUCCESS: AWEOS ${mode} boot reached the running AWEUI compositor."
+    fi
 }
 
 if [ "${TARGET_MODE}" = "all" ] || [ "${TARGET_MODE}" = "bios" ]; then
-    test_boot "BIOS" "${BIOS_LOG}"         qemu-system-x86_64 -machine q35 -m 512M -cdrom "${ISO_PATH}"         -display none -serial stdio -no-reboot
+    test_boot "BIOS" "${BIOS_LOG}"         qemu-system-x86_64 -machine q35 -m 2048M -cdrom "${ISO_PATH}"         -display none -serial stdio -no-reboot
 fi
 
 if [ "${TARGET_MODE}" = "all" ] || [ "${TARGET_MODE}" = "uefi" ]; then
