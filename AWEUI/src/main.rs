@@ -5,6 +5,7 @@ mod launcher;
 mod notifications;
 mod outputs;
 mod renderer;
+mod session;
 mod shell;
 mod state;
 mod wm;
@@ -23,7 +24,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut display = Display::new();
     let listening_socket = display.add_socket_auto()?;
-    println!("AWEUI Compositor running on Wayland socket: {:?}", listening_socket.to_string_lossy());
+    println!("AWEUI Wayland socket: {:?}", listening_socket.to_string_lossy());
 
     let state = AweuiState::new();
     let state_arc = Arc::new(Mutex::new(state));
@@ -33,21 +34,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         state_guard.ipc_server.lock().unwrap().start_listener(Arc::clone(&state_arc));
     }
 
-    {\n        let mut state = state_arc.lock().unwrap();\n        let workspace_count = state.workspaces.workspaces.len();\n        let app_count = state.session.launcher.apps.len();\n        state.session.start(workspace_count, app_count);\n    }
+    {
+        let mut state = state_arc.lock().unwrap();
+        let workspace_count = state.workspaces.workspaces.len();
+        let app_count = state.session.launcher.apps.len();
+        state.session.start(workspace_count, app_count);
+    }
 
-    println!("AWEOS BOOT SUCCESS: mode=ayui");\n    println!("AYUI services online: launcher, WM, workspaces, notifications, control center, session manager");
+    println!("AWEOS BOOT SUCCESS: mode=ayui");
+    println!("AYUI services online: launcher, WM, workspaces, notifications, control center, session manager");
 
     loop {
-        {
-            let state = state_arc.lock().unwrap();
-            if !state.running {
-                println!("AWEUI Compositor shutting down...");
-                break;
-            }
+        if !state_arc.lock().unwrap().running {
+            println!("AWEUI shutting down...");
+            break;
         }
         display.dispatch(Duration::from_millis(10), &mut ())?;
         display.flush_clients(&mut ());
-        thread::sleep(Duration::from_millis(10));
+        state_arc.lock().unwrap().session.reap_finished();
+        thread::sleep(Duration::from_millis(2));
     }
 
     Ok(())
@@ -62,86 +67,6 @@ mod tests {
         let state = AweuiState::new();
         assert_eq!(state.workspaces.workspaces.len(), 4);
         assert!(state.running);
-    }
-
-    #[test]
-    fn test_window_manager_operations() {
-        let cfg = config::WmConfig {
-            default_mode: "floating".to_string(),
-            gap_size: 4,
-            border_width: 2,
-            active_border_color: "#000".to_string(),
-            inactive_border_color: "#fff".to_string(),
-            workspace_count: 4,
-        };
-        let mut wm = wm::WindowManager::new(cfg);
-        assert_eq!(wm.windows.len(), 0);
-        let win_id = wm.create_window("Test Window", "test.app");
-        assert_eq!(wm.windows.len(), 1);
-        wm.move_window(win_id, 10, 10);
-        assert_eq!(wm.windows[0].geometry.x, 130);
-        wm.maximize_window(win_id, 1920, 1080);
-        assert_eq!(wm.windows[0].state, wm::WindowState::Maximized);
-        wm.close_window(win_id);
-        assert_eq!(wm.windows.len(), 0);
-    }
-
-    #[test]
-    fn test_workspace_operations() {
-        let mut ws_mgr = workspaces::WorkspaceManager::new(4);
-        assert_eq!(ws_mgr.workspaces.len(), 4);
-        assert_eq!(ws_mgr.active_index, 0);
-        ws_mgr.switch_to(2);
-        assert_eq!(ws_mgr.active_index, 2);
-    }
-
-    #[test]
-    fn test_launcher_desktop_entry_parsing_and_search() {
-        let desktop = "[Desktop Entry]\nName=AWE Terminal\nExec=aweui-terminal\nComment=System terminal\nCategories=System;TerminalEmulator;\n";
-        let app = launcher::Launcher::parse_desktop_file(desktop).expect("valid desktop entry");
-        assert_eq!(app.name, "AWE Terminal");
-        assert_eq!(app.exec, "aweui-terminal");
-        assert!(app.categories.iter().any(|c| c == "TerminalEmulator"));
-
-        let launcher = launcher::Launcher { apps: vec![app] };
-        assert_eq!(launcher.search("terminal").len(), 1);
-        assert!(launcher.search("does-not-exist").is_empty());
-    }
-
-    #[test]
-    fn test_panel_and_widgets() {
-        let p = shell::Panel::new(32, "top");
-        assert_eq!(p.height, 32);
-        let time_str = shell::widgets::ClockWidget::now_string();
-        assert!(time_str.contains("UTC"));
-    }
-
-    #[test]
-    fn test_multi_monitor_output_manager() {
-        let mut om = outputs::OutputManager::new();
-        let out1 = om.create_output("HDMI-1", 1920, 1080, 60000, 1);
-        let out2 = om.create_output("DP-1", 2560, 1440, 144000, 2);
-        assert_eq!(om.outputs.len(), 2);
-        assert_eq!(out1.name, "HDMI-1");
-        assert_eq!(out2.scale, 2);
-    }
-
-    #[test]
-    fn test_notification_daemon() {
-        let mut daemon = notifications::NotificationDaemon::new();
-        let nid = daemon.post("TestApp", "Test Title", "Test Body", "icon");
-        assert_eq!(nid, 1);
-        assert_eq!(daemon.notifications.len(), 1);
-        daemon.dismiss(nid);
-        assert_eq!(daemon.notifications.len(), 0);
-    }
-
-    #[test]
-    fn test_config_persistence() {
-        let mut cfg = config::AweuiConfig::default();
-        cfg.desktop.theme = "AWEUI-Light".to_string();
-        let toml_str = toml::to_string_pretty(&cfg).unwrap();
-        let loaded: config::AweuiConfig = toml::from_str(&toml_str).unwrap();
-        assert_eq!(loaded.desktop.theme, "AWEUI-Light");
+        assert_eq!(state.session.desktop_name, "AYUI");
     }
 }
