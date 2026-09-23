@@ -50,7 +50,7 @@ impl Launcher {
         }
     }
 
-    fn parse_desktop_file(content: &str) -> Option<AppInfo> {
+    pub fn parse_desktop_file(content: &str) -> Option<AppInfo> {
         let mut name = None;
         let mut exec = None;
         let mut icon = None;
