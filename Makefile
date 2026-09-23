@@ -13,8 +13,9 @@ INITRAMFS := $(BUILD_DIR)/aweos-initramfs.cpio.gz
 LIMINE_TOOL ?= $$(command -v limine || true)
 
 RUST_BINS := aweui aweui-installer aweui-settings aweui-control-center aweui-file-manager              aweui-terminal aweui-system-monitor aweui-diagnostics aweui-text-editor              aweui-calculator aweui-firstboot-setup aweui-user-app-template
+SHELL_SCRIPTS := $$(find scripts -maxdepth 1 -type f -name '*.sh' -print | sort)
 
-.PHONY: all build verify-linux verify-linux-readonly rust-build userland kernel rootfs         initramfs finalize-rootfs iso disk-image image test test-rust test-qemu         verify-artifacts clean
+.PHONY: all build verify-linux verify-linux-readonly rust-build userland kernel rootfs         initramfs finalize-rootfs iso disk-image image check test test-rust test-shell test-qemu         verify-artifacts clean
 
 all: build
 
@@ -54,10 +55,17 @@ disk-image: kernel finalize-rootfs
 
 image: iso disk-image
 
-test: verify-linux test-rust
+check: verify-linux test-shell
+	@cargo fmt --all -- --check
+	@cargo check --workspace --all-targets
+
+test: verify-linux test-shell test-rust
 
 test-rust:
 	@cargo test --workspace
+
+test-shell:
+	@set -euo pipefail; 	for script in $(SHELL_SCRIPTS); do 		bash -n "$$script"; 	done
 
 test-qemu: iso
 	@./scripts/run-qemu-tests.sh $(BUILD_DIR)
