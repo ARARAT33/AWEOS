@@ -44,10 +44,12 @@ test_boot() {
         return 1
     fi
 
-    if grep -q "AWEOS BOOT SUCCESS: mode=gnome" "${logfile}"; then
-        echo "SUCCESS: AWEOS ${mode} boot reached the real GNOME userspace."
+    if grep -q "AWEOS BOOT SUCCESS: mode=ayui" "${logfile}"; then
+        echo "SUCCESS: AWEOS ${mode} boot reached the default AYUI desktop."
+    elif grep -q "AWEOS BOOT SUCCESS: mode=gnome" "${logfile}"; then
+        echo "SUCCESS: AWEOS ${mode} boot reached the secondary GNOME userspace."
     elif grep -q "AWEUI Compositor initialized successfully" "${logfile}"; then
-        echo "SUCCESS: AWEOS ${mode} boot reached the legacy AWEUI compositor."
+        echo "SUCCESS: AWEOS ${mode} boot reached the AYUI compositor."
     else
         echo "FAIL: neither GNOME userspace nor AWEUI compositor reached running state in ${mode} mode." >&2
         return 1
@@ -68,7 +70,7 @@ if [ "${TARGET_MODE}" = "all" ] || [ "${TARGET_MODE}" = "uefi" ]; then
     done
 
     if [ -n "${UEFI_FIRMWARE}" ]; then
-        test_boot "UEFI" "${UEFI_LOG}"             qemu-system-x86_64 -machine q35 -m 512M -bios "${UEFI_FIRMWARE}"             -cdrom "${ISO_PATH}" -display none -serial stdio -no-reboot
+        test_boot "UEFI" "${UEFI_LOG}"             qemu-system-x86_64 -machine q35 -m 2048M -bios "${UEFI_FIRMWARE}"             -cdrom "${ISO_PATH}" -display none -serial stdio -no-reboot
     else
         echo "WARNING: OVMF firmware not found; UEFI boot test skipped."
     fi
