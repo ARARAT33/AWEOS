@@ -11,53 +11,33 @@ mod session;
 mod shell;
 mod state;
 mod wm;
+mod wayland;
 mod workspaces;
 
-use smithay::reexports::wayland_server::Display;
 use state::AweuiState;
 use std::sync::{Arc, Mutex};
-use std::thread;
-use std::time::Duration;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
-    println!("AWEOS AYUI — native desktop session");
-    println!("AYUI is the primary AWEOS desktop; GNOME remains a secondary session.");
+    println!("AWEOS AYUI — native Wayland desktop session");
+    println!("AYUI is the primary desktop; GNOME remains a secondary session.");
 
-    let mut display = Display::new();
-    let listening_socket = display.add_socket_auto()?;
-    println!("AWEUI Wayland socket: {:?}", listening_socket.to_string_lossy());
-
-    let state = AweuiState::new();
-    let state_arc = Arc::new(Mutex::new(state));
-
+    let state = Arc::new(Mutex::new(AweuiState::new()));
     {
-        let state_guard = state_arc.lock().unwrap();
-        state_guard.ipc_server.lock().unwrap().start_listener(Arc::clone(&state_arc));
+        let guard = state.lock().unwrap();
+        guard.ipc_server.lock().unwrap().start_listener(Arc::clone(&state));
     }
-
     {
-        let mut state = state_arc.lock().unwrap();
-        let workspace_count = state.workspaces.workspaces.len();
-        let app_count = state.session.launcher.apps.len();
-        state.session.start(workspace_count, app_count);
+        let mut guard = state.lock().unwrap();
+        let workspace_count = guard.workspaces.workspaces.len();
+        let app_count = guard.session.launcher.apps.len();
+        guard.session.start(workspace_count, app_count);
     }
 
     println!("AWEOS BOOT SUCCESS: mode=ayui");
-    println!("AYUI services online: launcher, WM, workspaces, notifications, control center, session manager");
+    println!("AYUI services online: Wayland/XDG shell, renderer, input/seat, launcher, WM, workspaces, notifications, control center");
 
-    loop {
-        if !state_arc.lock().unwrap().running {
-            println!("AWEUI shutting down...");
-            break;
-        }
-        display.dispatch(Duration::from_millis(10), &mut ())?;
-        display.flush_clients(&mut ());
-        state_arc.lock().unwrap().session.reap_finished();
-        thread::sleep(Duration::from_millis(2));
-    }
-
-    Ok(())
+    wayland::run(state)
 }
 
 #[cfg(test)]
