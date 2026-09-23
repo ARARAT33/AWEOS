@@ -32,7 +32,12 @@ use wayland_server::{
 
 use crate::state::AweuiState;
 
-pub struct ManagedWindow {\n    pub surface: ToplevelSurface,\n    pub loc: (i32, i32),\n}\n\npub struct AyuiCompositor {
+pub struct ManagedWindow {
+    pub surface: ToplevelSurface,
+    pub loc: (i32, i32),
+}
+
+pub struct AyuiCompositor {
     pub ui: Arc<Mutex<AweuiState>>,
     pub compositor_state: CompositorState,
     pub xdg_shell_state: XdgShellState,
@@ -40,6 +45,7 @@ pub struct ManagedWindow {\n    pub surface: ToplevelSurface,\n    pub loc: (i32
     pub seat_state: SeatState<Self>,
     pub data_device_state: DataDeviceState,
     pub seat: Seat<Self>,
+    pub windows: Vec<ManagedWindow>,
 }
 
 impl BufferHandler for AyuiCompositor {
@@ -59,6 +65,8 @@ impl XdgShellHandler for AyuiCompositor {
         if let Ok(mut ui) = self.ui.lock() {
             ui.wm.create_window(&title, &app_id);
         }
+        let index = self.windows.len();
+        self.windows.push(ManagedWindow { surface, loc: (40 + (index as i32 * 32) % 360, 56 + (index as i32 * 28) % 220) });
         tracing::info!(%title, %app_id, "AYUI: new Wayland toplevel");
     }
 
@@ -139,6 +147,7 @@ pub fn run(ui: Arc<Mutex<AweuiState>>) -> Result<(), Box<dyn std::error::Error>>
         seat_state,
         data_device_state: DataDeviceState::new::<AyuiCompositor>(&dh),
         seat,
+        windows: Vec::new(),
     };
 
     let (mut backend, mut winit) = winit::init::<GlesRenderer>()?;
@@ -176,8 +185,8 @@ pub fn run(ui: Arc<Mutex<AweuiState>>) -> Result<(), Box<dyn std::error::Error>>
         let damage = Rectangle::from_size(size);
         {
             let (renderer, mut framebuffer) = backend.bind()?;
-            let elements = state.xdg_shell_state.toplevel_surfaces().iter().flat_map(|surface| {
-                render_elements_from_surface_tree(renderer, surface.wl_surface(), (0, 0), 1.0, 1.0, Kind::Unspecified)
+            let elements = state.windows.iter().filter(|window| window.surface.alive()).flat_map(|window| {
+                render_elements_from_surface_tree(renderer, window.surface.wl_surface(), window.loc, 1.0, 1.0, Kind::Unspecified)
             }).collect::<Vec<WaylandSurfaceRenderElement<GlesRenderer>>>();
 
             let mut frame = renderer.render(&mut framebuffer, size, Transform::Flipped180)?;
