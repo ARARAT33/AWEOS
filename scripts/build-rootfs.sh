@@ -1,6 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 
+if [ "${AWEOS_DESKTOP:-gnome}" = "gnome" ]; then
+    exec "$(dirname "$0")/build-rootfs-gnome.sh" "$@"
+fi
+
+set -euo pipefail
+
 BUILD_DIR="${1:-build}"
 ROOTFS_DIR="${BUILD_DIR}/rootfs"
 ROOTFS_IMG="${BUILD_DIR}/rootfs.img"
