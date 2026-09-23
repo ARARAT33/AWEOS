@@ -10,7 +10,7 @@ set -euo pipefail
 BUILD_DIR="${1:-build}"
 ROOTFS_DIR="${BUILD_DIR}/rootfs"
 ROOTFS_IMG="${BUILD_DIR}/rootfs.img"
-IMG_SIZE_MB="${2:-128}"
+IMG_SIZE_MB="${2:-512}"
 
 echo "Building AWEOS root filesystem in ${ROOTFS_DIR}..."
 
