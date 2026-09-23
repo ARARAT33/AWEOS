@@ -1,4 +1,6 @@
 mod config;
+mod desktop;
+mod theme;
 mod input;
 mod ipc;
 mod launcher;
