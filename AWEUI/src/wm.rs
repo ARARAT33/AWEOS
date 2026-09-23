@@ -194,3 +194,16 @@ impl WindowManager {
             .collect()
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn cfg()->crate::config::WmConfig { crate::config::WmConfig {
+        default_mode:"floating".into(), gap_size:6, border_width:2,
+        active_border_color:"#3b82f6".into(), inactive_border_color:"#334155".into(),
+        workspace_count:4
+    }}
+    #[test] fn snap_left_sets_tiled_state(){ let mut w=WindowManager::new(cfg()); let id=w.create_window("x","x"); w.snap_window_to_edge(id,"left",1920,1080); assert_eq!(w.windows[0].state,WindowState::Tiled); assert_eq!(w.windows[0].geometry.width,960); }
+    #[test] fn maximize_then_restore(){ let mut w=WindowManager::new(cfg()); let id=w.create_window("x","x"); let old=w.windows[0].geometry.clone(); w.maximize_window(id,1920,1080); w.maximize_window(id,1920,1080); assert_eq!(w.windows[0].geometry,old); }
+}
