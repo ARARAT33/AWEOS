@@ -179,7 +179,7 @@ pub fn run(ui: Arc<Mutex<AweuiState>>) -> Result<(), Box<dyn std::error::Error>>
             _ => {}
         });
 
-        if matches!(status, ::winit::platform::pump_events::PumpStatus::Exit(_)) { break; }
+        if matches!(status, smithay::reexports::winit::platform::pump_events::PumpStatus::Exit(_)) { break; }
 
         let size = backend.window_size();
         let damage = Rectangle::from_size(size);
