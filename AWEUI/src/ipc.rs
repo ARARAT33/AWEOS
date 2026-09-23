@@ -83,7 +83,10 @@ impl IpcServer {
                 Ok(cfg) => { state.config = cfg; let _ = state.config.save(); IpcResponse::Success("Configuration updated".into()) }
                 Err(_) => IpcResponse::Error("Invalid configuration syntax".into()),
             },
-            IpcRequest::ToggleControlCenter => IpcResponse::Success("Control Center toggle requested".into()),
+            IpcRequest::ToggleControlCenter => {
+                state.desktop.toggle_control_center();
+                IpcResponse::Success(format!("Overlay: {:?}", state.desktop.overlay))
+            }
             IpcRequest::SendNotification { title, body } => {
                 println!("[AYUI Notification] {title}: {body}");
                 IpcResponse::Success("Notification delivered".into())
