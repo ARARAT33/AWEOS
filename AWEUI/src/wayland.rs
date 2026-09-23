@@ -32,7 +32,7 @@ use wayland_server::{
 
 use crate::state::AweuiState;
 
-pub struct AyuiCompositor {
+pub struct ManagedWindow {\n    pub surface: ToplevelSurface,\n    pub loc: (i32, i32),\n}\n\npub struct AyuiCompositor {
     pub ui: Arc<Mutex<AweuiState>>,
     pub compositor_state: CompositorState,
     pub xdg_shell_state: XdgShellState,
