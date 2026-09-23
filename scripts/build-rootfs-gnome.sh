@@ -61,8 +61,8 @@ systemctl enable gdm3
 systemctl set-default graphical.target
 
 useradd -m -s /bin/bash -G adm,audio,cdrom,dialout,floppy,video,plugdev,netdev,sudo,render,input aweos || true
-passwd -d aweos
-passwd -d root
+passwd -l aweos
+passwd -l root
 
 install -d -m 0755 /etc/gdm3
 cat > /etc/gdm3/custom.conf <<'EOF'
