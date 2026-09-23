@@ -10,7 +10,7 @@ pub enum IpcRequest {
     GetStatus,
     GetWorkspaces,
     SwitchWorkspace(usize),
-    LaunchApp(String),
+    LaunchApp(String),\n    LaunchCommand(String),\n    PowerAction(String),
     GetConfig,
     SetConfig(String),
     ToggleControlCenter,
