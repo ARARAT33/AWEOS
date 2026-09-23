@@ -29,7 +29,7 @@ permissions:
 jobs:
   build-and-boot-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    timeout-minutes: 180
     steps:
       - name: Checkout AWEOS
         uses: actions/checkout@v5
@@ -43,7 +43,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y             build-essential bc bison flex libssl-dev libelf-dev cpio gzip xz-utils             curl xorriso qemu-system-x86 ovmf busybox-static util-linux e2fsprogs             parted netcat-openbsd pkg-config git patch autoconf automake libtool nasm mtools lld
+          sudo apt-get install -y             build-essential bc bison flex libssl-dev libelf-dev cpio gzip xz-utils             curl xorriso qemu-system-x86 ovmf busybox-static util-linux e2fsprogs             parted netcat-openbsd pkg-config git patch autoconf automake libtool nasm mtools lld             llvm debootstrap rsync
 
       - name: Build Limine host utility
         run: |
@@ -52,7 +52,7 @@ jobs:
           git clone --depth 1 --branch v12.6.1 https://github.com/Limine-Bootloader/Limine.git /tmp/limine
           cd /tmp/limine
           ./bootstrap
-          LD_FOR_TARGET=ld OBJCOPY_FOR_TARGET=objcopy ./configure --enable-bios --enable-uefi-x86-64
+          OBJDUMP_FOR_TARGET=objdump           LD_FOR_TARGET=ld           OBJCOPY_FOR_TARGET=objcopy           ./configure --enable-bios --enable-uefi-x86-64
           make -j"$(nproc)"
           test -x bin/limine
           sudo install -m 0755 bin/limine /usr/local/bin/limine
