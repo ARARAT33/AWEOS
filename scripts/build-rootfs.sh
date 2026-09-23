@@ -266,7 +266,8 @@ DEFAULT_DESKTOP=AYUI
 SECONDARY_DESKTOP=GNOME
 WAYLAND_SESSION=ayui
 EOF
-\ncat > "${ROOTFS_DIR}/etc/aweos/first_boot" <<'EOF'
+
+cat > "${ROOTFS_DIR}/etc/aweos/first_boot" <<'EOF'
 fresh_install=false
 EOF
 
