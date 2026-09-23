@@ -1,5 +1,23 @@
 # AWEOS Architecture & Complete OS Stack Documentation
 
+> **Current default desktop:** real Ubuntu Noble GNOME userspace. AWEOS supplies its own Linux kernel build, Limine boot path, native utilities and OS integration; GNOME is the actual desktop session.
+
+## Current Desktop Architecture
+
+AWEOS builds a real Ubuntu 24.04 Noble GNOME userspace by default. The graphical stack comes from Ubuntu packages rather than a mock desktop: GNOME Shell, Mutter, GDM, GNOME Control Center, Ubuntu session components, NetworkManager, PipeWire/WirePlumber and the normal freedesktop application model. Ubuntu's official `ubuntu-desktop-minimal` package includes GNOME Shell, GDM and GNOME Control Center. citeturn0search0turn0search2
+
+The ISO is a live environment. Its Ubuntu root filesystem is mounted as the lower OverlayFS layer and a writable RAM upper layer is created before systemd starts. Disk-image boots use the ext4 root filesystem directly. The AWEOS kernel configuration enables cgroups, namespaces and OverlayFS outside the read-only `/linux` tree.
+
+AWEUI remains available as an AWEOS-native Wayland compositor and utility stack, but it is no longer the default desktop session.
+
+### Build profiles
+
+- Default: `AWEOS_DESKTOP=gnome make image`
+- Native fallback: `AWEOS_DESKTOP=ayui make image`
+- Root filesystem: 4 GiB by default; override with `AWEOS_ROOTFS_SIZE_MB`
+- QEMU desktop boot tests: 2 GiB RAM
+- CI verifies that `/linux` is unchanged before and after the build/test pipeline.
+
 ## Overview
 AWEOS is a complete, bootable x86_64 Linux operating system featuring **AYUI**, a native C graphical desktop environment, double-buffered framebuffer renderer, compositor, window manager, PTY-backed terminal emulator, AOSIN package system (`.asp`, `.asa`, `.aosin`), safe OS system updater (`aweos-update`), standalone graphical installer (`aweos-installer`), cross-platform USB-less migration installer (`wlin`), and headless fallback, powered by the upstream Linux kernel source and the Limine bootloader.
 
