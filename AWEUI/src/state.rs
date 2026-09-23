@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 use crate::config::AweuiConfig;
-use crate::ipc::IpcServer;
+use crate::ipc::IpcServer;\nuse crate::session::SessionManager;
 use crate::wm::WindowManager;
 use crate::workspaces::WorkspaceManager;
 
@@ -12,7 +12,7 @@ pub struct AweuiState {
     pub config: AweuiConfig,
     pub wm: WindowManager,
     pub workspaces: WorkspaceManager,
-    pub ipc_server: Arc<Mutex<IpcServer>>,
+    pub ipc_server: Arc<Mutex<IpcServer>>,\n    pub session: SessionManager,
     pub running: bool,
 }
 
