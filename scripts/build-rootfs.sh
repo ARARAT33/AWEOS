@@ -240,7 +240,33 @@ esac
 EOF
 chmod 0755 "${ROOTFS_DIR}/sbin/init"
 
-cat > "${ROOTFS_DIR}/etc/aweos/first_boot" <<'EOF'
+mkdir -p "${ROOTFS_DIR}/usr/share/wayland-sessions" "${ROOTFS_DIR}/etc/xdg/autostart"
+cat > "${ROOTFS_DIR}/usr/share/wayland-sessions/ayui.desktop" <<'EOF'
+[Desktop Entry]
+Name=AYUI
+Comment=AWEOS native desktop
+Exec=/usr/bin/aweui
+Type=Application
+DesktopNames=AYUI
+X-GDM-SessionRegisters=true
+EOF
+
+cat > "${ROOTFS_DIR}/etc/xdg/autostart/ayui-shell.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=AYUI Shell
+Exec=/usr/bin/aweui
+OnlyShowIn=AYUI;
+X-GNOME-Autostart-enabled=true
+NoDisplay=true
+EOF
+
+cat > "${ROOTFS_DIR}/etc/aweos/session.conf" <<'EOF'
+DEFAULT_DESKTOP=AYUI
+SECONDARY_DESKTOP=GNOME
+WAYLAND_SESSION=ayui
+EOF
+\ncat > "${ROOTFS_DIR}/etc/aweos/first_boot" <<'EOF'
 fresh_install=false
 EOF
 
