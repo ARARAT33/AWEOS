@@ -56,20 +56,19 @@ impl XdgShellHandler for AyuiCompositor {
     fn xdg_shell_state(&mut self) -> &mut XdgShellState { &mut self.xdg_shell_state }
 
     fn new_toplevel(&mut self, surface: ToplevelSurface) {
-        let (title, app_id) = surface.with_pending_state(|state| {
-            state.states.set(xdg_toplevel::State::Activated);
-            (state.title.clone().unwrap_or_else(|| "AWE Application".into()),
-             state.app_id.clone().unwrap_or_else(|| "unknown".into()))
-        });
         surface.send_configure();
+        let title = "AWE Application".to_string();
+        let app_id = "unknown".to_string();
         if let Ok(mut ui) = self.ui.lock() {
             ui.wm.create_window(&title, &app_id);
         }
         let index = self.windows.len();
-        self.windows.push(ManagedWindow { surface, loc: (40 + (index as i32 * 32) % 360, 56 + (index as i32 * 28) % 220) });
+        self.windows.push(ManagedWindow {
+            surface,
+            loc: (40 + (index as i32 * 32) % 360, 56 + (index as i32 * 28) % 220),
+        });
         tracing::info!(%title, %app_id, "AYUI: new Wayland toplevel");
     }
-
     fn new_popup(&mut self, _surface: PopupSurface, _positioner: PositionerState) {}
     fn grab(&mut self, _surface: PopupSurface, _seat: wl_seat::WlSeat, _serial: Serial) {}
     fn reposition_request(&mut self, _surface: PopupSurface, _positioner: PositionerState, _token: u32) {}
