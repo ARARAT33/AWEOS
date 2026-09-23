@@ -18,7 +18,8 @@ use std::time::Duration;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
-    println!("AWEOS AYUI — native desktop session");\n    println!("AYUI is the primary AWEOS desktop; GNOME remains a secondary session.");
+    println!("AWEOS AYUI — native desktop session");
+    println!("AYUI is the primary AWEOS desktop; GNOME remains a secondary session.");
 
     let mut display = Display::new();
     let listening_socket = display.add_socket_auto()?;
@@ -32,7 +33,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         state_guard.ipc_server.lock().unwrap().start_listener(Arc::clone(&state_arc));
     }
 
-    {\n        let mut state = state_arc.lock().unwrap();\n        let workspace_count = state.workspaces.workspaces.len();\n        let app_count = state.session.launcher.apps.len();\n        state.session.start(workspace_count, app_count);\n    }\n\n    println!("AWEOS BOOT SUCCESS: mode=ayui");\n    println!("AYUI services online: launcher, WM, workspaces, notifications, control center, session manager");
+    {\n        let mut state = state_arc.lock().unwrap();\n        let workspace_count = state.workspaces.workspaces.len();\n        let app_count = state.session.launcher.apps.len();\n        state.session.start(workspace_count, app_count);\n    }
+
+    println!("AWEOS BOOT SUCCESS: mode=ayui");\n    println!("AYUI services online: launcher, WM, workspaces, notifications, control center, session manager");
 
     loop {
         {
