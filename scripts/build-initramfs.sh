@@ -68,6 +68,7 @@ AWEOS Bootstrap Initramfs Initializing...
 LOGO
 
 ROOTFS_MOUNTED=0
+ROOTFS_LIVE=0
 NEW_ROOT="/mnt/rootfs"
 
 echo "Locating AWEOS root filesystem..."
@@ -81,6 +82,7 @@ for dev in /dev/vda /dev/vda1 /dev/vda2 /dev/sda /dev/sda1 /dev/sda2 /dev/nvme0n
             if [ -x "$NEW_ROOT/sbin/init" ] || [ -x "$NEW_ROOT/bin/sh" ]; then
                 echo "Found valid AWEOS rootfs on $dev!"
                 ROOTFS_MOUNTED=1
+                ROOTFS_LIVE=1
                 break
             else
                 umount "$NEW_ROOT" 2>/dev/null || true
@@ -119,6 +121,7 @@ if [ "$ROOTFS_MOUNTED" -eq 1 ] && [ -x "$NEW_ROOT/sbin/init" ]; then
     mount --move /sys "$NEW_ROOT/sys" 2>/dev/null || true
     mount --move /run "$NEW_ROOT/run" 2>/dev/null || true
 
+    if [ "$ROOTFS_LIVE" -eq 1 ]; then mkdir -p /run/overlay/upper /run/overlay/work /mnt/newroot; mount -t overlay overlay -o "lowerdir=$NEW_ROOT,upperdir=/run/overlay/upper,workdir=/run/overlay/work" /mnt/newroot 2>/dev/null && NEW_ROOT=/mnt/newroot || true; fi
     exec switch_root "$NEW_ROOT" /sbin/init
 fi
 
