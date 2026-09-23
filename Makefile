@@ -38,7 +38,7 @@ kernel: verify-linux
 	@test -s $(KERNEL_BUILD_DIR)/arch/x86/boot/bzImage
 
 rootfs: rust-build
-	@./scripts/build-rootfs.sh $(BUILD_DIR)
+	@AWEOS_DESKTOP=${AWEOS_DESKTOP:-ayui} ./scripts/build-rootfs.sh $(BUILD_DIR)
 
 initramfs: rootfs
 	@./scripts/build-initramfs.sh $(BUILD_DIR)
