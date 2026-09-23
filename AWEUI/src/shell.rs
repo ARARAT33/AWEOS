@@ -21,7 +21,7 @@ pub mod widgets {
             Some([v.next()?.parse().ok()?,v.next()?.parse().ok()?,v.next()?.parse().ok()?,v.next()?.parse().ok()?])
         }
         fn ram()->Option<u32> {
-            let s=std::fs::read_to_string("/proc/meminfo").ok()?; let mut t=0; let mut a=0;
+            let s=std::fs::read_to_string("/proc/meminfo").ok()?; let mut t: u64=0; let mut a: u64=0;
             for l in s.lines() { let mut p=l.split_whitespace(); match p.next()? {"MemTotal:"=>t=p.next()?.parse().ok()?, "MemAvailable:"=>a=p.next()?.parse().ok()?, _=>{}}}
             if t==0 {None} else {Some((t.saturating_sub(a)*100/t).min(100))}
         }
