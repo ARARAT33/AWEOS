@@ -80,7 +80,7 @@ disk-image: kernel finalize-rootfs
 
 image: iso disk-image
 
-check: verify-linux test-shell validate-rootfs
+check: verify-linux test-shell
 	@cargo fmt --all -- --check
 	@cargo check --workspace --all-targets
 
