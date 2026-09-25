@@ -10,12 +10,12 @@ ISO_PATH := $(BUILD_DIR)/AWEOS-x86_64.iso
 ROOTFS_IMG := $(BUILD_DIR)/rootfs.img
 ROOTFS_DIR := $(BUILD_DIR)/rootfs
 INITRAMFS := $(BUILD_DIR)/aweos-initramfs.cpio.gz
-LIMINE_TOOL ?= $$(command -v limine || true)
+LIMINE_TOOL ?= $(shell command -v limine 2>/dev/null || true)
 
 RUST_BINS := aweui aweui-installer aweui-settings aweui-control-center aweui-file-manager \
              aweui-terminal aweui-system-monitor aweui-diagnostics aweui-text-editor \
              aweui-calculator aweui-firstboot-setup aweui-user-app-template
-SHELL_SCRIPTS := $$(find scripts -maxdepth 1 -type f -name '*.sh' -print | sort)
+SHELL_SCRIPTS := $(shell find scripts -maxdepth 1 -type f -name '*.sh' -print | sort)
 
 .PHONY: all build verify-linux verify-linux-readonly rust-build userland kernel rootfs \
         initramfs finalize-rootfs iso disk-image image check test test-rust test-shell test-qemu \
