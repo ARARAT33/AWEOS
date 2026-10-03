@@ -24,6 +24,8 @@ for required_file in \
     etc/aweui/config.toml \
     sbin/init \
     usr/share/wayland-sessions/ayui.desktop \
+    usr/share/applications/aweui-installer.desktop \
+    usr/share/applications/aweui-diagnostics.desktop \
     usr/bin/aweui; do
     [ -s "${ROOTFS_DIR}/${required_file}" ] || fail "required rootfs file is missing or empty: /${required_file}"
 done
@@ -42,5 +44,11 @@ if grep -q 'Exec=/usr/bin/aweui$' "${ROOTFS_DIR}/usr/share/wayland-sessions/ayui
 else
     fail "AYUI Wayland session does not launch /usr/bin/aweui"
 fi
+
+grep -q '^Exec=aweui-installer$' "${ROOTFS_DIR}/usr/share/applications/aweui-installer.desktop" \
+    || fail "AWEOS installer desktop entry does not launch aweui-installer"
+
+grep -q '^Exec=aweui-diagnostics$' "${ROOTFS_DIR}/usr/share/applications/aweui-diagnostics.desktop" \
+    || fail "AWEOS diagnostics desktop entry does not launch aweui-diagnostics"
 
 echo "AWEOS rootfs layout validation passed: ${ROOTFS_DIR}"

@@ -1,3 +1,4 @@
+use aweui_framework::ipc::default_socket_path;
 use std::fs;
 
 fn main() {
@@ -7,8 +8,9 @@ fn main() {
     println!("========================================");
 
     println!("Checking system integration & Wayland compositor status...");
-    if std::path::Path::new("/tmp/aweui-ipc.sock").exists() {
-        println!(" [OK] AWEUI Compositor IPC Socket (/tmp/aweui-ipc.sock) is active.");
+    let socket = default_socket_path();
+    if std::path::Path::new(&socket).exists() {
+        println!(" [OK] AWEUI Compositor IPC Socket ({socket}) is active.");
     } else {
         println!(" [WARN] AWEUI Compositor IPC Socket is offline.");
     }

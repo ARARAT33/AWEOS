@@ -27,7 +27,10 @@ impl AweuiState {
         let config = AweuiConfig::load();
         let wm = WindowManager::new(config.wm.clone());
         let workspaces = WorkspaceManager::new(config.wm.workspace_count);
-        let ipc_server = Arc::new(Mutex::new(IpcServer::new("/tmp/aweui-ipc.sock")));
+        let ipc_server = Arc::new(Mutex::new(IpcServer::new(&format!(
+            "{}/aweui-ipc.sock",
+            std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/run/user/0".into())
+        ))));
         let desktop = DesktopShell::new(&config.desktop.theme, config.panel.height, &config.panel.position);
         Self {
             config,
