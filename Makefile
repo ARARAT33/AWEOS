@@ -94,6 +94,7 @@ test-shell:
 	for script in $(SHELL_SCRIPTS); do \
 		bash -n "$$script"; \
 	done
+	@./scripts/test-awepkg.sh
 
 test-qemu: iso
 	@./scripts/run-qemu-tests.sh $(BUILD_DIR)
