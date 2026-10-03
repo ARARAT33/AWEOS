@@ -1,4 +1,4 @@
-use aweui_framework::ipc::{send_request, IpcRequest, IpcResponse};
+use aweui_framework::ipc::{default_socket_path, send_request, IpcRequest, IpcResponse};
 use std::env;
 
 fn main() {
@@ -7,11 +7,11 @@ fn main() {
     println!("        AWEUI Settings Manager          ");
     println!("========================================");
 
-    let socket = "/tmp/aweui-ipc.sock";
+    let socket = default_socket_path();
     let args: Vec<String> = env::args().collect();
 
     if args.len() > 1 && args[1] == "--get-config" {
-        match send_request(socket, IpcRequest::GetConfig) {
+        match send_request(&socket, IpcRequest::GetConfig) {
             Ok(IpcResponse::Config(cfg)) => println!("Current AWEUI Configuration:\n{}", cfg),
             Ok(other) => println!("Response: {:?}", other),
             Err(e) => println!("Error getting config: {}", e),

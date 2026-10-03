@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
+use std::os::unix::fs::PermissionsExt;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -44,6 +45,13 @@ impl IpcServer {
                 Ok(listener) => listener,
                 Err(error) => { eprintln!("AYUI IPC bind failed: {error}"); return; }
             };
+            // The control socket can launch applications and change session
+            // configuration, so it is intentionally private to this user.
+            if let Err(error) = fs::set_permissions(&socket_path, fs::Permissions::from_mode(0o600)) {
+                eprintln!("AYUI IPC permission setup failed: {error}");
+                let _ = fs::remove_file(&socket_path);
+                return;
+            }
             for mut stream in listener.incoming().flatten() {
                 let mut buf = [0u8; 8192];
                 let Ok(n) = stream.read(&mut buf) else { continue };

@@ -177,6 +177,9 @@ make_desktop aweui-control-center.desktop "AWE Control Center" aweui-control-cen
 make_desktop aweui-calculator.desktop "AWE Calculator" "aweui-calculator -i" "Scientific calculator" "Utility;Calculator;"
 make_desktop aweui-monitor.desktop "AWE System Monitor" aweui-system-monitor "System resource monitor" "System;Monitor;"
 make_desktop aweui-editor.desktop "AWE Text Viewer" aweui-text-editor "View a text file" "Utility;TextEditor;"
+make_desktop aweui-diagnostics.desktop "AWE Diagnostics" aweui-diagnostics "Inspect the AWEOS desktop session" "System;Monitor;"
+make_desktop aweui-installer.desktop "Install AWEOS" aweui-installer "Install AWEOS to a local disk" "System;Settings;"
+make_desktop aweui-firstboot.desktop "AWEOS Welcome" aweui-firstboot-setup "Apply first-boot desktop configuration" "System;Settings;"
 
 for helper in aweos-info.sh aweos-diagnostics.sh awepkg.sh; do
     source="scripts/${helper}"
@@ -209,6 +212,9 @@ chmod 0700 /run/user/0
 if [ -z "${XDG_RUNTIME_DIR:-}" ]; then
     export XDG_RUNTIME_DIR=/run/user/0
 fi
+export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"
+export XDG_SESSION_TYPE=wayland
+export XDG_CURRENT_DESKTOP=AYUI
 
 [ -f /etc/hostname ] && hostname -F /etc/hostname 2>/dev/null || true
 
