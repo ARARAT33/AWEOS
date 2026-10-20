@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <string.h>
 
 int aweos_installer_init(aweos_installer_state_t *st) {
     if (!st) return AWEOS_ERR_INVALID_PARAM;
@@ -31,6 +32,11 @@ int aweos_installer_run_cli(aweos_installer_state_t *st) {
         .user_confirmed_destructive = st->confirmed_destructive
     };
 
+    if (st->storage.disk_count <= 0 || st->selected_disk_idx < 0 ||
+        st->selected_disk_idx >= st->storage.disk_count) {
+        LOGE("No valid target disk is selected; refusing to install");
+        return AWEOS_ERR_INVALID_PARAM;
+    }
     if (st->storage.disk_count > 0) {
         snprintf(cfg.target_disk, sizeof(cfg.target_disk), "%s", st->storage.disks[st->selected_disk_idx].dev_path);
         if (st->storage.disks[st->selected_disk_idx].partition_count > 0) {
@@ -48,8 +54,9 @@ int aweos_installer_run_cli(aweos_installer_state_t *st) {
     if (aweos_tx_plan(&st->tx) != AWEOS_OK) return AWEOS_ERR_TRANSACTION;
     if (aweos_tx_validate(&st->tx) != AWEOS_OK) return AWEOS_ERR_TRANSACTION;
     if (aweos_tx_prepare(&st->tx) != AWEOS_OK) return AWEOS_ERR_TRANSACTION;
-    if (st->mode == INSTALL_MODE_DUAL_BOOT) {
-        aweos_tx_preserve(&st->tx);
+    if (st->mode == INSTALL_MODE_DUAL_BOOT && aweos_tx_preserve(&st->tx) != AWEOS_OK) {
+        LOGE("User-data preservation failed; installation is aborted before execution");
+        return AWEOS_ERR_TRANSACTION;
     }
     if (aweos_tx_execute(&st->tx) != AWEOS_OK) return AWEOS_ERR_TRANSACTION;
     if (aweos_tx_configure_boot(&st->tx) != AWEOS_OK) return AWEOS_ERR_TRANSACTION;
