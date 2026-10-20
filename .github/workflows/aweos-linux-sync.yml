@@ -74,6 +74,10 @@ jobs:
           set -euo pipefail
           # HARD BOUNDARY: this workflow is allowed to change /linux only.
           git rm -r --quiet -- linux
+          # git rm removes indexed files, but ignored/untracked leftovers can keep
+          # the directory alive and make git read-tree fail with "path exists on disk".
+          # This workflow's explicit scope is replacing /linux with upstream exactly.
+          rm -rf -- linux
           git read-tree --prefix=linux/ -u linux-upstream/master
 
           # Exact upstream-tree verification.
