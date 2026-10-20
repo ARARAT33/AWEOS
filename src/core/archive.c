@@ -56,13 +56,18 @@ static int recursive_archive(const char *src, const char *dst, aweos_archive_sta
         struct stat st;
         if (stat(src_path, &st) == 0) {
             if (S_ISDIR(st.st_mode)) {
-                recursive_archive(src_path, dst_path, stats);
+                if (recursive_archive(src_path, dst_path, stats) != 0) {
+                    closedir(d);
+                    return -1;
+                }
             } else if (S_ISREG(st.st_mode)) {
                 uint64_t sz = 0;
-                if (copy_file_internal(src_path, dst_path, &sz) == 0) {
-                    stats->total_files++;
-                    stats->total_bytes += sz;
+                if (copy_file_internal(src_path, dst_path, &sz) != 0) {
+                    closedir(d);
+                    return -1;
                 }
+                stats->total_files++;
+                stats->total_bytes += sz;
             }
         }
     }
@@ -75,8 +80,8 @@ int aweos_archive_directory(const char *src_dir, const char *dest_dir, aweos_arc
     memset(stats, 0, sizeof(*stats));
 
     LOGI("Archiving user directory hierarchy '%s' -> '%s'...", src_dir, dest_dir);
-    if (recursive_archive(src_dir, dest_dir, stats) < 0) {
-        LOGE("Data preservation archiving failed!");
+    if (recursive_archive(src_dir, dest_dir, stats) != 0) {
+        LOGE("Data preservation archiving failed; transaction must not continue");
         return AWEOS_ERR_IO;
     }
 
