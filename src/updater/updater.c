@@ -46,8 +46,9 @@ int aweos_updater_run(aweos_updater_state_t *st) {
     if (aweos_tx_plan(&tx) != AWEOS_OK) return AWEOS_ERR_TRANSACTION;
     if (aweos_tx_validate(&tx) != AWEOS_OK) return AWEOS_ERR_TRANSACTION;
     if (aweos_tx_prepare(&tx) != AWEOS_OK) return AWEOS_ERR_TRANSACTION;
-    if (st->preserve_user_data) {
-        aweos_tx_preserve(&tx);
+    if (st->preserve_user_data && aweos_tx_preserve(&tx) != AWEOS_OK) {
+        LOGE("User-data preservation failed; update is aborted before execution");
+        return AWEOS_ERR_TRANSACTION;
     }
     if (aweos_tx_execute(&tx) != AWEOS_OK) return AWEOS_ERR_TRANSACTION;
     if (aweos_tx_configure_boot(&tx) != AWEOS_OK) return AWEOS_ERR_TRANSACTION;
