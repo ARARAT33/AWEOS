@@ -56,7 +56,7 @@ jobs:
         run: |
           set -euo pipefail
           current_tree="$(git rev-parse HEAD:linux)"
-          upstream_tree="$(git rev-parse linux-upstream/master^{tree})"
+          upstream_tree="$(git rev-parse 'linux-upstream/master^{tree}')"
           upstream_sha="$(git rev-parse linux-upstream/master)"
           echo "upstream_sha=$upstream_sha" >> "$GITHUB_OUTPUT"
           if [[ "$current_tree" == "$upstream_tree" ]]; then
@@ -67,27 +67,28 @@ jobs:
             echo "/linux differs from torvalds/linux and will be synchronized."
           fi
 
-      - name: Update ONLY /linux
+      - name: Update ONLY /linux in the Git index
         if: steps.compare.outputs.changed == 'true'
         shell: bash
         run: |
           set -euo pipefail
-          # HARD BOUNDARY: this workflow is allowed to change /linux only.
-          git rm -r --quiet -- linux
-          # git rm removes indexed files, but ignored/untracked leftovers can keep
-          # the directory alive and make git read-tree fail with "path exists on disk".
-          # This workflow's explicit scope is replacing /linux with upstream exactly.
-          rm -rf -- linux
-          git read-tree --prefix=linux/ -u linux-upstream/master
+          # HARD BOUNDARY: this workflow may commit /linux only.
+          # Do not rewrite the working tree: ignored or untracked files under
+          # linux/ may be valuable local data. Stage the upstream tree directly.
+          git rm -r --cached --quiet -- linux
+          git read-tree --prefix=linux/ linux-upstream/master
 
-          # Exact upstream-tree verification.
-          test -f linux/Makefile
-          test -f linux/Kconfig
-          test -d linux/kernel
-          test -d linux/arch
-          test "$(git rev-parse :linux)" = "$(git rev-parse linux-upstream/master^{tree})"
+          # Validate the staged index tree, not the unchanged working directory.
+          index_tree="$(git write-tree)"
+          staged_linux_tree="$(git rev-parse "${index_tree}:linux")"
+          upstream_tree="$(git rev-parse 'linux-upstream/master^{tree}')"
+          test "$staged_linux_tree" = "$upstream_tree"
+          git cat-file -e "${staged_linux_tree}:Makefile"
+          git cat-file -e "${staged_linux_tree}:Kconfig"
+          git cat-file -e "${staged_linux_tree}:kernel"
+          git cat-file -e "${staged_linux_tree}:arch"
 
-      - name: Verify NOTHING outside /linux changed
+      - name: Verify NOTHING outside /linux is staged
         if: steps.compare.outputs.changed == 'true'
         shell: bash
         run: |
