@@ -1,0 +1,31 @@
+name: AWEOS Linux Sync Regression Test
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/aweos-linux-sync.yml"
+      - ".github/workflows/aweos-linux-sync-test.yml"
+      - "scripts/test-linux-sync-index.sh"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  index-only-sync-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout regression test only
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+          sparse-checkout: |
+            scripts/test-linux-sync-index.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Check shell syntax
+        run: bash -n scripts/test-linux-sync-index.sh
+
+      - name: Run isolated Git regression test
+        run: bash scripts/test-linux-sync-index.sh
