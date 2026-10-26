@@ -35,6 +35,12 @@ jobs:
         with:
           components: rustfmt
 
+      - name: Install native Rust UI dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libinput-dev libxkbcommon-dev
+
       - name: Validate repository boundary
         run: |
           set -euo pipefail
@@ -52,6 +58,6 @@ jobs:
       - name: Verify expected binaries
         run: |
           set -euo pipefail
-          for binary in             aweui aweui-installer aweui-settings aweui-control-center             aweui-file-manager aweui-terminal aweui-system-monitor             aweui-diagnostics aweui-text-editor aweui-calculator             aweui-firstboot-setup aweui-user-app-template; do
+          for binary in aweui aweui-installer aweui-settings aweui-control-center aweui-file-manager aweui-terminal aweui-system-monitor aweui-diagnostics aweui-text-editor aweui-calculator aweui-firstboot-setup aweui-user-app-template; do
             test -x "target/release/${binary}"
           done
