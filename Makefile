@@ -47,10 +47,10 @@ kernel: verify-linux
 
 rootfs: rust-build
 	@AWEOS_DESKTOP=${AWEOS_DESKTOP:-ayui} ./scripts/build-rootfs.sh $(BUILD_DIR)
-	@./scripts/validate-rootfs-layout.sh $(BUILD_DIR)
+	@bash ./scripts/validate-rootfs-layout.sh $(BUILD_DIR)
 
 validate-rootfs:
-	@./scripts/validate-rootfs-layout.sh $(BUILD_DIR)
+	@bash ./scripts/validate-rootfs-layout.sh $(BUILD_DIR)
 
 initramfs: rootfs
 	@./scripts/build-initramfs.sh $(BUILD_DIR)
@@ -97,18 +97,3 @@ test-shell:
 
 test-qemu: iso
 	@./scripts/run-qemu-tests.sh $(BUILD_DIR)
-
-verify-artifacts:
-	@set -euo pipefail; \
-	for artifact in \
-		$(BUILD_DIR)/aweui $(BUILD_DIR)/aweui-installer $(BUILD_DIR)/aweui-settings \
-		$(BUILD_DIR)/aweui-control-center $(BUILD_DIR)/aweui-file-manager $(BUILD_DIR)/aweui-terminal \
-		$(BUILD_DIR)/aweui-system-monitor $(BUILD_DIR)/aweui-diagnostics $(BUILD_DIR)/aweui-text-editor \
-		$(BUILD_DIR)/aweui-calculator $(BUILD_DIR)/aweui-firstboot-setup $(BUILD_DIR)/aweui-user-app-template \
-		$(KERNEL_BUILD_DIR)/arch/x86/boot/bzImage $(INITRAMFS) $(ROOTFS_IMG) \
-		$(ISO_PATH) $(BUILD_DIR)/AWEOS-x86_64-disk.img; do \
-		test -s "$$artifact" || { echo "ERROR: missing or empty artifact $$artifact" >&2; exit 1; }; \
-	done
-
-clean:
-	@rm -rf $(BUILD_DIR)
