@@ -45,6 +45,7 @@ kernel: verify-linux
 	@$(MAKE) -C $(KERNEL_SRC) O=$(KERNEL_BUILD_DIR) -j"$$(nproc)" bzImage
 	@test -s $(KERNEL_BUILD_DIR)/arch/x86/boot/bzImage
 
+# The validator is run through bash so the build does not depend on its executable bit.
 rootfs: rust-build
 	@AWEOS_DESKTOP=${AWEOS_DESKTOP:-ayui} ./scripts/build-rootfs.sh $(BUILD_DIR)
 	@bash ./scripts/validate-rootfs-layout.sh $(BUILD_DIR)
