@@ -7,7 +7,6 @@ case "${BUILD_DIR}" in
     *) BUILD_DIR="${PWD}/${BUILD_DIR}" ;;
 esac
 
-ISO_DIR="${BUILD_DIR}/iso"
 ISO_OUTPUT="${BUILD_DIR}/AWEOS-x86_64.iso"
 LIMINE_TOOL="${LIMINE_TOOL:-$(command -v limine || true)}"
 
@@ -30,9 +29,14 @@ test -s "${BUILD_DIR}/rootfs.img" || {
     exit 1
 }
 
-# Recreate only the generated ISO staging directory under BUILD_DIR.
-rm -rf -- "${ISO_DIR}"
-mkdir -p "${ISO_DIR}/boot" "${ISO_DIR}/EFI/BOOT"
+# Use a unique workspace created by mktemp. Never remove a predictable
+# build/iso path, which may contain data not owned by this script.
+mkdir -p -- "${BUILD_DIR}"
+TEMP_ROOT="$(mktemp -d "${BUILD_DIR}/.aweos-iso-work.XXXXXX")"
+trap 'rm -rf -- "$TEMP_ROOT"' EXIT
+ISO_DIR="${TEMP_ROOT}/iso"
+ISO_OUTPUT_TMP="${TEMP_ROOT}/AWEOS-x86_64.iso"
+mkdir -p -- "${ISO_DIR}/boot" "${ISO_DIR}/EFI/BOOT"
 
 cp "${BUILD_DIR}/linux-x86_64/arch/x86/boot/bzImage" "${ISO_DIR}/boot/bzImage"
 cp "${BUILD_DIR}/aweos-initramfs.cpio.gz" "${ISO_DIR}/boot/aweos-initramfs.cpio.gz"
@@ -55,8 +59,9 @@ for boot_file in \
     }
 done
 
-# Run from the ISO staging root so the El Torito and appended EFI partition
-# source paths are unambiguous. Keep the output outside the staging tree.
+# Run from the ISO staging root so El Torito and appended EFI source paths
+# are unambiguous. Build the new image separately; preserve any previous ISO
+# until xorriso and Limine both succeed.
 (
     cd "${ISO_DIR}"
     xorriso -as mkisofs \
@@ -67,9 +72,10 @@ done
         --efi-boot limine-uefi-cd.bin \
         -efi-boot-part --efi-boot-image \
         --protective-msdos-label \
-        . -o "${ISO_OUTPUT}"
+        . -o "${ISO_OUTPUT_TMP}"
 )
 
-"${LIMINE_TOOL}" bios-install "${ISO_OUTPUT}"
-test -s "${ISO_OUTPUT}"
+"${LIMINE_TOOL}" bios-install "${ISO_OUTPUT_TMP}"
+test -s "${ISO_OUTPUT_TMP}"
+mv -f -- "${ISO_OUTPUT_TMP}" "${ISO_OUTPUT}"
 echo "Bootable AWEOS BIOS/UEFI hybrid ISO created at ${ISO_OUTPUT}"
