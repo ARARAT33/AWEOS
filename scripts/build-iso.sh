@@ -55,9 +55,8 @@ for boot_file in \
     }
 done
 
-# Run from the ISO staging root. This makes the El Torito and appended EFI
-# partition source paths unambiguous to xorriso, while the output stays outside
-# the staging tree and cannot be picked up as an input file.
+# Run from the ISO staging root so the El Torito and appended EFI partition
+# source paths are unambiguous. Keep the output outside the staging tree.
 (
     cd "${ISO_DIR}"
     xorriso -as mkisofs \
@@ -66,7 +65,7 @@ done
         -no-emul-boot -boot-load-size 4 -boot-info-table \
         -hfsplus -apm-block-size 2048 \
         --efi-boot limine-uefi-cd.bin \
-        -efi-boot-part -efi-boot-image \
+        -efi-boot-part --efi-boot-image \
         --protective-msdos-label \
         . -o "${ISO_OUTPUT}"
 )
