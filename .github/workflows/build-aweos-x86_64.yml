@@ -67,6 +67,9 @@ jobs:
       - name: Verify /linux is untouched
         run: ./scripts/verify-linux-readonly.sh
 
+      - name: Test safe ISO assembly failure handling
+        run: bash scripts/test-build-iso-safety.sh
+
       - name: Test Rust workspace
         run: cargo test --workspace
 
