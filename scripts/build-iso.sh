@@ -1,19 +1,37 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 
 BUILD_DIR="${1:-build}"
+case "${BUILD_DIR}" in
+    /*) ;;
+    *) BUILD_DIR="${PWD}/${BUILD_DIR}" ;;
+esac
+
 ISO_DIR="${BUILD_DIR}/iso"
 ISO_OUTPUT="${BUILD_DIR}/AWEOS-x86_64.iso"
 LIMINE_TOOL="${LIMINE_TOOL:-$(command -v limine || true)}"
 
 echo "Assembling AWEOS x86_64 hybrid ISO..."
 
-test -x "${LIMINE_TOOL}" || { echo "ERROR: limine host utility is required to create a bootable hybrid ISO" >&2; exit 1; }
-test -s "${BUILD_DIR}/linux-x86_64/arch/x86/boot/bzImage" || { echo "ERROR: bzImage missing" >&2; exit 1; }
-test -s "${BUILD_DIR}/aweos-initramfs.cpio.gz" || { echo "ERROR: initramfs missing" >&2; exit 1; }
-test -s "${BUILD_DIR}/rootfs.img" || { echo "ERROR: rootfs.img missing" >&2; exit 1; }
+test -x "${LIMINE_TOOL}" || {
+    echo "ERROR: limine host utility is required to create a bootable hybrid ISO" >&2
+    exit 1
+}
+test -s "${BUILD_DIR}/linux-x86_64/arch/x86/boot/bzImage" || {
+    echo "ERROR: bzImage missing" >&2
+    exit 1
+}
+test -s "${BUILD_DIR}/aweos-initramfs.cpio.gz" || {
+    echo "ERROR: initramfs missing" >&2
+    exit 1
+}
+test -s "${BUILD_DIR}/rootfs.img" || {
+    echo "ERROR: rootfs.img missing" >&2
+    exit 1
+}
 
-rm -rf "${ISO_DIR}"
+# Recreate only the generated ISO staging directory under BUILD_DIR.
+rm -rf -- "${ISO_DIR}"
 mkdir -p "${ISO_DIR}/boot" "${ISO_DIR}/EFI/BOOT"
 
 cp "${BUILD_DIR}/linux-x86_64/arch/x86/boot/bzImage" "${ISO_DIR}/boot/bzImage"
@@ -25,7 +43,33 @@ cp Bootloader/x86_64/limine-uefi-cd.bin "${ISO_DIR}/limine-uefi-cd.bin"
 cp Bootloader/x86_64/BOOTX64.EFI "${ISO_DIR}/EFI/BOOT/BOOTX64.EFI"
 cp Bootloader/x86_64/limine.conf "${ISO_DIR}/limine.conf"
 
-xorriso -as mkisofs     -R -r -J     -b limine-bios-cd.bin -no-emul-boot -boot-load-size 4 -boot-info-table     -hfsplus -apm-block-size 2048     --efi-boot limine-uefi-cd.bin -efi-boot-part -efi-boot-image     --protective-msdos-label     "${ISO_DIR}" -o "${ISO_OUTPUT}"
+for boot_file in \
+    "${ISO_DIR}/boot/limine-bios.sys" \
+    "${ISO_DIR}/limine-bios-cd.bin" \
+    "${ISO_DIR}/limine-uefi-cd.bin" \
+    "${ISO_DIR}/EFI/BOOT/BOOTX64.EFI" \
+    "${ISO_DIR}/limine.conf"; do
+    test -s "${boot_file}" || {
+        echo "ERROR: required Limine boot file missing or empty: ${boot_file}" >&2
+        exit 1
+    }
+done
+
+# Run from the ISO staging root. This makes the El Torito and appended EFI
+# partition source paths unambiguous to xorriso, while the output stays outside
+# the staging tree and cannot be picked up as an input file.
+(
+    cd "${ISO_DIR}"
+    xorriso -as mkisofs \
+        -R -r -J \
+        -b limine-bios-cd.bin \
+        -no-emul-boot -boot-load-size 4 -boot-info-table \
+        -hfsplus -apm-block-size 2048 \
+        --efi-boot limine-uefi-cd.bin \
+        -efi-boot-part -efi-boot-image \
+        --protective-msdos-label \
+        . -o "${ISO_OUTPUT}"
+)
 
 "${LIMINE_TOOL}" bios-install "${ISO_OUTPUT}"
 test -s "${ISO_OUTPUT}"
