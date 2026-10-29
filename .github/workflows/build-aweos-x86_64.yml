@@ -82,6 +82,19 @@ jobs:
       - name: Boot-test BIOS and UEFI ISO
         run: make test-qemu
 
+      - name: Upload QEMU diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AWEOS-QEMU-diagnostics
+          path: |
+            build/qemu-bios.log
+            build/qemu-bios-debug.log
+            build/qemu-uefi.log
+            build/qemu-uefi-debug.log
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Verify /linux after QEMU tests
         run: ./scripts/verify-linux-readonly.sh
 
