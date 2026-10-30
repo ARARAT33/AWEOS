@@ -100,7 +100,7 @@ jobs:
         run: ./scripts/run-qemu-tests.sh build all
 
       - name: Boot diagnostic retry with QEMU max CPU and instruction trace
-        if: steps.qemu_boot.outcome == 'failure'
+        if: ${{ failure() && steps.qemu_boot.outcome == 'failure' }}
         continue-on-error: true
         env:
           AWEOS_QEMU_CPU: max
