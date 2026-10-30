@@ -10,7 +10,10 @@ ISO_PATH := $(BUILD_DIR)/AWEOS-x86_64.iso
 ROOTFS_IMG := $(BUILD_DIR)/rootfs.img
 ROOTFS_DIR := $(BUILD_DIR)/rootfs
 INITRAMFS := $(BUILD_DIR)/aweos-initramfs.cpio.gz
-LIMINE_TOOL ?= $(shell command -v limine 2>/dev/null || true)
+LIMINE_VERSION ?= 12.9.6
+LIMINE_ASSET_DIR ?= $(BUILD_DIR)/limine-$(LIMINE_VERSION)
+LIMINE_CONFIG ?= Bootloader/x86_64/limine.conf
+LIMINE_TOOL ?= $(LIMINE_ASSET_DIR)/limine
 
 RUST_BINS := aweui aweui-installer aweui-settings aweui-control-center aweui-file-manager \
              aweui-terminal aweui-system-monitor aweui-diagnostics aweui-text-editor \
@@ -18,12 +21,12 @@ RUST_BINS := aweui aweui-installer aweui-settings aweui-control-center aweui-fil
 SHELL_SCRIPTS := $(shell find scripts -maxdepth 1 -type f -name '*.sh' -print | sort)
 
 .PHONY: all build verify-linux verify-linux-readonly rust-build userland kernel rootfs \
-        initramfs finalize-rootfs iso disk-image image check test test-rust test-shell test-qemu \
+        initramfs limine-assets finalize-rootfs iso disk-image image check test test-rust test-shell test-qemu \
         validate-rootfs verify-artifacts clean
 
 all: build
 
-build: verify-linux rust-build kernel rootfs initramfs finalize-rootfs iso disk-image verify-artifacts
+build: verify-linux rust-build kernel rootfs initramfs limine-assets finalize-rootfs iso disk-image verify-artifacts
 
 verify-linux verify-linux-readonly:
 	@./scripts/verify-linux-readonly.sh
@@ -56,15 +59,18 @@ validate-rootfs:
 initramfs: rootfs
 	@./scripts/build-initramfs.sh $(BUILD_DIR)
 
-finalize-rootfs: initramfs
+limine-assets:
+	@bash ./scripts/build-limine-assets.sh "$(LIMINE_ASSET_DIR)" "$(LIMINE_VERSION)"
+
+finalize-rootfs: initramfs limine-assets
 	@set -euo pipefail; \
 	test -d "$(ROOTFS_DIR)"; \
 	mkdir -p "$(ROOTFS_DIR)/boot"; \
 	cp "$(KERNEL_BUILD_DIR)/arch/x86/boot/bzImage" "$(ROOTFS_DIR)/boot/bzImage"; \
 	cp "$(INITRAMFS)" "$(ROOTFS_DIR)/boot/aweos-initramfs.cpio.gz"; \
-	cp Bootloader/x86_64/limine-bios.sys "$(ROOTFS_DIR)/boot/limine-bios.sys"; \
-	cp Bootloader/x86_64/BOOTX64.EFI "$(ROOTFS_DIR)/boot/BOOTX64.EFI"; \
-	test -n "$(LIMINE_TOOL)" || { echo "ERROR: limine host utility is required; set LIMINE_TOOL=/path/to/limine or install it in PATH." >&2; exit 1; }; \
+	cp "$(LIMINE_ASSET_DIR)/limine-bios.sys" "$(ROOTFS_DIR)/boot/limine-bios.sys"; \
+	cp "$(LIMINE_ASSET_DIR)/BOOTX64.EFI" "$(ROOTFS_DIR)/boot/BOOTX64.EFI"; \
+	test -x "$(LIMINE_TOOL)" || { echo "ERROR: Limine host utility missing: $(LIMINE_TOOL)" >&2; exit 1; }; \
 	cp "$$(readlink -f "$(LIMINE_TOOL)")" "$(ROOTFS_DIR)/usr/bin/limine"; \
 	chmod 0755 "$(ROOTFS_DIR)/usr/bin/limine"; \
 	rm -f "$(ROOTFS_IMG)"; \
@@ -73,11 +79,14 @@ finalize-rootfs: initramfs
 	test -s "$(ROOTFS_IMG)"
 
 iso: kernel finalize-rootfs
-	@./scripts/build-iso.sh $(BUILD_DIR)
+	@AWEOS_LIMINE_ASSET_DIR="$(LIMINE_ASSET_DIR)" \
+	 AWEOS_LIMINE_CONFIG="$(LIMINE_CONFIG)" \
+	 LIMINE_TOOL="$(LIMINE_TOOL)" \
+	 ./scripts/build-iso.sh $(BUILD_DIR)
 	@$(MAKE) verify-linux-readonly
 
 disk-image: kernel finalize-rootfs
-	@./scripts/build-disk-image.sh $(BUILD_DIR)
+	@LIMINE_TOOL="$(LIMINE_TOOL)" ./scripts/build-disk-image.sh $(BUILD_DIR)
 
 image: iso disk-image
 
@@ -107,9 +116,13 @@ verify-artifacts:
 		$(BUILD_DIR)/aweui-system-monitor $(BUILD_DIR)/aweui-diagnostics $(BUILD_DIR)/aweui-text-editor \
 		$(BUILD_DIR)/aweui-calculator $(BUILD_DIR)/aweui-firstboot-setup $(BUILD_DIR)/aweui-user-app-template \
 		$(KERNEL_BUILD_DIR)/arch/x86/boot/bzImage $(INITRAMFS) $(ROOTFS_IMG) \
-		$(ISO_PATH) $(BUILD_DIR)/AWEOS-x86_64-disk.img; do \
+		$(ISO_PATH) $(BUILD_DIR)/AWEOS-x86_64-disk.img \
+		$(LIMINE_ASSET_DIR)/limine $(LIMINE_ASSET_DIR)/limine-bios.sys \
+		$(LIMINE_ASSET_DIR)/limine-bios-cd.bin $(LIMINE_ASSET_DIR)/limine-uefi-cd.bin \
+		$(LIMINE_ASSET_DIR)/BOOTX64.EFI $(LIMINE_ASSET_DIR)/VERSION $(LIMINE_ASSET_DIR)/SHA256SUMS; do \
 		test -s "$$artifact" || { echo "ERROR: missing or empty artifact $$artifact" >&2; exit 1; }; \
 	done
+	@cd "$(LIMINE_ASSET_DIR)" && sha256sum --check SHA256SUMS
 
 clean:
 	@rm -rf $(BUILD_DIR)
