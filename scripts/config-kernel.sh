@@ -7,14 +7,11 @@ KERNEL_BUILD_DIR="${2:-build/linux-x86_64}"
 mkdir -p "${KERNEL_BUILD_DIR}"
 
 if [ -f "${KERNEL_BUILD_DIR}/.config" ]; then
-    echo "Kernel configuration ${KERNEL_BUILD_DIR}/.config already exists, skipping re-config."
-    exit 0
+    echo "Updating existing kernel configuration ${KERNEL_BUILD_DIR}/.config."
+else
+    echo "Creating Linux kernel configuration out-of-tree in ${KERNEL_BUILD_DIR}..."
+    make -C "${KERNEL_SRC}" O="${KERNEL_BUILD_DIR}" x86_64_defconfig
 fi
-
-echo "Configuring Linux kernel out-of-tree in ${KERNEL_BUILD_DIR}..."
-
-# Generate base defconfig out-of-tree.
-make -C "${KERNEL_SRC}" O="${KERNEL_BUILD_DIR}" x86_64_defconfig
 
 CONFIG_TOOL="${KERNEL_SRC}/scripts/config --file ${KERNEL_BUILD_DIR}/.config"
 
@@ -122,7 +119,7 @@ ${CONFIG_TOOL} --enable CONFIG_PACKET
 
 make -C "${KERNEL_SRC}" O="${KERNEL_BUILD_DIR}" olddefconfig
 
-# Fail early if the live-ISO boot path would lack its required storage drivers.
+# Fail early if the live-ISO boot path would lack its required built-in drivers.
 for option in \
     CONFIG_BLK_DEV_INITRD \
     CONFIG_RD_GZIP \
