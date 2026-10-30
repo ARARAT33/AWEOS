@@ -121,6 +121,7 @@ impl IpcServer {
 #[cfg(test)]
 mod tests {
     use super::IpcServer;
+    use std::os::unix::fs::FileTypeExt;
     use std::fs;
     use std::os::unix::net::UnixListener;
     use std::sync::atomic::{AtomicUsize, Ordering};
