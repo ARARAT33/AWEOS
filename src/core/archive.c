@@ -171,7 +171,7 @@ static int copy_regular_file(const char *source, const char *destination,
     return 0;
 }
 
-static int copy_symlink(const char *source, const char *destination,
+static int copy_symlink(int source_dir_fd, const char *name, const char *destination,
                         const struct stat *st, aweos_archive_stats_t *stats) {
     size_t cap = st->st_size > 0 ? (size_t)st->st_size + 1U : 256U;
     if (cap > 1024U * 1024U) { errno = ENAMETOOLONG; return -1; }
@@ -181,13 +181,37 @@ static int copy_symlink(const char *source, const char *destination,
         char *next = realloc(target, cap);
         if (!next) { free(target); return -1; }
         target = next;
-        n = readlink(source, target, cap);
+        n = readlinkat(source_dir_fd, name, target, cap);
         if (n < 0) { int e = errno; free(target); errno = e; return -1; }
         if ((size_t)n < cap) break;
         if (cap >= 1024U * 1024U) { free(target); errno = ENAMETOOLONG; return -1; }
         cap *= 2U;
     }
     target[n] = '\0';
+
+    /*
+     * Read the link relative to the already-open source directory, then make
+     * sure the directory entry still names the same symlink. This avoids
+     * resolving a re-parented source path and rejects replacement races.
+     */
+    struct stat after;
+    if (fstatat(source_dir_fd, name, &after, AT_SYMLINK_NOFOLLOW) != 0) {
+        int e = errno;
+        free(target);
+        errno = e;
+        return -1;
+    }
+    if (!S_ISLNK(after.st_mode) ||
+        after.st_dev != st->st_dev || after.st_ino != st->st_ino ||
+        after.st_ctim.tv_sec != st->st_ctim.tv_sec ||
+        after.st_ctim.tv_nsec != st->st_ctim.tv_nsec ||
+        after.st_mtim.tv_sec != st->st_mtim.tv_sec ||
+        after.st_mtim.tv_nsec != st->st_mtim.tv_nsec) {
+        free(target);
+        errno = ESTALE;
+        return -1;
+    }
+
     int result = symlink(target, destination);
     int saved = errno;
     free(target);
@@ -249,7 +273,7 @@ static int copy_directory(const char *source, const char *destination,
         } else if (S_ISREG(st.st_mode)) {
             if (copy_regular_file(src_child, dst_child, &st, stats) != 0) { saved = errno; result = -1; }
         } else if (S_ISLNK(st.st_mode)) {
-            if (copy_symlink(src_child, dst_child, &st, stats) != 0) { saved = errno; result = -1; }
+            if (copy_symlink(source_fd, entry->d_name, dst_child, &st, stats) != 0) { saved = errno; result = -1; }
         } else {
             LOGE("Refusing unsupported special file '%s' (mode=%o)", entry->d_name, (unsigned)st.st_mode);
             saved = ENOTSUP; result = -1;

@@ -48,18 +48,24 @@ int main(void) {
     write_bytes(file2, binary_payload, sizeof(binary_payload));
     char *outside = join(root, "outside-secret"); write_file(outside, "must not be followed\n");
     char *linkpath = join(src, "outside-link"); assert(symlink(outside, linkpath) == 0);
+    char *long_link = join(src, "long-link");
+    char long_target[1024];
+    memset(long_target, 'x', sizeof(long_target) - 1);
+    long_target[sizeof(long_target) - 1] = '\0';
+    assert(symlink(long_target, long_link) == 0);
     char *archive_parent = join(root, "archive");
     char *dest = join(archive_parent, "home");
 
     aweos_archive_stats_t stats;
     assert(aweos_archive_directory(src, dest, &stats) == AWEOS_OK);
     assert(stats.verified);
-    assert(stats.total_files == 3);
+    assert(stats.total_files == 4);
     assert(stats.total_directories == 3);
     char *copy1 = join(dest, "profile.txt");
     char *copy_docs = join(dest, "docs");
     char *copy2 = join(copy_docs, "data.bin");
     char *copylink = join(dest, "outside-link");
+    char *copylonglink = join(dest, "long-link");
     char *a = read_file(file1), *b = read_file(copy1); assert(strcmp(a,b)==0); free(a); free(b);
     size_t source_length = 0, copied_length = 0;
     unsigned char *source_bytes = read_bytes(file2, &source_length);
@@ -72,6 +78,11 @@ int main(void) {
     assert((source_mode.st_mode & 0777) == (copied_mode.st_mode & 0777));
     assert(stat(dest, &root_mode) == 0 && (root_mode.st_mode & 0777) == 0700);
     char target[PATH_MAX]; ssize_t n = readlink(copylink, target, sizeof(target)-1); assert(n > 0); target[n] = 0; assert(strcmp(target, outside)==0);
+    char long_copy_target[sizeof(long_target) + 1];
+    ssize_t long_n = readlink(copylonglink, long_copy_target, sizeof(long_copy_target) - 1);
+    assert(long_n == (ssize_t)strlen(long_target));
+    long_copy_target[long_n] = '\0';
+    assert(strcmp(long_copy_target, long_target) == 0);
 
     char *collision = join(root, "collision"); assert(mkdir(collision, 0700) == 0);
     char *sentinel = join(collision, "keep.txt"); write_file(sentinel, "do not overwrite");
@@ -147,12 +158,12 @@ int main(void) {
 
     cleanup(root);
     free(src); free(nested); free(empty); free(file1); free(file2); free(outside); free(linkpath);
-    free(archive_parent); free(dest); free(copy1); free(copy_docs); free(copy2); free(copylink);
+    free(archive_parent); free(dest); free(copy1); free(copy_docs); free(copy2); free(copylink); free(long_link); free(copylonglink);
     free(collision); free(sentinel); free(inside); free(inside_parent); free(inside_deep);
     free(linked_parent); free(linked_dest); free(linked_target);
     free(traversal_parent); free(traversal_path);
     free(badsrc); free(badfile); free(fifo); free(baddest);
     free(longsrc); free(long_source_path); free(long_file); free(longdest); free(long_copy_dir); free(long_copy);
-    puts("PASS: archive copies and verifies regular files, preserves symlink objects, refuses collisions/recursion/special files, and removes partial output.");
+    puts("PASS: archive verifies regular files, preserves short and long symlink targets without following them, refuses collisions/recursion/special files, and removes partial output.");
     return 0;
 }
