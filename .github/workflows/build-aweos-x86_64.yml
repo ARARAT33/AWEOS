@@ -3,6 +3,8 @@ name: AWEOS x86_64 Build, Image and Boot Tests
 on:
   workflow_dispatch:
   push:
+    branches:
+      - master
     paths:
       - '.github/workflows/build-aweos-x86_64.yml'
       - 'AWEUI/**'
@@ -25,6 +27,10 @@ on:
 
 permissions:
   contents: read
+
+concurrency:
+  group: aweos-x86_64-${{ github.event.pull_request.head.ref || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-and-boot-test:
@@ -50,6 +56,9 @@ jobs:
             curl xorriso qemu-system-x86 ovmf busybox-static util-linux e2fsprogs \
             parted netcat-openbsd pkg-config git patch autoconf automake libtool nasm mtools lld \
             llvm debootstrap rsync libinput-dev libxkbcommon-dev
+
+      - name: Check shell script syntax
+        run: make test-shell
 
       - name: Build and verify pinned Limine v12.9.6 assets
         run: make limine-assets
