@@ -16,9 +16,9 @@ if [ "${QEMU_CPU_MODEL}" = "qemu64" ]; then
 else
     CPU_SUFFIX="-${QEMU_CPU_MODEL//[^A-Za-z0-9_-]/_}"
 fi
-BIOS_LOG="${BUILD_DIR}/qemu-bios-${CPU_SUFFIX}.log"
-UEFI_LOG="${BUILD_DIR}/qemu-uefi-${CPU_SUFFIX}.log"
-KERNEL_LOG="${BUILD_DIR}/qemu-kernel-${CPU_SUFFIX}.log"
+BIOS_LOG="${BUILD_DIR}/qemu-bios${CPU_SUFFIX}.log"
+UEFI_LOG="${BUILD_DIR}/qemu-uefi${CPU_SUFFIX}.log"
+KERNEL_LOG="${BUILD_DIR}/qemu-kernel${CPU_SUFFIX}.log"
 TARGET_MODE="${2:-all}"
 
 case "${TARGET_MODE}" in

@@ -94,12 +94,13 @@ jobs:
           retention-days: 7
 
       - name: Boot-test BIOS, UEFI and direct kernel
+        id: qemu_boot
         env:
           AWEOS_QEMU_CPU: qemu64
         run: ./scripts/run-qemu-tests.sh build all
 
       - name: Boot diagnostic retry with QEMU max CPU and instruction trace
-        if: failure()
+        if: steps.qemu_boot.outcome == 'failure'
         continue-on-error: true
         env:
           AWEOS_QEMU_CPU: max
