@@ -101,7 +101,7 @@ validate_archive_types() {
     # Only regular files and directories are accepted. Reject symbolic links,
     # hard links, devices, FIFOs and sockets before extraction can interpret them.
     tar -tvzf "$archive" | while IFS= read -r record; do
-        entry_type="${record%" ${record#?}"}"
+        entry_type=${record%"${record#?}"}
         case "$entry_type" in
             -|d) ;;
             *) exit 1 ;;
