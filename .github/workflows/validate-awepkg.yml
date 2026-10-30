@@ -1,0 +1,34 @@
+name: Validate AWEOS Package Manager
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/validate-awepkg.yml'
+      - 'scripts/awepkg.sh'
+      - 'scripts/test-awepkg.sh'
+  pull_request:
+    paths:
+      - '.github/workflows/validate-awepkg.yml'
+      - 'scripts/awepkg.sh'
+      - 'scripts/test-awepkg.sh'
+
+permissions:
+  contents: read
+
+jobs:
+  package-safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout AWEOS
+        uses: actions/checkout@v5
+
+      - name: Verify /linux remains read-only
+        run: bash scripts/verify-linux-readonly.sh
+
+      - name: Check package manager shell syntax
+        run: sh -n scripts/awepkg.sh
+
+      - name: Run package safety integration tests
+        run: bash scripts/test-awepkg.sh
