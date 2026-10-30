@@ -2,6 +2,7 @@
 #include "../archive.h"
 #include "../transaction.h"
 #include <assert.h>
+#include <errno.h>
 #include <ftw.h>
 #include <limits.h>
 #include <stdio.h>
@@ -102,6 +103,7 @@ int main(void) {
     char *fifo = join(badsrc, "pipe"); assert(mkfifo(fifo, 0600)==0);
     char *baddest = join(root, "bad-archive");
     assert(aweos_archive_directory(badsrc, baddest, &stats) == AWEOS_ERR_IO);
+    assert(errno == ENOTSUP);
     assert(!stats.verified);
     assert(access(baddest, F_OK) != 0);
 
@@ -112,12 +114,16 @@ int main(void) {
     assert(aweos_tx_init(&tx, &tx_config) == AWEOS_OK);
     assert(aweos_tx_preserve(&tx) == AWEOS_ERR_IO);
     assert(tx.state == TX_STATE_FAILED);
+    assert(strstr(tx.error_msg, "Operation not supported") != NULL);
+    assert(errno == ENOTSUP);
 
     memset(&tx_config, 0, sizeof(tx_config));
     snprintf(tx_config.preserve_src, sizeof(tx_config.preserve_src), "%s", src);
     assert(aweos_tx_init(&tx, &tx_config) == AWEOS_OK);
     assert(aweos_tx_preserve(&tx) == AWEOS_ERR_INVALID_PARAM);
     assert(tx.state == TX_STATE_FAILED);
+    assert(strstr(tx.error_msg, "Both preservation source and destination") != NULL);
+    assert(errno == EINVAL);
 
     /* Deep paths exceed the old fixed 512-byte buffers. */
     char *longsrc = join(root, "long-home"); assert(mkdir(longsrc, 0700) == 0);

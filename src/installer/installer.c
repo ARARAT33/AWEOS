@@ -58,7 +58,7 @@ int aweos_installer_run_cli(aweos_installer_state_t *st) {
     if (aweos_tx_validate(&st->tx) != AWEOS_OK) return AWEOS_ERR_TRANSACTION;
     if (aweos_tx_prepare(&st->tx) != AWEOS_OK) return AWEOS_ERR_TRANSACTION;
     if (st->mode == INSTALL_MODE_DUAL_BOOT && aweos_tx_preserve(&st->tx) != AWEOS_OK) {
-        LOGE("User-data preservation failed; installation is aborted before execution");
+        LOGE("User-data preservation failed; installation aborted before execution: %s", st->tx.error_msg);
         return AWEOS_ERR_TRANSACTION;
     }
     if (aweos_tx_execute(&st->tx) != AWEOS_OK) return AWEOS_ERR_TRANSACTION;

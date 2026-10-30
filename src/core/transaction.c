@@ -2,6 +2,7 @@
 #include "logging.h"
 #include "boot.h"
 #include <stdio.h>
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -68,6 +69,7 @@ int aweos_tx_preserve(aweos_transaction_t *tx) {
                  "Both preservation source and destination are required; refusing to continue");
         LOGE("%s", tx->error_msg);
         tx->state = TX_STATE_FAILED;
+        errno = EINVAL;
         return AWEOS_ERR_INVALID_PARAM;
     }
 
@@ -75,8 +77,12 @@ int aweos_tx_preserve(aweos_transaction_t *tx) {
         LOGI("Preserving user data '%s' -> '%s'...", tx->config.preserve_src, tx->config.preserve_dst);
         int res = aweos_archive_directory(tx->config.preserve_src, tx->config.preserve_dst, &tx->archive_stats);
         if (res != AWEOS_OK) {
-            snprintf(tx->error_msg, sizeof(tx->error_msg), "Data preservation archiving failed!");
+            int saved_errno = errno;
+            const char *reason = saved_errno ? strerror(saved_errno) : "unknown I/O error";
+            snprintf(tx->error_msg, sizeof(tx->error_msg), "Data preservation failed: %.180s", reason);
+            LOGE("%s", tx->error_msg);
             tx->state = TX_STATE_FAILED;
+            errno = saved_errno;
             return res;
         }
     }

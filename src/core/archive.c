@@ -321,6 +321,7 @@ int aweos_archive_directory(const char *src_dir, const char *dest_dir, aweos_arc
         (void)nftw(dest_dir, remove_archive_entry, 32, FTW_DEPTH | FTW_PHYS);
         stats->verified = false;
         free(parent_real); free(source_real); free(parent); free(leaf);
+        errno = saved;
         return AWEOS_ERR_IO;
     }
     stats->verified = true;
