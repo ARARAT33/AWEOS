@@ -11,7 +11,11 @@ KERNEL_PATH="${BUILD_DIR}/linux-x86_64/arch/x86/boot/bzImage"
 INITRAMFS_PATH="${BUILD_DIR}/aweos-initramfs.cpio.gz"
 QEMU_CPU_MODEL="${AWEOS_QEMU_CPU:-qemu64}"
 QEMU_DEBUG_FLAGS="${AWEOS_QEMU_DEBUG_FLAGS:-int,guest_errors,cpu_reset}"
-CPU_SUFFIX="${QEMU_CPU_MODEL//[^A-Za-z0-9_-]/_}"
+if [ "${QEMU_CPU_MODEL}" = "qemu64" ]; then
+    CPU_SUFFIX=""
+else
+    CPU_SUFFIX="-${QEMU_CPU_MODEL//[^A-Za-z0-9_-]/_}"
+fi
 BIOS_LOG="${BUILD_DIR}/qemu-bios-${CPU_SUFFIX}.log"
 UEFI_LOG="${BUILD_DIR}/qemu-uefi-${CPU_SUFFIX}.log"
 KERNEL_LOG="${BUILD_DIR}/qemu-kernel-${CPU_SUFFIX}.log"
