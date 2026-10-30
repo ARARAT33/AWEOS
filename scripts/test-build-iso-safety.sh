@@ -27,6 +27,11 @@ for file in \
     esac
     printf 'mock %s\n' "$file" > "$dest"
 done
+cat > "$work/Bootloader/x86_64/limine-debug.conf" <<'DEBUG_CONFIG'
+serial: yes
+verbose: yes
+cmdline: earlycon=uart8250,io,0x3f8,115200 loglevel=7 ignore_loglevel
+DEBUG_CONFIG
 
 printf 'kernel\n' > "$work/build/linux-x86_64/arch/x86/boot/bzImage"
 printf 'initramfs\n' > "$work/build/aweos-initramfs.cpio.gz"
@@ -45,6 +50,10 @@ while (($#)); do
     fi
 done
 test -n "$output"
+if [[ "${EXPECT_DEBUG_CONFIG:-0}" == "1" ]]; then
+    grep -q '^serial: yes$' limine.conf
+    grep -q 'earlycon=uart8250' limine.conf
+fi
 printf 'mock ISO image\n' > "$output"
 MOCK_XORRISO
 
@@ -83,6 +92,7 @@ fi
 (
     cd "$work"
     PATH="$bin:$PATH" LIMINE_TOOL="$bin/limine" \
+        AWEOS_LIMINE_CONFIG=Bootloader/x86_64/limine-debug.conf EXPECT_DEBUG_CONFIG=1 \
         bash ./scripts/build-iso.sh "$work/build"
 )
 
@@ -94,4 +104,4 @@ if compgen -G "$work/build/.aweos-iso-work.*" >/dev/null; then
     exit 1
 fi
 
-echo "PASS: ISO assembly preserves prior artifacts and existing staging data on failure and success."
+echo "PASS: ISO assembly preserves prior artifacts and staging data, and honors the diagnostic boot config."
