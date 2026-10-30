@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{FileTypeExt, PermissionsExt};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -34,7 +34,22 @@ pub struct IpcServer {
 
 impl IpcServer {
     pub fn new(socket_path: &str) -> Self {
-        let _ = fs::remove_file(socket_path);
+        match fs::symlink_metadata(socket_path) {
+            Ok(metadata) if metadata.file_type().is_socket() => {
+                if let Err(error) = fs::remove_file(socket_path) {
+                    eprintln!("AYUI cannot remove stale IPC socket {socket_path}: {error}");
+                }
+            }
+            Ok(_) => {
+                // Never unlink a regular file, directory, or symlink just
+                // because it occupies the configured socket path.
+                eprintln!("AYUI refusing to remove non-socket IPC path: {socket_path}");
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                eprintln!("AYUI cannot inspect IPC path {socket_path}: {error}");
+            }
+        }
         Self { socket_path: socket_path.to_string() }
     }
 
@@ -100,6 +115,50 @@ impl IpcServer {
                 IpcResponse::Success("Notification delivered".into())
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::IpcServer;
+    use std::fs;
+    use std::os::unix::net::UnixListener;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static NEXT_PATH: AtomicUsize = AtomicUsize::new(0);
+
+    fn unique_socket_path() -> std::path::PathBuf {
+        let id = NEXT_PATH.fetch_add(1, Ordering::Relaxed);
+        std::env::temp_dir().join(format!(
+            "aweui-ipc-test-{}-{id}.sock",
+            std::process::id()
+        ))
+    }
+
+    #[test]
+    fn constructor_preserves_a_regular_file_at_socket_path() {
+        let path = unique_socket_path();
+        fs::write(&path, b"keep this user file").unwrap();
+
+        let _server = IpcServer::new(path.to_str().unwrap());
+
+        assert_eq!(fs::read(&path).unwrap(), b"keep this user file");
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn constructor_removes_only_a_stale_socket() {
+        let path = unique_socket_path();
+        let listener = UnixListener::bind(&path).unwrap();
+        drop(listener);
+        assert!(fs::symlink_metadata(&path).unwrap().file_type().is_socket());
+
+        let _server = IpcServer::new(path.to_str().unwrap());
+
+        assert_eq!(
+            fs::symlink_metadata(&path).unwrap_err().kind(),
+            std::io::ErrorKind::NotFound
+        );
     }
 }
 
