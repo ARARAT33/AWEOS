@@ -96,6 +96,19 @@ validate_archive_layout() {
     [ "$manifest_count" -eq 1 ] || fail "package must contain exactly one manifest.meta"
 }
 
+validate_archive_types() {
+    archive="$1"
+    # Only regular files and directories are accepted. Reject symbolic links,
+    # hard links, devices, FIFOs and sockets before extraction can interpret them.
+    tar -tvzf "$archive" | while IFS= read -r record; do
+        entry_type="${record%" ${record#?}"}"
+        case "$entry_type" in
+            -|d) ;;
+            *) exit 1 ;;
+        esac
+    done || fail "package contains a link or unsupported archive entry type"
+}
+
 read_manifest_value() {
     key="$1"
     manifest="$2"
@@ -138,6 +151,7 @@ case "$CMD" in
     install)
         [ -n "$ARG" ] && [ -f "$ARG" ] || fail "usage: awepkg install <package_file.awe>"
         validate_archive_layout "$ARG"
+        validate_archive_types "$ARG"
 
         TMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/awepkg-install.XXXXXX") || fail "cannot create temporary directory"
         FILES_LIST_TMP="$TMP_DIR/files.list"

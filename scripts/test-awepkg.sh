@@ -70,6 +70,21 @@ expect_failure install "$TMP_DIR/symlink-parent.awe"
 test ! -e "$TMP_DIR/outside/pwned.txt"
 test ! -e "$DB_DIR/symlink-parent.meta"
 
+# Hard links are rejected before extraction; they can alias data outside a package.
+hardlink_dir="$TMP_DIR/hardlink"
+mkdir -p "$hardlink_dir/root/usr/share/demo"
+cat > "$hardlink_dir/manifest.meta" <<'EOF'
+PKG_NAME=hardlink-package
+PKG_VER=1.0.0
+PKG_DESC=Hard-link rejection test
+EOF
+printf 'hard-linked payload\n' > "$hardlink_dir/root/usr/share/demo/original"
+ln "$hardlink_dir/root/usr/share/demo/original" "$hardlink_dir/root/usr/share/demo/linked"
+tar -czf "$TMP_DIR/hardlink.awe" -C "$hardlink_dir" manifest.meta root
+expect_failure install "$TMP_DIR/hardlink.awe"
+test ! -e "$DB_DIR/hardlink-package.meta"
+test ! -e "$ROOT_DIR/usr/share/demo/original"
+
 # Package payload symlinks and the protected base package are rejected.
 unsafe_dir="$TMP_DIR/unsafe"
 mkdir -p "$unsafe_dir/root"
