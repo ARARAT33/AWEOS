@@ -36,3 +36,6 @@ jobs:
 
       - name: Build and run archive safety regression tests
         run: bash src/core/tests/run_archive_tests.sh
+
+      - name: Build and run updater boot-mode and preservation regression tests
+        run: bash src/updater/tests/run_updater_tests.sh
