@@ -162,6 +162,7 @@ if [ "${TARGET_MODE}" = "all" ] || [ "${TARGET_MODE}" = "kernel" ]; then
         qemu-system-x86_64 \
         -machine pc \
         -m 2048M \
+        -cpu "${QEMU_CPU_MODEL}" \
         -kernel "${KERNEL_PATH}" \
         -initrd "${INITRAMFS_PATH}" \
         -append "aweos.mode=aweui console=tty0 console=ttyS0,115200n8 earlycon=uart8250,io,0x3f8,115200 loglevel=7 ignore_loglevel" \
