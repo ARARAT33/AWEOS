@@ -38,7 +38,7 @@ int aweos_tx_validate(aweos_transaction_t *tx) {
     if (strlen(tx->config.iso_path) > 0) {
         int res = aweos_iso_validate(tx->config.iso_path, &tx->manifest);
         if (res != AWEOS_OK) {
-            snprintf(tx->error_msg, sizeof(tx->error_msg), "ISO validation failed for %s", tx->config.iso_path);
+            snprintf(tx->error_msg, sizeof(tx->error_msg), "ISO validation failed for %.220s", tx->config.iso_path);
             tx->state = TX_STATE_FAILED;
             return res;
         }
@@ -60,7 +60,18 @@ int aweos_tx_prepare(aweos_transaction_t *tx) {
 int aweos_tx_preserve(aweos_transaction_t *tx) {
     if (!tx) return AWEOS_ERR_INVALID_PARAM;
     tx->state = TX_STATE_PRESERVE;
-    if (strlen(tx->config.preserve_src) > 0 && strlen(tx->config.preserve_dst) > 0) {
+
+    bool has_source = tx->config.preserve_src[0] != '\0';
+    bool has_destination = tx->config.preserve_dst[0] != '\0';
+    if (has_source != has_destination) {
+        snprintf(tx->error_msg, sizeof(tx->error_msg),
+                 "Both preservation source and destination are required; refusing to continue");
+        LOGE("%s", tx->error_msg);
+        tx->state = TX_STATE_FAILED;
+        return AWEOS_ERR_INVALID_PARAM;
+    }
+
+    if (has_source) {
         LOGI("Preserving user data '%s' -> '%s'...", tx->config.preserve_src, tx->config.preserve_dst);
         int res = aweos_archive_directory(tx->config.preserve_src, tx->config.preserve_dst, &tx->archive_stats);
         if (res != AWEOS_OK) {
