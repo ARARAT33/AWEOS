@@ -5,22 +5,42 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <errno.h>
 
 #if defined(__linux__)
 #include <mntent.h>
 #include <sys/statvfs.h>
+#include <sys/vfs.h>
+#include <linux/magic.h>
 #endif
 
 int aweos_detect_boot_mode(aweos_boot_mode_t *mode) {
     if (!mode) return AWEOS_ERR_INVALID_PARAM;
 #if defined(__linux__)
-    struct stat st;
-    if (stat("/sys/firmware/efi", &st) == 0) {
+    struct statfs sysfs;
+    if (statfs("/sys", &sysfs) != 0) {
+        LOGE("Cannot inspect /sys mount while detecting firmware mode: %s", strerror(errno));
+        return AWEOS_ERR_IO;
+    }
+    if ((unsigned long)sysfs.f_type != (unsigned long)SYSFS_MAGIC) {
+        LOGE("/sys is not mounted as sysfs; refusing to guess BIOS or UEFI mode");
+        return AWEOS_ERR_IO;
+    }
+
+    struct stat efi;
+    if (stat("/sys/firmware/efi", &efi) == 0) {
+        if (!S_ISDIR(efi.st_mode)) {
+            LOGE("/sys/firmware/efi exists but is not a directory");
+            return AWEOS_ERR_IO;
+        }
         *mode = BOOT_MODE_UEFI;
         LOGI("Detected UEFI boot mode via /sys/firmware/efi");
-    } else {
+    } else if (errno == ENOENT) {
         *mode = BOOT_MODE_BIOS;
-        LOGI("Detected BIOS boot mode");
+        LOGI("Detected BIOS boot mode on a mounted sysfs");
+    } else {
+        LOGE("Cannot inspect /sys/firmware/efi: %s", strerror(errno));
+        return AWEOS_ERR_IO;
     }
 #elif defined(_WIN32)
     *mode = BOOT_MODE_UEFI;
