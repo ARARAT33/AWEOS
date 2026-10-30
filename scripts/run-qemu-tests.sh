@@ -9,9 +9,12 @@ esac
 ISO_PATH="${BUILD_DIR}/AWEOS-x86_64.iso"
 KERNEL_PATH="${BUILD_DIR}/linux-x86_64/arch/x86/boot/bzImage"
 INITRAMFS_PATH="${BUILD_DIR}/aweos-initramfs.cpio.gz"
-BIOS_LOG="${BUILD_DIR}/qemu-bios.log"
-UEFI_LOG="${BUILD_DIR}/qemu-uefi.log"
-KERNEL_LOG="${BUILD_DIR}/qemu-kernel.log"
+QEMU_CPU_MODEL="${AWEOS_QEMU_CPU:-qemu64}"
+QEMU_DEBUG_FLAGS="${AWEOS_QEMU_DEBUG_FLAGS:-int,guest_errors,cpu_reset}"
+CPU_SUFFIX="${QEMU_CPU_MODEL//[^A-Za-z0-9_-]/_}"
+BIOS_LOG="${BUILD_DIR}/qemu-bios-${CPU_SUFFIX}.log"
+UEFI_LOG="${BUILD_DIR}/qemu-uefi-${CPU_SUFFIX}.log"
+KERNEL_LOG="${BUILD_DIR}/qemu-kernel-${CPU_SUFFIX}.log"
 TARGET_MODE="${2:-all}"
 
 case "${TARGET_MODE}" in
@@ -34,7 +37,7 @@ fi
 mkdir -p -- "${BUILD_DIR}"
 
 echo "=========================================="
-echo "AWEOS QEMU boot verification"
+echo "AWEOS QEMU boot verification (CPU model: ${QEMU_CPU_MODEL})"
 echo "=========================================="
 
 failures=0
@@ -102,13 +105,14 @@ if [ "${TARGET_MODE}" = "all" ] || [ "${TARGET_MODE}" = "bios" ]; then
         qemu-system-x86_64 \
         -machine pc \
         -m 2048M \
+        -cpu "${QEMU_CPU_MODEL}" \
         -boot order=d \
         -cdrom "${ISO_PATH}" \
         -display none \
         -serial stdio \
         -monitor none \
         -no-reboot \
-        -d int,guest_errors,cpu_reset \
+        -d "${QEMU_DEBUG_FLAGS}" \
         -D "${BUILD_DIR}/qemu-bios-debug.log"; then
         failures=$((failures + 1))
     fi
@@ -133,6 +137,7 @@ if [ "${TARGET_MODE}" = "all" ] || [ "${TARGET_MODE}" = "uefi" ]; then
             qemu-system-x86_64 \
             -machine q35 \
             -m 2048M \
+            -cpu "${QEMU_CPU_MODEL}" \
             -boot order=d \
             -bios "${UEFI_FIRMWARE}" \
             -cdrom "${ISO_PATH}" \
@@ -140,7 +145,7 @@ if [ "${TARGET_MODE}" = "all" ] || [ "${TARGET_MODE}" = "uefi" ]; then
             -serial stdio \
             -monitor none \
             -no-reboot \
-            -d int,guest_errors,cpu_reset \
+            -d "${QEMU_DEBUG_FLAGS}" \
             -D "${BUILD_DIR}/qemu-uefi-debug.log"; then
             failures=$((failures + 1))
         fi
@@ -165,7 +170,7 @@ if [ "${TARGET_MODE}" = "all" ] || [ "${TARGET_MODE}" = "kernel" ]; then
         -serial stdio \
         -monitor none \
         -no-reboot \
-        -d int,guest_errors,cpu_reset \
+        -d "${QEMU_DEBUG_FLAGS}" \
         -D "${BUILD_DIR}/qemu-kernel-debug.log"; then
         failures=$((failures + 1))
     fi

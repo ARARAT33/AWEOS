@@ -94,6 +94,16 @@ jobs:
           retention-days: 7
 
       - name: Boot-test BIOS, UEFI and direct kernel
+        env:
+          AWEOS_QEMU_CPU: qemu64
+        run: ./scripts/run-qemu-tests.sh build all
+
+      - name: Boot diagnostic retry with QEMU max CPU and instruction trace
+        if: failure()
+        continue-on-error: true
+        env:
+          AWEOS_QEMU_CPU: max
+          AWEOS_QEMU_DEBUG_FLAGS: int,guest_errors,cpu_reset,in_asm
         run: ./scripts/run-qemu-tests.sh build all
 
       - name: Upload QEMU and kernel diagnostics on failure
@@ -102,21 +112,20 @@ jobs:
         with:
           name: AWEOS-QEMU-diagnostics
           path: |
-            build/qemu-bios.log
-            build/qemu-bios-debug.log
-            build/qemu-uefi.log
-            build/qemu-uefi-debug.log
-            build/qemu-kernel.log
-            build/qemu-kernel-debug.log
+            build/qemu-*.log
             build/linux-x86_64/vmlinux
             build/linux-x86_64/System.map
             build/linux-x86_64/.config
+            build/linux-x86_64/arch/x86/boot/bzImage
+            build/linux-x86_64/arch/x86/boot/compressed/vmlinux
+            build/aweos-initramfs.cpio.gz
             build/limine-12.9.6/VERSION
             build/limine-12.9.6/SHA256SUMS
             build/limine-12.9.6/limine-bios.sys
             build/limine-12.9.6/limine-uefi-cd.bin
             build/limine-12.9.6/BOOTX64.EFI
           if-no-files-found: ignore
+          include-hidden-files: true
           retention-days: 7
 
       - name: Verify /linux after QEMU tests
