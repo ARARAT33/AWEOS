@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 
 KERNEL_SRC="${1:-linux}"
@@ -13,19 +13,19 @@ fi
 
 echo "Configuring Linux kernel out-of-tree in ${KERNEL_BUILD_DIR}..."
 
-# Generate base defconfig out-of-tree
+# Generate base defconfig out-of-tree.
 make -C "${KERNEL_SRC}" O="${KERNEL_BUILD_DIR}" x86_64_defconfig
 
 CONFIG_TOOL="${KERNEL_SRC}/scripts/config --file ${KERNEL_BUILD_DIR}/.config"
 
-# Disable heavy debug info
+# Disable heavy debug info.
 ${CONFIG_TOOL} --disable CONFIG_DEBUG_INFO
 ${CONFIG_TOOL} --disable CONFIG_DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT
 ${CONFIG_TOOL} --disable CONFIG_DEBUG_INFO_DWARF4
 ${CONFIG_TOOL} --disable CONFIG_DEBUG_INFO_DWARF5
 ${CONFIG_TOOL} --disable CONFIG_DEBUG_INFO_BTF
 
-# Essential filesystems & devtmpfs
+# Essential filesystems and device filesystem.
 ${CONFIG_TOOL} --enable CONFIG_CGROUPS
 ${CONFIG_TOOL} --enable CONFIG_CGROUP_SCHED
 ${CONFIG_TOOL} --enable CONFIG_MEMCG
@@ -45,7 +45,7 @@ ${CONFIG_TOOL} --enable CONFIG_VFAT_FS
 ${CONFIG_TOOL} --enable CONFIG_NLS_CODEPAGE_437
 ${CONFIG_TOOL} --enable CONFIG_NLS_ISO8859_1
 
-# Block & VirtIO Drivers
+# Initramfs, loopback rootfs images, and VirtIO.
 ${CONFIG_TOOL} --enable CONFIG_BLK_DEV_INITRD
 ${CONFIG_TOOL} --enable CONFIG_RD_GZIP
 ${CONFIG_TOOL} --enable CONFIG_VIRTIO_MENU
@@ -56,15 +56,16 @@ ${CONFIG_TOOL} --enable CONFIG_VIRTIO_NET
 ${CONFIG_TOOL} --enable CONFIG_VIRTIO_CONSOLE
 ${CONFIG_TOOL} --enable CONFIG_BLK_DEV_LOOP
 
-# Physical Hardware Storage (AHCI, NVMe, SCSI, USB)
+# Physical storage, including the SCSI CD-ROM driver used to read the live ISO.
 ${CONFIG_TOOL} --enable CONFIG_ATA
 ${CONFIG_TOOL} --enable CONFIG_SATA_AHCI
 ${CONFIG_TOOL} --enable CONFIG_ATA_PIIX
 ${CONFIG_TOOL} --enable CONFIG_BLK_DEV_NVME
 ${CONFIG_TOOL} --enable CONFIG_SCSI
 ${CONFIG_TOOL} --enable CONFIG_BLK_DEV_SD
+${CONFIG_TOOL} --enable CONFIG_BLK_DEV_SR
 
-# USB & Input
+# USB and input.
 ${CONFIG_TOOL} --enable CONFIG_USB_SUPPORT
 ${CONFIG_TOOL} --enable CONFIG_USB
 ${CONFIG_TOOL} --enable CONFIG_USB_XHCI_HCD
@@ -81,7 +82,7 @@ ${CONFIG_TOOL} --enable CONFIG_HID
 ${CONFIG_TOOL} --enable CONFIG_HID_GENERIC
 ${CONFIG_TOOL} --enable CONFIG_USB_HID
 
-# Console & Terminal PTY
+# Console and terminal PTY.
 ${CONFIG_TOOL} --enable CONFIG_TTY
 ${CONFIG_TOOL} --enable CONFIG_VT
 ${CONFIG_TOOL} --enable CONFIG_VT_CONSOLE
@@ -91,7 +92,7 @@ ${CONFIG_TOOL} --enable CONFIG_SERIAL_8250_CONSOLE
 ${CONFIG_TOOL} --enable CONFIG_UNIX98_PTYS
 ${CONFIG_TOOL} --enable CONFIG_LEGACY_PTYS
 
-# DRM / Framebuffer / Graphics
+# DRM / framebuffer / graphics.
 ${CONFIG_TOOL} --enable CONFIG_DRM
 ${CONFIG_TOOL} --enable CONFIG_DRM_VIRTIO_GPU
 ${CONFIG_TOOL} --enable CONFIG_DRM_FBDEV_EMULATION
@@ -100,13 +101,13 @@ ${CONFIG_TOOL} --enable CONFIG_FB_VESA
 ${CONFIG_TOOL} --enable CONFIG_FB_EFI
 ${CONFIG_TOOL} --enable CONFIG_FRAMEBUFFER_CONSOLE
 
-# System, PCI, ACPI, UEFI
+# System, PCI, ACPI, and UEFI.
 ${CONFIG_TOOL} --enable CONFIG_PCI
 ${CONFIG_TOOL} --enable CONFIG_ACPI
 ${CONFIG_TOOL} --enable CONFIG_EFI
 ${CONFIG_TOOL} --enable CONFIG_EFI_STUB
 
-# Networking
+# Networking.
 ${CONFIG_TOOL} --enable CONFIG_NET
 ${CONFIG_TOOL} --enable CONFIG_INET
 ${CONFIG_TOOL} --enable CONFIG_NETDEVICES
@@ -120,4 +121,20 @@ ${CONFIG_TOOL} --enable CONFIG_UNIX
 ${CONFIG_TOOL} --enable CONFIG_PACKET
 
 make -C "${KERNEL_SRC}" O="${KERNEL_BUILD_DIR}" olddefconfig
+
+# Fail early if the live-ISO boot path would lack its required storage drivers.
+for option in \
+    CONFIG_BLK_DEV_INITRD \
+    CONFIG_RD_GZIP \
+    CONFIG_DEVTMPFS \
+    CONFIG_DEVTMPFS_MOUNT \
+    CONFIG_BLK_DEV_LOOP \
+    CONFIG_BLK_DEV_SR \
+    CONFIG_ISO9660_FS; do
+    if ! grep -qx "${option}=y" "${KERNEL_BUILD_DIR}/.config"; then
+        echo "ERROR: required live-boot kernel option is not built in: ${option}" >&2
+        exit 1
+    fi
+done
+
 echo "Kernel configuration complete in ${KERNEL_BUILD_DIR}/.config"
