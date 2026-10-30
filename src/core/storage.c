@@ -94,7 +94,7 @@ int aweos_storage_discover(aweos_storage_info_t *info) {
                     p->size_bytes = size_bytes;
                     p->free_bytes = size_bytes / 2;
                     snprintf(p->fstype, sizeof(p->fstype), "ext4");
-                    snprintf(p->uuid, sizeof(p->uuid), "aweos-uuid-%s", name);
+                    snprintf(p->uuid, sizeof(p->uuid), "aweos-uuid-%.52s", name);
                 }
             }
         }
