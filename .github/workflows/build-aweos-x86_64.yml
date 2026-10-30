@@ -70,6 +70,9 @@ jobs:
       - name: Test safe ISO assembly failure handling
         run: bash scripts/test-build-iso-safety.sh
 
+      - name: Test QEMU runner continues after a failed BIOS attempt
+        run: bash scripts/test-qemu-test-runner.sh
+
       - name: Test Rust workspace
         run: cargo test --workspace
 
@@ -78,6 +81,15 @@ jobs:
 
       - name: Verify /linux after build
         run: ./scripts/verify-linux-readonly.sh
+
+      - name: Preserve ISO for boot-test diagnostics
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AWEOS-boot-test-input
+          path: build/AWEOS-x86_64.iso
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Boot-test BIOS and UEFI ISO
         run: make test-qemu
