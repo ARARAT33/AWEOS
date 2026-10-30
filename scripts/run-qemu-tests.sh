@@ -7,14 +7,17 @@ case "${BUILD_DIR}" in
     *) BUILD_DIR="${PWD}/${BUILD_DIR}" ;;
 esac
 ISO_PATH="${BUILD_DIR}/AWEOS-x86_64.iso"
+KERNEL_PATH="${BUILD_DIR}/linux-x86_64/arch/x86/boot/bzImage"
+INITRAMFS_PATH="${BUILD_DIR}/aweos-initramfs.cpio.gz"
 BIOS_LOG="${BUILD_DIR}/qemu-bios.log"
 UEFI_LOG="${BUILD_DIR}/qemu-uefi.log"
+KERNEL_LOG="${BUILD_DIR}/qemu-kernel.log"
 TARGET_MODE="${2:-all}"
 
 case "${TARGET_MODE}" in
-    all|bios|uefi) ;;
+    all|bios|uefi|kernel) ;;
     *)
-        echo "ERROR: unsupported boot-test mode '${TARGET_MODE}' (expected all, bios, or uefi)." >&2
+        echo "ERROR: unsupported boot-test mode '${TARGET_MODE}' (expected all, bios, uefi, or kernel)." >&2
         exit 2
         ;;
 esac
@@ -23,6 +26,10 @@ test -s "${ISO_PATH}" || {
     echo "ERROR: ISO not found at ${ISO_PATH}" >&2
     exit 1
 }
+if [ "${TARGET_MODE}" = "all" ] || [ "${TARGET_MODE}" = "kernel" ]; then
+    test -s "${KERNEL_PATH}" || { echo "ERROR: kernel image missing at ${KERNEL_PATH}" >&2; exit 1; }
+    test -s "${INITRAMFS_PATH}" || { echo "ERROR: initramfs missing at ${INITRAMFS_PATH}" >&2; exit 1; }
+fi
 
 mkdir -p -- "${BUILD_DIR}"
 
@@ -49,7 +56,7 @@ test_boot() {
 
     cat "${logfile}"
 
-    # timeout(124) is expected because the desktop session is intentionally long-running.
+    # timeout(124) is expected only after the guest has reached its boot marker.
     if [ "${rc}" -ne 0 ] && [ "${rc}" -ne 124 ]; then
         echo "FAIL: QEMU exited with status ${rc} during ${mode} boot." >&2
         if [ -s "${debuglog}" ]; then
@@ -90,8 +97,7 @@ test_boot() {
 }
 
 if [ "${TARGET_MODE}" = "all" ] || [ "${TARGET_MODE}" = "bios" ]; then
-    # The legacy PC machine provides the conventional PIIX IDE CD-ROM path
-    # used by the BIOS boot test. UEFI is tested separately on Q35 below.
+    # The legacy PC machine provides the conventional PIIX IDE CD-ROM path.
     if ! test_boot "BIOS" "${BIOS_LOG}" \
         qemu-system-x86_64 \
         -machine pc \
@@ -140,6 +146,27 @@ if [ "${TARGET_MODE}" = "all" ] || [ "${TARGET_MODE}" = "uefi" ]; then
         fi
     else
         echo "FAIL: OVMF firmware not found; UEFI boot test cannot be skipped." >&2
+        failures=$((failures + 1))
+    fi
+fi
+
+# This bypasses Limine and boots the exact kernel/initramfs pair from the ISO.
+# It isolates kernel + initramfs failures from bootloader/firmware failures.
+if [ "${TARGET_MODE}" = "all" ] || [ "${TARGET_MODE}" = "kernel" ]; then
+    if ! test_boot "direct kernel" "${KERNEL_LOG}" \
+        qemu-system-x86_64 \
+        -machine pc \
+        -m 2048M \
+        -kernel "${KERNEL_PATH}" \
+        -initrd "${INITRAMFS_PATH}" \
+        -append "aweos.mode=aweui console=tty0 console=ttyS0,115200n8 earlycon=uart8250,io,0x3f8,115200 loglevel=7 ignore_loglevel" \
+        -cdrom "${ISO_PATH}" \
+        -display none \
+        -serial stdio \
+        -monitor none \
+        -no-reboot \
+        -d int,guest_errors,cpu_reset \
+        -D "${BUILD_DIR}/qemu-kernel-debug.log"; then
         failures=$((failures + 1))
     fi
 fi
