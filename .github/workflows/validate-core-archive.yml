@@ -1,0 +1,44 @@
+name: Validate AWEOS Core Data Preservation
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/validate-core-archive.yml'
+      - 'src/core/**'
+      - 'src/installer/**'
+      - 'src/updater/**'
+  pull_request:
+    paths:
+      - '.github/workflows/validate-core-archive.yml'
+      - 'src/core/**'
+      - 'src/installer/**'
+      - 'src/updater/**'
+
+permissions:
+  contents: read
+
+jobs:
+  archive-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout AWEOS
+        uses: actions/checkout@v5
+
+      - name: Install C compiler and test utilities
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+
+      - name: Verify /linux remains read-only
+        run: bash scripts/verify-linux-readonly.sh
+
+      - name: Build and run archive safety regression tests
+        run: bash src/core/tests/run_archive_tests.sh
+
+      - name: Build and run updater boot-mode and preservation regression tests
+        run: bash src/updater/tests/run_updater_tests.sh
+
+      - name: Build and run real sysfs boot-mode detection test
+        run: bash src/core/tests/run_boot_mode_tests.sh
