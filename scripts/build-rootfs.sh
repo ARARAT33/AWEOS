@@ -41,13 +41,35 @@ aweui-user-app-template
 
 copy_runtime_deps() {
     local binary="$1"
-    command -v ldd >/dev/null 2>&1 || return 0
+    local interpreter
+
+    command -v readelf >/dev/null 2>&1 || {
+        echo "ERROR: readelf is required to package ELF runtime dependencies." >&2
+        return 1
+    }
+    command -v ldd >/dev/null 2>&1 || {
+        echo "ERROR: ldd is required to package ELF runtime dependencies." >&2
+        return 1
+    }
+
+    interpreter="$(readelf -l "${binary}" 2>/dev/null | sed -n 's/.*Requesting program interpreter: \(.*\)]/\1/p' | head -n 1)"
+    # Static executables have no PT_INTERP and need no dynamic runtime files.
+    [ -n "${interpreter}" ] || return 0
+    [ -f "${interpreter}" ] || {
+        echo "ERROR: ELF interpreter does not exist for ${binary}: ${interpreter}" >&2
+        return 1
+    }
+
     ldd "${binary}" 2>/dev/null |
         awk '/=> \/|^\/lib/ {print ($3 ~ /^\// ? $3 : $1)}' |
         while IFS= read -r lib; do
             [ -f "${lib}" ] || continue
             install -D -m 0644 "${lib}" "${ROOTFS_DIR}${lib}"
         done
+
+    # PT_INTERP is opened by the kernel as an executable. Copying it like a
+    # shared object (0644) makes every dynamically linked app fail at execve.
+    install -D -m 0755 "${interpreter}" "${ROOTFS_DIR}${interpreter}"
 }
 
 for binary in ${RUST_BINS}; do
