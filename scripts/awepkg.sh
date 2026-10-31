@@ -19,6 +19,7 @@ DB_DIR="${AWEPKG_DB_DIR:-${ROOT_DIR%/}/var/lib/awepkg}"
 case "$DB_DIR" in /*) ;; *) fail "AWEPKG_DB_DIR must be an absolute path" ;; esac
 mkdir -p "$DB_DIR" 2>/dev/null || fail "cannot create package database $DB_DIR"
 [ -d "$DB_DIR" ] && [ ! -L "$DB_DIR" ] || fail "package database must be a real directory"
+DB_DIR=$(CDPATH= cd -P "$DB_DIR" && pwd) || fail "cannot resolve package database directory"
 
 package_name_is_safe() {
     printf '%s\n' "$1" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$'
@@ -75,6 +76,12 @@ validate_install_targets() {
     while IFS= read -r relative; do
         [ -n "$relative" ] || continue
         validate_rooted_target "$relative" install
+        target="${ROOT_DIR%/}/$relative"
+        case "$target" in
+            "$DB_DIR"|"$DB_DIR"/*)
+                fail "package payload may not modify its package database: '$relative'"
+                ;;
+        esac
     done < "$files_list"
 }
 
