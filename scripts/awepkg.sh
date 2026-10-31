@@ -260,7 +260,7 @@ case "$CMD" in
                     [ -d "$current" ] || fail "target parent is not a directory: '$current'"
                 else
                     mkdir -- "$current" || fail "cannot create package directory '$current'"
-                    if ! printf '%s\\n' "$current" >> "$CREATED_DIRS_TMP"; then
+                    if ! printf '%s\n' "$current" >> "$CREATED_DIRS_TMP"; then
                         rmdir -- "$current" 2>/dev/null || true
                         fail "cannot record created package directory '$current'"
                     fi
@@ -292,7 +292,7 @@ case "$CMD" in
             if ! ln -- "$CURRENT_TEMP" "$target"; then
                 fail "cannot publish package file without overwriting: '$file'"
             fi
-            if ! printf '%s\\n' "$file" >> "$INSTALLED_LIST_TMP"; then
+            if ! printf '%s\n' "$file" >> "$INSTALLED_LIST_TMP"; then
                 if [ "$target" -ef "$CURRENT_TEMP" ]; then
                     rm -f -- "$target" || true
                 fi
@@ -316,7 +316,7 @@ case "$CMD" in
             expected_hash="${expected_hash%% *}"
             actual_hash="${actual_hash%% *}"
             [ "${#expected_hash}" -eq 64 ] && [ "$actual_hash" = "$expected_hash" ] || fail "installed package file changed before commit: '$file'"
-            printf '%s\\n' "$expected_hash" >> "$HASHES_TMP"
+            printf '%s\n' "$expected_hash" >> "$HASHES_TMP"
         done < "$FILES_LIST_TMP"
         cp "$TMP_DIR/manifest.meta" "$META_TMP"
 
