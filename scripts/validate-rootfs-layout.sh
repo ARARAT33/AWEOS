@@ -65,7 +65,7 @@ validate_elf_runtime() {
     while IFS= read -r lib; do
         [ -n "$lib" ] || continue
         [ -e "${ROOTFS_DIR}${lib}" ] || fail "ELF dependency is missing from rootfs for ${binary}: ${lib}"
-    done < <(printf '%s\\n' "$ldd_output" | awk '$2 == "=>" && $3 ~ /^\\// {print $3} $1 ~ /^\\/lib/ {print $1}')
+    done < <(printf '%s\n' "$ldd_output" | awk '$2 == "=>" && $3 ~ /^\// {print $3} $1 ~ /^\/lib/ {print $1}')
 }
 
 command -v readelf >/dev/null 2>&1 || fail "readelf is required for ELF runtime validation"
