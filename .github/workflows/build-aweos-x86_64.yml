@@ -57,7 +57,7 @@ jobs:
             parted netcat-openbsd pkg-config git patch autoconf automake libtool nasm mtools lld \
             llvm debootstrap rsync libinput-dev libxkbcommon-dev
 
-      - name: Check shell script syntax
+      - name: Check shell syntax and rootfs ELF runtime regression
         run: make test-shell
 
       - name: Build and verify pinned Limine v12.9.6 assets
