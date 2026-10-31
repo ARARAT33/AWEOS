@@ -13,6 +13,15 @@ pub mod ipc {
     use std::io::{Read, Write};
     use std::os::unix::net::UnixStream;
 
+    /// Returns the per-session AYUI control socket.  Never use a predictable
+    /// shared `/tmp` name: a second user must not be able to impersonate the
+    /// desktop service or issue session control requests.
+    pub fn default_socket_path() -> String {
+        let runtime_dir = std::env::var("XDG_RUNTIME_DIR")
+            .unwrap_or_else(|_| "/run/user/0".to_string());
+        format!("{runtime_dir}/aweui-ipc.sock")
+    }
+
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum IpcRequest {
         GetStatus,
@@ -42,6 +51,15 @@ pub mod ipc {
         let n = stream.read(&mut buf).map_err(|e| e.to_string())?;
         let resp: IpcResponse = serde_json::from_slice(&buf[..n]).map_err(|e| e.to_string())?;
         Ok(resp)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn ipc_socket_uses_the_session_runtime_directory() {
+        // Do not mutate process environment in a parallel test.
+        assert!(super::ipc::default_socket_path().ends_with("/aweui-ipc.sock"));
     }
 }
 

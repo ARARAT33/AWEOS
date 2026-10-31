@@ -23,7 +23,6 @@ use smithay::{
         shm::{ShmHandler, ShmState},
     },
 };
-use wayland_protocols::xdg::shell::server::xdg_toplevel;
 use wayland_server::{
     backend::{ClientData, ClientId, DisconnectReason},
     protocol::{wl_buffer, wl_surface::{self, WlSurface}},
