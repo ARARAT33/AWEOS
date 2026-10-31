@@ -18,7 +18,6 @@ LIMINE_TOOL ?= $(LIMINE_ASSET_DIR)/limine
 RUST_BINS := aweui aweui-installer aweui-settings aweui-control-center aweui-file-manager \
              aweui-terminal aweui-system-monitor aweui-diagnostics aweui-text-editor \
              aweui-calculator aweui-firstboot-setup aweui-user-app-template
-SHELL_SCRIPTS := $(shell find scripts -maxdepth 1 -type f -name '*.sh' -print | sort)
 
 .PHONY: all build verify-linux verify-linux-readonly rust-build userland kernel rootfs \
         initramfs limine-assets finalize-rootfs iso disk-image image check test test-rust test-shell test-qemu \
@@ -101,9 +100,7 @@ test-rust:
 
 test-shell:
 	@set -euo pipefail; \
-	for script in $(SHELL_SCRIPTS); do \
-		bash -n "$script"; \
-	done
+	find scripts -maxdepth 1 -type f -name '*.sh' -exec bash -n {} \;
 	@bash ./scripts/test-rootfs-runtime-validation.sh
 
 test-qemu: iso
