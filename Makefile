@@ -102,8 +102,9 @@ test-rust:
 test-shell:
 	@set -euo pipefail; \
 	for script in $(SHELL_SCRIPTS); do \
-		bash -n "$$script"; \
+		bash -n "$script"; \
 	done
+	@bash ./scripts/test-rootfs-runtime-validation.sh
 
 test-qemu: iso
 	@./scripts/run-qemu-tests.sh $(BUILD_DIR)
