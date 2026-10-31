@@ -3,6 +3,8 @@ name: AWEOS x86_64 Build, Image and Boot Tests
 on:
   workflow_dispatch:
   push:
+    branches:
+      - master
     paths:
       - '.github/workflows/build-aweos-x86_64.yml'
       - 'AWEUI/**'
@@ -26,10 +28,16 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: aweos-x86_64-${{ github.event.pull_request.head.ref || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-and-boot-test:
     runs-on: ubuntu-latest
     timeout-minutes: 180
+    env:
+      LIMINE_CONFIG: Bootloader/x86_64/limine-debug.conf
     steps:
       - name: Checkout AWEOS
         uses: actions/checkout@v5
@@ -43,22 +51,29 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y             build-essential bc bison flex libssl-dev libelf-dev cpio gzip xz-utils             curl xorriso qemu-system-x86 ovmf busybox-static util-linux e2fsprogs             parted netcat-openbsd pkg-config git patch autoconf automake libtool nasm mtools lld             llvm debootstrap rsync
+          sudo apt-get install -y \
+            build-essential bc bison flex libssl-dev libelf-dev cpio gzip xz-utils \
+            curl xorriso qemu-system-x86 ovmf busybox-static util-linux e2fsprogs \
+            parted netcat-openbsd pkg-config git patch autoconf automake libtool nasm mtools lld \
+            llvm debootstrap rsync libinput-dev libxkbcommon-dev
 
-      - name: Build Limine host utility
-        run: |
-          set -euo pipefail
-          rm -rf /tmp/limine
-          git clone --depth 1 --branch v12.6.1 https://github.com/Limine-Bootloader/Limine.git /tmp/limine
-          cd /tmp/limine
-          ./bootstrap
-          OBJDUMP_FOR_TARGET=objdump           LD_FOR_TARGET=ld           OBJCOPY_FOR_TARGET=objcopy           ./configure --enable-bios --enable-uefi-x86-64
-          make -j"$(nproc)"
-          test -x bin/limine
-          sudo install -m 0755 bin/limine /usr/local/bin/limine
+      - name: Check shell syntax and rootfs ELF runtime regression
+        run: make test-shell
+
+      - name: Build and verify pinned Limine v12.9.6 assets
+        run: make limine-assets
 
       - name: Verify /linux is untouched
         run: ./scripts/verify-linux-readonly.sh
+
+      - name: Test safe ISO assembly failure handling and config selection
+        run: bash scripts/test-build-iso-safety.sh
+
+      - name: Test safe disk-image assembly failure handling
+        run: bash scripts/test-build-disk-image-safety.sh
+
+      - name: Test QEMU runner independently exercises all boot paths
+        run: bash scripts/test-qemu-test-runner.sh
 
       - name: Test Rust workspace
         run: cargo test --workspace
@@ -69,8 +84,50 @@ jobs:
       - name: Verify /linux after build
         run: ./scripts/verify-linux-readonly.sh
 
-      - name: Boot-test BIOS and UEFI ISO
-        run: make test-qemu
+      - name: Preserve ISO for boot-test diagnostics
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AWEOS-boot-test-input
+          path: build/AWEOS-x86_64.iso
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Boot-test BIOS, UEFI and direct kernel
+        id: qemu_boot
+        env:
+          AWEOS_QEMU_CPU: qemu64
+        run: ./scripts/run-qemu-tests.sh build all
+
+      - name: Boot diagnostic retry with QEMU max CPU and instruction trace
+        if: ${{ failure() && steps.qemu_boot.outcome == 'failure' }}
+        continue-on-error: true
+        env:
+          AWEOS_QEMU_CPU: max
+          AWEOS_QEMU_DEBUG_FLAGS: int,guest_errors,cpu_reset,in_asm
+        run: ./scripts/run-qemu-tests.sh build all
+
+      - name: Upload QEMU and kernel diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AWEOS-QEMU-diagnostics
+          path: |
+            build/qemu-*.log
+            build/linux-x86_64/vmlinux
+            build/linux-x86_64/System.map
+            build/linux-x86_64/.config
+            build/linux-x86_64/arch/x86/boot/bzImage
+            build/linux-x86_64/arch/x86/boot/compressed/vmlinux
+            build/aweos-initramfs.cpio.gz
+            build/limine-12.9.6/VERSION
+            build/limine-12.9.6/SHA256SUMS
+            build/limine-12.9.6/limine-bios.sys
+            build/limine-12.9.6/limine-uefi-cd.bin
+            build/limine-12.9.6/BOOTX64.EFI
+          if-no-files-found: ignore
+          include-hidden-files: true
+          retention-days: 7
 
       - name: Verify /linux after QEMU tests
         run: ./scripts/verify-linux-readonly.sh
@@ -78,7 +135,15 @@ jobs:
       - name: Verify release artifacts
         run: |
           set -euo pipefail
-          sha256sum             build/AWEOS-x86_64.iso             build/AWEOS-x86_64-disk.img             build/aweos-initramfs.cpio.gz             build/rootfs.img             build/linux-x86_64/arch/x86/boot/bzImage             > build/aweos-sha256sums.txt
+          sha256sum \
+            build/AWEOS-x86_64.iso \
+            build/AWEOS-x86_64-disk.img \
+            build/aweos-initramfs.cpio.gz \
+            build/rootfs.img \
+            build/linux-x86_64/arch/x86/boot/bzImage \
+            build/limine-12.9.6/VERSION \
+            build/limine-12.9.6/SHA256SUMS \
+            > build/aweos-sha256sums.txt
           test -s build/aweos-sha256sums.txt
 
       - name: Upload release artifacts
@@ -91,4 +156,6 @@ jobs:
             build/rootfs.img
             build/aweos-initramfs.cpio.gz
             build/linux-x86_64/arch/x86/boot/bzImage
+            build/limine-12.9.6/VERSION
+            build/limine-12.9.6/SHA256SUMS
             build/aweos-sha256sums.txt
