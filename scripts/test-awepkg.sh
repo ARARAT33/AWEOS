@@ -98,4 +98,34 @@ tar -czf "$TMP_DIR/unsafe.awe" -C "$unsafe_dir" manifest.meta root
 expect_failure install "$TMP_DIR/unsafe.awe"
 expect_failure remove base-system
 
+# A multi-file install that fails after publishing earlier files must roll back
+# every file and directory created by that transaction.
+if [ "$(id -u)" -ne 0 ]; then
+    rollback_dir="$TMP_DIR/rollback-package"
+    mkdir -p "$rollback_dir/root/b-created" "$rollback_dir/root/z-blocked" "$ROOT_DIR/z-blocked"
+    cat > "$rollback_dir/manifest.meta" <<'EOF'
+PKG_NAME=rollback-package
+PKG_VER=1.0.0
+PKG_DESC=Interrupted install rollback test
+EOF
+    printf 'first file\\n' > "$rollback_dir/root/a-first.txt"
+    printf 'second file\\n' > "$rollback_dir/root/b-created/second.txt"
+    printf 'third file\\n' > "$rollback_dir/root/z-blocked/third.txt"
+    tar -czf "$TMP_DIR/rollback-package.awe" -C "$rollback_dir" manifest.meta root
+
+    chmod 0555 "$ROOT_DIR/z-blocked"
+    expect_failure install "$TMP_DIR/rollback-package.awe"
+    chmod 0755 "$ROOT_DIR/z-blocked"
+
+    test ! -e "$ROOT_DIR/a-first.txt"
+    test ! -e "$ROOT_DIR/b-created/second.txt"
+    test ! -e "$ROOT_DIR/b-created"
+    test ! -e "$ROOT_DIR/z-blocked/third.txt"
+    test ! -e "$DB_DIR/rollback-package.meta"
+    test ! -e "$DB_DIR/rollback-package.files"
+    test ! -e "$DB_DIR/rollback-package.sha256"
+else
+    echo "Skipping permission-based mid-install rollback test when run as root."
+fi
+
 echo "awepkg safety integration tests passed"
