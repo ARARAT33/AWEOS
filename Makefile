@@ -100,7 +100,7 @@ test-rust:
 
 test-shell:
 	@set -euo pipefail; \
-	find scripts -maxdepth 1 -type f -name '*.sh' -exec bash -n {} \;
+	find scripts -maxdepth 1 -type f -name '*.sh' -print0 | xargs -0 -r -n1 bash -n
 	@bash ./scripts/test-rootfs-runtime-validation.sh
 
 test-qemu: iso
