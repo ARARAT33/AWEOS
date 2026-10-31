@@ -158,7 +158,57 @@ case "$CMD" in
         FILES_TMP=""
         HASHES_TMP=""
         META_TMP=""
-        trap 'rm -rf -- "$TMP_DIR"; [ -z "${FILES_TMP:-}" ] || rm -f -- "$FILES_TMP"; [ -z "${HASHES_TMP:-}" ] || rm -f -- "$HASHES_TMP"; [ -z "${META_TMP:-}" ] || rm -f -- "$META_TMP"' EXIT HUP INT TERM
+        INSTALLED_LIST_TMP="$TMP_DIR/installed.list"
+        CREATED_DIRS_TMP="$TMP_DIR/created-dirs.list"
+        CURRENT_TEMP=""
+        INSTALL_COMPLETE=0
+        : > "$INSTALLED_LIST_TMP"
+        : > "$CREATED_DIRS_TMP"
+
+        rollback_install() {
+            # Remove only files this transaction created and that still match
+            # the package payload. Never delete a concurrently/user-modified file.
+            while IFS= read -r relative; do
+                [ -n "$relative" ] || continue
+                source="$TMP_DIR/root/$relative"
+                target="${ROOT_DIR%/}/$relative"
+                if [ -f "$source" ] && [ -f "$target" ] && [ ! -L "$target" ]; then
+                    expected_hash=$(sha256sum < "$source" 2>/dev/null) || expected_hash=""
+                    actual_hash=$(sha256sum < "$target" 2>/dev/null) || actual_hash=""
+                    expected_hash="${expected_hash%% *}"
+                    actual_hash="${actual_hash%% *}"
+                    if [ -n "$expected_hash" ] && [ "$actual_hash" = "$expected_hash" ]; then
+                        rm -f -- "$target" || true
+                    fi
+                fi
+            done < "$INSTALLED_LIST_TMP"
+
+            # Remove only directories created by this transaction, deepest first.
+            if [ -s "$CREATED_DIRS_TMP" ]; then
+                sort -r "$CREATED_DIRS_TMP" | while IFS= read -r directory; do
+                    [ -n "$directory" ] || continue
+                    rmdir -- "$directory" 2>/dev/null || true
+                done
+            fi
+        }
+
+        cleanup_install() {
+            status=$?
+            trap - EXIT HUP INT TERM
+            if [ "$INSTALL_COMPLETE" -ne 1 ]; then
+                rollback_install
+            fi
+            [ -z "$CURRENT_TEMP" ] || rm -f -- "$CURRENT_TEMP"
+            rm -rf -- "$TMP_DIR"
+            [ -z "$FILES_TMP" ] || rm -f -- "$FILES_TMP"
+            [ -z "$HASHES_TMP" ] || rm -f -- "$HASHES_TMP"
+            [ -z "$META_TMP" ] || rm -f -- "$META_TMP"
+            exit "$status"
+        }
+        trap cleanup_install EXIT
+        trap 'exit 129' HUP
+        trap 'exit 130' INT
+        trap 'exit 143' TERM
 
         tar -xzf "$ARG" -C "$TMP_DIR" --no-same-owner --no-same-permissions || fail "failed to unpack package"
         [ -f "$TMP_DIR/manifest.meta" ] && [ ! -L "$TMP_DIR/manifest.meta" ] || fail "invalid package: manifest is not a regular file"
@@ -188,11 +238,71 @@ case "$CMD" in
 
         validate_install_targets "$FILES_LIST_TMP"
         echo "Installing package '$PKG_NAME' version '$PKG_VER'..."
-        if [ -d "$TMP_DIR/root" ]; then
-            cp -a "$TMP_DIR/root/." "$ROOT_DIR/" || fail "failed to install package payload"
-        fi
 
-        FILES_TMP="$DB_DIR/.${PKG_NAME}.files.$$"
+        ensure_parent_directories() {
+            relative="$1"
+            case "$relative" in
+                */*) rest="${relative%/*}" ;;
+                *) return 0 ;;
+            esac
+            current="$ROOT_DIR"
+            while [ -n "$rest" ]; do
+                if [ "${rest#*/}" = "$rest" ]; then
+                    component="$rest"
+                    rest=""
+                else
+                    component="${rest%%/*}"
+                    rest="${rest#*/}"
+                fi
+                current="${current%/}/$component"
+                [ ! -L "$current" ] || fail "target parent became a symlink: '$relative'"
+                if [ -e "$current" ]; then
+                    [ -d "$current" ] || fail "target parent is not a directory: '$current'"
+                else
+                    mkdir -- "$current" || fail "cannot create package directory '$current'"
+                    if ! printf '%s\\n' "$current" >> "$CREATED_DIRS_TMP"; then
+                        rmdir -- "$current" 2>/dev/null || true
+                        fail "cannot record created package directory '$current'"
+                    fi
+                fi
+            done
+        }
+
+        # Install each regular file through a same-directory temporary inode.
+        # The final hard-link creation is atomic and refuses to overwrite a path
+        # that appeared after preflight. Any later failure triggers rollback.
+        while IFS= read -r file; do
+            [ -n "$file" ] || continue
+            source="$TMP_DIR/root/$file"
+            target="${ROOT_DIR%/}/$file"
+            ensure_parent_directories "$file"
+            [ ! -e "$target" ] && [ ! -L "$target" ] || fail "target appeared during install; refusing overwrite: '$file'"
+
+            parent="${target%/*}"
+            [ -n "$parent" ] || parent="/"
+            CURRENT_TEMP=$(mktemp "${parent%/}/.awepkg.XXXXXX") || fail "cannot create temporary file beside '$target'"
+            cp -p -- "$source" "$CURRENT_TEMP" || fail "failed to stage package file '$file'"
+
+            source_hash=$(sha256sum < "$source") || fail "cannot hash package source '$file'"
+            staged_hash=$(sha256sum < "$CURRENT_TEMP") || fail "cannot hash staged package file '$file'"
+            source_hash="${source_hash%% *}"
+            staged_hash="${staged_hash%% *}"
+            [ "$source_hash" = "$staged_hash" ] || fail "staged package file verification failed: '$file'"
+
+            if ! ln -- "$CURRENT_TEMP" "$target"; then
+                fail "cannot publish package file without overwriting: '$file'"
+            fi
+            if ! printf '%s\\n' "$file" >> "$INSTALLED_LIST_TMP"; then
+                if [ "$target" -ef "$CURRENT_TEMP" ]; then
+                    rm -f -- "$target" || true
+                fi
+                fail "cannot record installed package file '$file'"
+            fi
+            rm -f -- "$CURRENT_TEMP" || fail "cannot remove package staging file '$CURRENT_TEMP'"
+            CURRENT_TEMP=""
+        done < "$FILES_LIST_TMP"
+
+        FILES_TMP="$DB_DIR/.${PKG_NAME}.files.$"
         HASHES_TMP="$DB_DIR/.${PKG_NAME}.sha256.$$"
         META_TMP="$DB_DIR/.${PKG_NAME}.meta.$$"
         cp "$FILES_LIST_TMP" "$FILES_TMP"
@@ -201,10 +311,12 @@ case "$CMD" in
             [ -n "$file" ] || continue
             target="${ROOT_DIR%/}/$file"
             [ -f "$target" ] && [ ! -L "$target" ] || fail "installed payload file is missing or unsafe: '$file'"
-            hash=$(sha256sum < "$target") || fail "cannot hash installed file '$file'"
-            hash="${hash%% *}"
-            [ "${#hash}" -eq 64 ] || fail "invalid SHA-256 result for '$file'"
-            printf '%s\n' "$hash" >> "$HASHES_TMP"
+            expected_hash=$(sha256sum < "$TMP_DIR/root/$file") || fail "cannot hash package source '$file'"
+            actual_hash=$(sha256sum < "$target") || fail "cannot hash installed file '$file'"
+            expected_hash="${expected_hash%% *}"
+            actual_hash="${actual_hash%% *}"
+            [ "${#expected_hash}" -eq 64 ] && [ "$actual_hash" = "$expected_hash" ] || fail "installed package file changed before commit: '$file'"
+            printf '%s\\n' "$expected_hash" >> "$HASHES_TMP"
         done < "$FILES_LIST_TMP"
         cp "$TMP_DIR/manifest.meta" "$META_TMP"
 
@@ -217,8 +329,7 @@ case "$CMD" in
             rm -f -- "$DB_DIR/${PKG_NAME}.files" "$DB_DIR/${PKG_NAME}.sha256"
             fail "cannot commit package metadata"
         }
-        trap - EXIT HUP INT TERM
-        rm -rf -- "$TMP_DIR"
+        INSTALL_COMPLETE=1
         echo "Successfully installed $PKG_NAME v$PKG_VER."
         ;;
 
