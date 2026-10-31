@@ -115,7 +115,7 @@ PKG_NAME=rollback-package
 PKG_VER=1.0.0
 PKG_DESC=Interrupted install rollback test
 EOF
-    printf 'first file\\n' > "$rollback_dir/root/a-first.txt"
+    printf 'first file\n' > "$rollback_dir/root/a-first.txt"
     printf 'second file\\n' > "$rollback_dir/root/b-created/second.txt"
     printf 'third file\\n' > "$rollback_dir/root/z-blocked/third.txt"
     tar -czf "$TMP_DIR/rollback-package.awe" -C "$rollback_dir" manifest.meta root
