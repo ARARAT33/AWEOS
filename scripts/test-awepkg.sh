@@ -62,6 +62,13 @@ expect_failure install "$TMP_DIR/collision-package.awe"
 test "$(cat "$ROOT_DIR/usr/share/demo/message.txt")" = "pre-existing system data"
 test ! -e "$DB_DIR/collision-package.meta"
 
+# A package must not write into the package manager's own database.
+make_package db-collision-package var/lib/awepkg/db-collision-package.meta "must not replace package metadata"
+expect_failure install "$TMP_DIR/db-collision-package.awe"
+test ! -e "$DB_DIR/db-collision-package.meta"
+test ! -e "$DB_DIR/db-collision-package.files"
+test ! -e "$DB_DIR/db-collision-package.sha256"
+
 # A symlinked parent must not redirect package payload writes outside ROOT_DIR.
 mkdir -p "$TMP_DIR/outside"
 ln -s "$TMP_DIR/outside" "$ROOT_DIR/escape"
