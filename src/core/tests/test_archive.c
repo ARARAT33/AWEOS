@@ -123,6 +123,7 @@ int main(void) {
     snprintf(tx_config.preserve_dst, sizeof(tx_config.preserve_dst), "%s", baddest);
     aweos_transaction_t tx;
     assert(aweos_tx_init(&tx, &tx_config) == AWEOS_OK);
+    tx.state = TX_STATE_PREPARE; /* Exercise preservation independently of the disabled staging backend. */
     assert(aweos_tx_preserve(&tx) == AWEOS_ERR_IO);
     assert(tx.state == TX_STATE_FAILED);
     assert(strstr(tx.error_msg, "Operation not supported") != NULL);
@@ -131,6 +132,7 @@ int main(void) {
     memset(&tx_config, 0, sizeof(tx_config));
     snprintf(tx_config.preserve_src, sizeof(tx_config.preserve_src), "%s", src);
     assert(aweos_tx_init(&tx, &tx_config) == AWEOS_OK);
+    tx.state = TX_STATE_PREPARE; /* Exercise preservation validation in isolation. */
     assert(aweos_tx_preserve(&tx) == AWEOS_ERR_INVALID_PARAM);
     assert(tx.state == TX_STATE_FAILED);
     assert(strstr(tx.error_msg, "Both preservation source and destination") != NULL);
