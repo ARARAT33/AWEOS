@@ -26,6 +26,7 @@ if [ -f "$RECOVERY_SHELL" ] && [ -x "$RECOVERY_SHELL" ]; then
     while :; do
         "$RECOVERY_SHELL" cttyhack /bin/sh || true
         echo "AWEOS recovery shell exited; reopening the console."
+        /bin/busybox sleep 1
     done
 fi
 
