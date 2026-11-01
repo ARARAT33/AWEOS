@@ -20,7 +20,7 @@ static int require_state(aweos_transaction_t *tx, aweos_tx_state_t expected, con
     if (tx->state != expected) {
         char message[192];
         snprintf(message, sizeof(message),
-                 "Refusing transaction stage '%s' from state %d (expected %d)",
+                 "Refusing transaction stage '%.64s' from state %d (expected %d)",
                  stage, (int)tx->state, (int)expected);
         return fail_transaction(tx, message, AWEOS_ERR_TRANSACTION);
     }
