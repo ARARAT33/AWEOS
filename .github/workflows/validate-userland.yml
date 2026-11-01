@@ -7,6 +7,7 @@ on:
       - '.github/workflows/validate-userland.yml'
       - 'AWEUI/**'
       - 'APPS/**'
+      - 'src/**'
       - 'scripts/**'
       - 'Cargo.toml'
       - 'Makefile'
@@ -15,6 +16,7 @@ on:
       - '.github/workflows/validate-userland.yml'
       - 'AWEUI/**'
       - 'APPS/**'
+      - 'src/**'
       - 'scripts/**'
       - 'Cargo.toml'
       - 'Makefile'
@@ -34,6 +36,14 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
+
+      - name: Install native C test toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+
+      - name: Run shell and C transaction safety tests
+        run: make test-shell
 
       - name: Validate repository boundary
         run: |
