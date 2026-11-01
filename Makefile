@@ -94,6 +94,7 @@ test-shell:
 	for script in $(SHELL_SCRIPTS); do \
 		bash -n "$$script"; \
 	done
+	@bash ./scripts/test-transaction-fail-closed.sh
 
 test-qemu: iso
 	@./scripts/run-qemu-tests.sh $(BUILD_DIR)
