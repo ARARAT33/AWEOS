@@ -44,6 +44,12 @@ while (($#)); do
     esac
 done
 
+if [[ "${MOCK_QEMU_MODE:-success}" == "desktop-fails" ]]; then
+    echo 'AWEOS ROOTFS READY: mode=ayui'
+    echo 'AWEOS RECOVERY SHELL READY'
+    exit 0
+fi
+
 if [[ "${MOCK_QEMU_MODE:-success}" == "fail-bios" && "$is_uefi" -eq 0 && "$is_kernel" -eq 0 ]]; then
     if [[ -n "$debug_log" ]]; then
         printf 'simulated BIOS reset\n' > "$debug_log"
@@ -52,7 +58,8 @@ if [[ "${MOCK_QEMU_MODE:-success}" == "fail-bios" && "$is_uefi" -eq 0 && "$is_ke
     exit 1
 fi
 
-echo 'AWEOS BOOT SUCCESS: mode=ayui'
+echo 'AWEOS ROOTFS READY: mode=ayui'
+echo 'AWEOS AYUI COMPOSITOR READY: backend=mock'
 exit 0
 MOCK_QEMU
 chmod 0755 "$mock_bin/qemu-system-x86_64"
@@ -75,8 +82,10 @@ grep -q 'Testing AWEOS UEFI boot' "$tmp_root/fail-bios-output.log"
 grep -q 'SUCCESS: AWEOS UEFI boot' "$tmp_root/fail-bios-output.log"
 grep -q 'Testing AWEOS direct kernel boot' "$tmp_root/fail-bios-output.log"
 grep -q 'SUCCESS: AWEOS direct kernel boot' "$tmp_root/fail-bios-output.log"
-grep -q 'AWEOS BOOT SUCCESS: mode=ayui' "$build_dir/qemu-uefi.log"
-grep -q 'AWEOS BOOT SUCCESS: mode=ayui' "$build_dir/qemu-kernel.log"
+grep -q 'AWEOS ROOTFS READY: mode=ayui' "$build_dir/qemu-uefi.log"
+grep -q 'AWEOS AYUI COMPOSITOR READY' "$build_dir/qemu-uefi.log"
+grep -q 'AWEOS ROOTFS READY: mode=ayui' "$build_dir/qemu-kernel.log"
+grep -q 'AWEOS AYUI COMPOSITOR READY' "$build_dir/qemu-kernel.log"
 test -s "$build_dir/qemu-bios-debug.log"
 
 # All three boot paths must pass when the mock firmware and QEMU runs succeed.
@@ -88,6 +97,21 @@ MOCK_QEMU_MODE=success \
 grep -q 'SUCCESS: AWEOS BIOS boot' "$tmp_root/success-output.log"
 grep -q 'SUCCESS: AWEOS UEFI boot' "$tmp_root/success-output.log"
 grep -q 'SUCCESS: AWEOS direct kernel boot' "$tmp_root/success-output.log"
+
+# A rootfs that falls back to the recovery console must not be misreported as a desktop boot.
+set +e
+PATH="$mock_bin:$PATH" \
+MOCK_QEMU_MODE=desktop-fails \
+    bash "$repo_root/scripts/run-qemu-tests.sh" "$build_dir" bios \
+    > "$tmp_root/desktop-failure-output.log" 2>&1
+rc=$?
+set -e
+if [ "$rc" -eq 0 ]; then
+    echo "ERROR: runner reported a desktop success after AYUI fell back to recovery." >&2
+    exit 1
+fi
+grep -q 'AWEOS RECOVERY SHELL READY' "$build_dir/qemu-bios.log"
+grep -q 'AYUI did not initialize' "$tmp_root/desktop-failure-output.log"
 
 # A requested UEFI test must fail if the explicitly selected firmware is missing.
 set +e

@@ -200,7 +200,7 @@ make_desktop aweui-calculator.desktop "AWE Calculator" "aweui-calculator -i" "Sc
 make_desktop aweui-monitor.desktop "AWE System Monitor" aweui-system-monitor "System resource monitor" "System;Monitor;"
 make_desktop aweui-editor.desktop "AWE Text Viewer" aweui-text-editor "View a text file" "Utility;TextEditor;"
 
-for helper in aweos-info.sh aweos-diagnostics.sh awepkg.sh; do
+for helper in aweos-info.sh aweos-diagnostics.sh awepkg.sh aweos-session.sh; do
     source="scripts/${helper}"
     test -f "${source}" || { echo "ERROR: missing helper ${source}" >&2; exit 1; }
     install -D -m 0755 "${source}" "${ROOTFS_DIR}/usr/bin/${helper%.sh}"
@@ -243,19 +243,20 @@ elif grep -qw aweos.mode=headless /proc/cmdline 2>/dev/null; then
     MODE=headless
 fi
 
-echo "AWEOS BOOT SUCCESS: mode=${MODE}"
+echo "AWEOS ROOTFS READY: mode=${MODE}"
 
 case "${MODE}" in
     installer)
-        exec /usr/bin/aweui-installer
+        exec /usr/bin/aweos-session /usr/bin/aweui-installer
         ;;
     aweui|gui)
         if [ -x /usr/bin/aweui-firstboot-setup ] && grep -q '^fresh_install=true' /etc/aweos/first_boot 2>/dev/null; then
             /usr/bin/aweui-firstboot-setup || true
         fi
-        exec /usr/bin/aweui
+        exec /usr/bin/aweos-session /usr/bin/aweui
         ;;
     headless)
+        echo "AWEOS HEADLESS CONSOLE READY"
         exec /bin/busybox cttyhack /bin/sh
         ;;
 esac

@@ -18,7 +18,8 @@ printf 'AUTOLOGIN=true\n' > "${rootfs}/etc/aweos/config"
 printf '[desktop]\ntheme = "test"\n' > "${rootfs}/etc/aweui/config.toml"
 printf '#!/bin/sh\nexec /bin/sh\n' > "${rootfs}/sbin/init"
 printf '#!/bin/sh\nexit 0\n' > "${rootfs}/bin/busybox"
-chmod 0755 "${rootfs}/sbin/init" "${rootfs}/bin/busybox"
+printf '#!/bin/sh\nexit 0\n' > "${rootfs}/usr/bin/aweos-session"
+chmod 0755 "${rootfs}/sbin/init" "${rootfs}/bin/busybox" "${rootfs}/usr/bin/aweos-session"
 printf '[Desktop Entry]\nExec=/usr/bin/aweui\n' > "${rootfs}/usr/share/wayland-sessions/ayui.desktop"
 
 cat > "${tmp_root}/main.c" <<'C_SOURCE'
