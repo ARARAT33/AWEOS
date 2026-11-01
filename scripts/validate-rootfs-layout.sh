@@ -24,12 +24,14 @@ for required_file in \
     etc/aweui/config.toml \
     sbin/init \
     usr/share/wayland-sessions/ayui.desktop \
-    usr/bin/aweui; do
+    usr/bin/aweui \
+    usr/bin/aweos-session; do
     [ -s "${ROOTFS_DIR}/${required_file}" ] || fail "required rootfs file is missing or empty: /${required_file}"
 done
 
 [ -x "${ROOTFS_DIR}/sbin/init" ] || fail "/sbin/init is not executable"
 [ -x "${ROOTFS_DIR}/bin/busybox" ] || fail "/bin/busybox is not executable"
+[ -x "${ROOTFS_DIR}/usr/bin/aweos-session" ] || fail "/usr/bin/aweos-session is not executable"
 
 awk -F: 'BEGIN { ok=0 } $1 == "aweos" && $3 == "1000" { ok=1 } END { exit ok ? 0 : 1 }' "${ROOTFS_DIR}/etc/passwd" \
     || fail "the aweos user with UID 1000 is missing from /etc/passwd"
