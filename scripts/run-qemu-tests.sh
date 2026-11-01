@@ -73,8 +73,8 @@ test_boot() {
         return 1
     fi
 
-    if ! grep -q "AWEOS BOOT SUCCESS: mode=" "${logfile}"; then
-        echo "FAIL: root filesystem never reached its boot hand-off marker in ${mode} mode." >&2
+    if ! grep -q "AWEOS ROOTFS READY: mode=" "${logfile}"; then
+        echo "FAIL: root filesystem never reached its verified init hand-off in ${mode} mode." >&2
         if [ -s "${logfile}" ]; then
             echo "--- serial output (${logfile}) ---" >&2
             tail -n 120 "${logfile}" >&2
@@ -91,14 +91,14 @@ test_boot() {
         return 1
     fi
 
-    if grep -q "AWEOS BOOT SUCCESS: mode=ayui" "${logfile}"; then
-        echo "SUCCESS: AWEOS ${mode} boot reached the default AYUI desktop hand-off."
-    elif grep -q "AWEOS BOOT SUCCESS: mode=gnome" "${logfile}"; then
-        echo "SUCCESS: AWEOS ${mode} boot reached the secondary GNOME userspace."
-    elif grep -q "AWEUI Compositor initialized successfully" "${logfile}"; then
-        echo "SUCCESS: AWEOS ${mode} boot reached the AYUI compositor."
+    if grep -q "AWEOS AYUI COMPOSITOR READY:" "${logfile}"; then
+        echo "SUCCESS: AWEOS ${mode} boot reached an initialized AYUI Wayland compositor and rendered its first frame."
+    elif grep -q "AWEOS RECOVERY SHELL READY" "${logfile}"; then
+        echo "FAIL: the OS reached its rootfs, but AYUI did not initialize; the recovery console kept PID 1 alive." >&2
+        grep -E "EventLoopCreation|AYUI|AWEOS session failed" "${logfile}" | tail -n 40 >&2 || true
+        return 1
     else
-        echo "FAIL: neither GNOME userspace nor AYUI reached running state in ${mode} mode." >&2
+        echo "FAIL: rootfs booted, but neither AYUI readiness nor the recovery-console marker appeared in ${mode} mode." >&2
         return 1
     fi
 }
