@@ -12,6 +12,8 @@ cat > transaction_test.c <<'C_TEST'
 #include "transaction.h"
 #include "boot.h"
 #include "logging.h"
+#include "installer.h"
+#include "updater.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -34,8 +36,8 @@ void aweos_log(aweos_log_level_t level, const char *fmt, ...) {
 
 int aweos_iso_validate(const char *path, aweos_iso_manifest_t *manifest) {
     (void)path;
-    (void)manifest;
     iso_calls++;
+    if (manifest) snprintf(manifest->version, sizeof(manifest->version), "9.9.9");
     return AWEOS_OK;
 }
 
@@ -44,6 +46,18 @@ int aweos_archive_directory(const char *src, const char *dst, aweos_archive_stat
     (void)dst;
     (void)stats;
     archive_calls++;
+    return AWEOS_OK;
+}
+
+int aweos_detect_boot_mode(aweos_boot_mode_t *mode) {
+    if (!mode) return AWEOS_ERR_INVALID_PARAM;
+    *mode = BOOT_MODE_BIOS;
+    return AWEOS_OK;
+}
+
+int aweos_storage_discover(aweos_storage_info_t *info) {
+    if (!info) return AWEOS_ERR_INVALID_PARAM;
+    memset(info, 0, sizeof(*info));
     return AWEOS_OK;
 }
 
@@ -100,6 +114,31 @@ int main(void) {
     if (check(tx.state == TX_STATE_FAILED, "unconfirmed destructive plan must fail")) return 1;
     if (check(archive_calls == 0 && boot_calls == 0, "rejected destructive plan must have no side effects")) return 1;
 
+    aweos_installer_state_t installer = {0};
+    installer.mode = INSTALL_MODE_DUAL_BOOT;
+    installer.boot_mode = BOOT_MODE_BIOS;
+    installer.selected_disk_idx = 0;
+    installer.selected_part_idx = 0;
+    installer.storage.disk_count = 1;
+    installer.storage.disks[0].partition_count = 1;
+    snprintf(installer.storage.disks[0].dev_path, sizeof(installer.storage.disks[0].dev_path), "/dev/test-disk");
+    snprintf(installer.storage.disks[0].partitions[0].dev_path,
+             sizeof(installer.storage.disks[0].partitions[0].dev_path), "/dev/test-partition");
+    if (check(aweos_installer_run_cli(&installer) == AWEOS_ERR_TRANSACTION,
+              "installer must stop when staging backend is unavailable")) return 1;
+    if (check(installer.tx.state == TX_STATE_FAILED, "installer must expose a failed transaction")) return 1;
+
+    aweos_updater_state_t updater;
+    if (check(aweos_updater_init(&updater, "/tmp/fake-aweos.iso") == AWEOS_OK,
+              "updater preflight initialization with a test ISO stub")) return 1;
+    if (check(updater.ready_to_update, "updater preflight state")) return 1;
+    if (check(aweos_updater_run(&updater) == AWEOS_ERR_TRANSACTION,
+              "updater must stop when staging backend is unavailable")) return 1;
+
+    if (check(archive_calls == 0, "installer/updater must not archive or overwrite user data before staging exists")) return 1;
+    if (check(boot_calls == 0, "installer/updater must not write bootloader files")) return 1;
+    if (check(iso_calls == 2, "updater should validate the candidate ISO during preflight and transaction validation")) return 1;
+
     FILE *unexpected = fopen("limine.conf", "r");
     if (unexpected) {
         fclose(unexpected);
@@ -110,6 +149,10 @@ int main(void) {
 }
 C_TEST
 
-cc -std=c11 -Wall -Wextra -Werror -I"$repo_root/src/core" \
-    "$repo_root/src/core/transaction.c" transaction_test.c -o transaction_test
+cc -std=c11 -Wall -Wextra -Werror \
+    -I"$repo_root/src/core" -I"$repo_root/src/installer" -I"$repo_root/src/updater" \
+    "$repo_root/src/core/transaction.c" \
+    "$repo_root/src/installer/installer.c" \
+    "$repo_root/src/updater/updater.c" \
+    transaction_test.c -o transaction_test
 ./transaction_test
