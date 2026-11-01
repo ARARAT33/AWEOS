@@ -32,7 +32,7 @@ run_until_timeout() {
     local session="$1" label="$2"
     local count_file="$tmp_root/${label}.count"
     set +e
-    output="$(RECOVERY_COUNT_FILE="$count_file" timeout 1s bash "$helper" "$session" "$tmp_root/recovery" 2>&1)"
+    output="$(RECOVERY_COUNT_FILE="$count_file" timeout 2s bash "$helper" "$session" "$tmp_root/recovery" 2>&1)"
     rc=$?
     set -e
     [ "$rc" -eq 124 ] || { echo "ERROR: recovery supervisor exited instead of staying alive (status $rc)" >&2; exit 1; }
