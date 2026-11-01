@@ -8,10 +8,12 @@
 
 static int fail_transaction(aweos_transaction_t *tx, const char *message, int result) {
     if (!tx) return AWEOS_ERR_INVALID_PARAM;
+    int saved_errno = errno;
     snprintf(tx->error_msg, sizeof(tx->error_msg), "%s", message);
     snprintf(tx->status_msg, sizeof(tx->status_msg), "Stopped safely: %.210s", message);
     tx->state = TX_STATE_FAILED;
     LOGE("%s", tx->error_msg);
+    errno = saved_errno;
     return result;
 }
 
@@ -89,6 +91,7 @@ int aweos_tx_preserve(aweos_transaction_t *tx) {
     bool has_source = tx->config.preserve_src[0] != '\0';
     bool has_destination = tx->config.preserve_dst[0] != '\0';
     if (has_source != has_destination) {
+        errno = EINVAL;
         return fail_transaction(tx,
             "Both preservation source and destination are required; refusing to continue",
             AWEOS_ERR_INVALID_PARAM);
@@ -102,7 +105,9 @@ int aweos_tx_preserve(aweos_transaction_t *tx) {
             const char *reason = saved_errno ? strerror(saved_errno) : "unknown I/O error";
             char message[224];
             snprintf(message, sizeof(message), "Data preservation failed: %.180s", reason);
-            return fail_transaction(tx, message, res);
+            int result = fail_transaction(tx, message, res);
+            errno = saved_errno;
+            return result;
         }
     }
     tx->progress_percent = 60;
