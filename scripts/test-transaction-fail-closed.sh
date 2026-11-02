@@ -49,15 +49,34 @@ int aweos_archive_directory(const char *src, const char *dst, aweos_archive_stat
     return AWEOS_OK;
 }
 
+static int detect_boot_mode_result = AWEOS_OK;
+static aweos_boot_mode_t detected_boot_mode = BOOT_MODE_BIOS;
+static int storage_discover_result = AWEOS_OK;
+static int storage_disk_count;
+static int storage_partition_count;
+static int storage_discover_calls;
+
 int aweos_detect_boot_mode(aweos_boot_mode_t *mode) {
     if (!mode) return AWEOS_ERR_INVALID_PARAM;
-    *mode = BOOT_MODE_BIOS;
+    if (detect_boot_mode_result != AWEOS_OK) return detect_boot_mode_result;
+    *mode = detected_boot_mode;
     return AWEOS_OK;
 }
 
 int aweos_storage_discover(aweos_storage_info_t *info) {
     if (!info) return AWEOS_ERR_INVALID_PARAM;
+    storage_discover_calls++;
     memset(info, 0, sizeof(*info));
+    if (storage_discover_result != AWEOS_OK) return storage_discover_result;
+    info->disk_count = storage_disk_count;
+    if (storage_disk_count > 0) {
+        snprintf(info->disks[0].dev_path, sizeof(info->disks[0].dev_path), "/dev/test-disk");
+        info->disks[0].partition_count = storage_partition_count;
+        if (storage_partition_count > 0) {
+            snprintf(info->disks[0].partitions[0].dev_path,
+                     sizeof(info->disks[0].partitions[0].dev_path), "/dev/test-partition");
+        }
+    }
     return AWEOS_OK;
 }
 
@@ -113,6 +132,45 @@ int main(void) {
     if (check(aweos_tx_plan(&tx) == AWEOS_ERR_PERMISSION, "unconfirmed disk replacement must be rejected")) return 1;
     if (check(tx.state == TX_STATE_FAILED, "unconfirmed destructive plan must fail")) return 1;
     if (check(archive_calls == 0 && boot_calls == 0, "rejected destructive plan must have no side effects")) return 1;
+
+    aweos_installer_state_t installer_probe = {0};
+    detect_boot_mode_result = AWEOS_ERR_IO;
+    storage_discover_calls = 0;
+    if (check(aweos_installer_init(&installer_probe) == AWEOS_ERR_IO,
+              "installer must reject firmware-detection failure")) return 1;
+    if (check(storage_discover_calls == 0,
+              "installer must not enumerate or select disks after firmware detection fails")) return 1;
+    if (check(installer_probe.boot_mode == BOOT_MODE_UNKNOWN,
+              "failed firmware detection must remain explicitly unknown")) return 1;
+
+    detect_boot_mode_result = AWEOS_OK;
+    detected_boot_mode = BOOT_MODE_UNKNOWN;
+    if (check(aweos_installer_init(&installer_probe) == AWEOS_ERR_TRANSACTION,
+              "installer must reject an unknown firmware mode")) return 1;
+
+    detected_boot_mode = BOOT_MODE_UEFI;
+    storage_discover_result = AWEOS_ERR_IO;
+    if (check(aweos_installer_init(&installer_probe) == AWEOS_ERR_IO,
+              "installer must reject storage-discovery errors")) return 1;
+
+    storage_discover_result = AWEOS_OK;
+    storage_disk_count = 0;
+    if (check(aweos_installer_init(&installer_probe) == AWEOS_ERR_NOT_FOUND,
+              "installer must reject an empty disk inventory instead of inventing a target")) return 1;
+
+    storage_disk_count = 1;
+    storage_partition_count = 0;
+    if (check(aweos_installer_init(&installer_probe) == AWEOS_OK,
+              "installer may display a real unpartitioned disk for a future partitioning flow")) return 1;
+    if (check(installer_probe.boot_mode == BOOT_MODE_UEFI &&
+              installer_probe.selected_disk_idx == 0 &&
+              installer_probe.selected_part_idx == -1 &&
+              !installer_probe.confirmed_destructive,
+              "installer defaults must remain non-destructive and must not select a nonexistent partition")) return 1;
+
+    detected_boot_mode = BOOT_MODE_BIOS;
+    storage_disk_count = 1;
+    storage_partition_count = 1;
 
     aweos_installer_state_t installer = {0};
     installer.mode = INSTALL_MODE_DUAL_BOOT;
