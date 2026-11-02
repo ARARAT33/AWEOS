@@ -1,5 +1,6 @@
 #include "updater.h"
 #include "../core/logging.h"
+#include "../core/storage.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,11 +31,28 @@ int aweos_updater_init(aweos_updater_state_t *st, const char *iso_path) {
 int aweos_updater_run(aweos_updater_state_t *st) {
     if (!st || !st->ready_to_update) return AWEOS_ERR_TRANSACTION;
 
+    /*
+     * Updating without a verified user-data backup is not an allowed mode.
+     * Keep this fail-closed until the product has an explicit, reviewed
+     * destructive-update confirmation flow.
+     */
+    if (!st->preserve_user_data) {
+        LOGE("User-data preservation is disabled; refusing to run the updater");
+        return AWEOS_ERR_PERMISSION;
+    }
+
+    aweos_boot_mode_t boot_mode = BOOT_MODE_UNKNOWN;
+    if (aweos_detect_boot_mode(&boot_mode) != AWEOS_OK ||
+        (boot_mode != BOOT_MODE_BIOS && boot_mode != BOOT_MODE_UEFI)) {
+        LOGE("Cannot determine a supported firmware boot mode; refusing to update");
+        return AWEOS_ERR_TRANSACTION;
+    }
+
     LOGI("Starting safe AWEOS OS update to version %s...", st->candidate_version);
 
     aweos_tx_config_t cfg = {
         .install_mode = INSTALL_MODE_DUAL_BOOT,
-        .boot_mode = BOOT_MODE_BIOS,
+        .boot_mode = boot_mode,
         .user_confirmed_destructive = false
     };
     snprintf(cfg.iso_path, sizeof(cfg.iso_path), "%s", st->iso_path);
@@ -46,8 +64,9 @@ int aweos_updater_run(aweos_updater_state_t *st) {
     if (aweos_tx_plan(&tx) != AWEOS_OK) return AWEOS_ERR_TRANSACTION;
     if (aweos_tx_validate(&tx) != AWEOS_OK) return AWEOS_ERR_TRANSACTION;
     if (aweos_tx_prepare(&tx) != AWEOS_OK) return AWEOS_ERR_TRANSACTION;
-    if (st->preserve_user_data) {
-        aweos_tx_preserve(&tx);
+    if (aweos_tx_preserve(&tx) != AWEOS_OK) {
+        LOGE("User-data preservation failed; update aborted before execution: %s", tx.error_msg);
+        return AWEOS_ERR_TRANSACTION;
     }
     if (aweos_tx_execute(&tx) != AWEOS_OK) return AWEOS_ERR_TRANSACTION;
     if (aweos_tx_configure_boot(&tx) != AWEOS_OK) return AWEOS_ERR_TRANSACTION;
