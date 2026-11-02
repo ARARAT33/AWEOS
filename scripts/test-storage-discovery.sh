@@ -75,8 +75,8 @@ int main(int argc, char **argv) {
     /* /proc/partitions does not prove filesystem type, UUID, free space or GPT.
        Keep those fields unknown instead of filling in plausible-looking guesses. */
     assert(info.disks[0].is_gpt == false);
-    assert(info.disks[0].partitions[0].fstype[0] == '\\0');
-    assert(info.disks[0].partitions[0].uuid[0] == '\\0');
+    assert(info.disks[0].partitions[0].fstype[0] == '\0');
+    assert(info.disks[0].partitions[0].uuid[0] == '\0');
     assert(info.disks[0].partitions[0].free_bytes == 0);
 
     puts("PASS: storage discovery reports only observed block devices and never fabricates disks, partitions, filesystems, UUIDs, or free space.");
