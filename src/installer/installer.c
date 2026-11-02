@@ -7,16 +7,32 @@
 int aweos_installer_init(aweos_installer_state_t *st) {
     if (!st) return AWEOS_ERR_INVALID_PARAM;
     memset(st, 0, sizeof(*st));
+    st->boot_mode = BOOT_MODE_UNKNOWN;
 
-    aweos_detect_boot_mode(&st->boot_mode);
-    aweos_storage_discover(&st->storage);
+    int result = aweos_detect_boot_mode(&st->boot_mode);
+    if (result != AWEOS_OK ||
+        (st->boot_mode != BOOT_MODE_BIOS && st->boot_mode != BOOT_MODE_UEFI)) {
+        st->boot_mode = BOOT_MODE_UNKNOWN;
+        LOGE("Installer cannot determine a supported BIOS/UEFI boot mode; refusing to continue");
+        return result != AWEOS_OK ? result : AWEOS_ERR_TRANSACTION;
+    }
+
+    result = aweos_storage_discover(&st->storage);
+    if (result != AWEOS_OK) {
+        LOGE("Installer storage discovery failed; no target disk will be assumed");
+        return result;
+    }
+    if (st->storage.disk_count <= 0) {
+        LOGE("No real target disk was discovered; refusing to show a synthetic device");
+        return AWEOS_ERR_NOT_FOUND;
+    }
 
     st->selected_disk_idx = 0;
-    st->selected_part_idx = 0;
+    st->selected_part_idx = st->storage.disks[0].partition_count > 0 ? 0 : -1;
     st->mode = INSTALL_MODE_DUAL_BOOT;
     st->confirmed_destructive = false;
 
-    LOGI("AWEOS Installer initialized: %d disk(s) found, Boot Mode: %s",
+    LOGI("AWEOS Installer initialized: %d discovered disk(s), Boot Mode: %s",
          st->storage.disk_count, st->boot_mode == BOOT_MODE_UEFI ? "UEFI" : "BIOS");
     return AWEOS_OK;
 }
