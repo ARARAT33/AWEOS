@@ -14,7 +14,13 @@ int main(void) {
     assert(bmode == BOOT_MODE_BIOS || bmode == BOOT_MODE_UEFI);
 
     aweos_storage_info_t sinfo;
-    assert(aweos_storage_discover(&sinfo) == AWEOS_OK);
+    int storage_result = aweos_storage_discover(&sinfo);
+    assert(storage_result == AWEOS_OK || storage_result == AWEOS_ERR_NOT_FOUND);
+    if (storage_result == AWEOS_ERR_NOT_FOUND) {
+        assert(sinfo.disk_count == 0);
+    } else {
+        assert(sinfo.disk_count > 0);
+    }
 
     /*
      * The target-volume staging/deployment backend is not implemented yet.
