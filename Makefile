@@ -95,6 +95,7 @@ test-shell:
 		bash -n "$$script"; \
 	done
 	@bash ./scripts/test-transaction-fail-closed.sh
+	@bash ./scripts/test-storage-discovery.sh
 
 test-qemu: iso
 	@./scripts/run-qemu-tests.sh $(BUILD_DIR)
