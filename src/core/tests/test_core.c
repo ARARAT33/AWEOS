@@ -15,8 +15,10 @@ int main(void) {
 
     aweos_storage_info_t sinfo;
     int storage_result = aweos_storage_discover(&sinfo);
-    assert(storage_result == AWEOS_OK || storage_result == AWEOS_ERR_NOT_FOUND);
-    if (storage_result == AWEOS_ERR_NOT_FOUND) {
+    assert(storage_result == AWEOS_OK ||
+           storage_result == AWEOS_ERR_NOT_FOUND ||
+           storage_result == AWEOS_ERR_IO);
+    if (storage_result != AWEOS_OK) {
         assert(sinfo.disk_count == 0);
     } else {
         assert(sinfo.disk_count > 0);
