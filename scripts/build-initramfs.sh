@@ -1,15 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BUILD_DIR="${1:-build}"
-mkdir -p -- "$BUILD_DIR"
-BUILD_DIR="$(cd -- "$BUILD_DIR" && pwd -P)"
-REPO_ROOT="$(cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd -P)"
+source "$SCRIPT_DIR/lib/build-safety.sh"
 
-if [[ "$BUILD_DIR" == "/" || "$BUILD_DIR" == "$REPO_ROOT" ]]; then
-    echo "ERROR: refusing to use the filesystem root or repository root as BUILD_DIR: $BUILD_DIR" >&2
-    exit 1
-fi
+BUILD_DIR="$(aweos_prepare_build_dir "${1:-build}" "$REPO_ROOT")"
 
 OUTPUT_CPIO="$BUILD_DIR/aweos-initramfs.cpio.gz"
 INIT_SCRIPT="$REPO_ROOT/scripts/aweos-initramfs-init.sh"
