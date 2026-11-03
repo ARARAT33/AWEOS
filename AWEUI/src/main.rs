@@ -34,8 +34,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         guard.session.start(workspace_count, app_count);
     }
 
-    println!("AWEOS BOOT SUCCESS: mode=ayui");
-    println!("AYUI services online: Wayland/XDG shell, renderer, input/seat, launcher, WM, workspaces, notifications, control center");
+    println!("AYUI backend initialization requested; readiness is reported only after the first rendered frame.");
 
     wayland::run(state)
 }
