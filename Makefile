@@ -100,6 +100,7 @@ test-shell:
 	@bash ./scripts/test-rootfs-runtime-validation.sh
 	@bash ./scripts/test-aweos-session-fallback.sh
 	@bash ./scripts/test-qemu-test-runner.sh
+	@bash ./scripts/test-initramfs-root-discovery.sh
 
 test-qemu: iso
 	@./scripts/run-qemu-tests.sh $(BUILD_DIR)
