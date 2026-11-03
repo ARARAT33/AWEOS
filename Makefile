@@ -3,8 +3,9 @@
 # IMPORTANT: /linux is a vendored, strictly read-only kernel tree.
 
 SHELL := /bin/bash
-BUILD_DIR ?= $(PWD)/build
-KERNEL_SRC := $(PWD)/linux
+REPO_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+BUILD_DIR ?= $(REPO_ROOT)/build
+KERNEL_SRC := $(REPO_ROOT)/linux
 KERNEL_BUILD_DIR := $(BUILD_DIR)/linux-x86_64
 ISO_PATH := $(BUILD_DIR)/AWEOS-x86_64.iso
 ROOTFS_IMG := $(BUILD_DIR)/rootfs.img
@@ -29,7 +30,8 @@ verify-linux verify-linux-readonly:
 	@./scripts/verify-linux-readonly.sh
 
 rust-build:
-	@mkdir -p $(BUILD_DIR)
+	@source "$(REPO_ROOT)/scripts/lib/build-safety.sh"; aweos_prepare_build_dir "$(BUILD_DIR)" "$(REPO_ROOT)" >/dev/null
+	@mkdir -p "$(BUILD_DIR)"
 	@cargo build --workspace --release
 	@set -euo pipefail; \
 	for binary in $(RUST_BINS); do \
@@ -40,7 +42,8 @@ rust-build:
 userland: rust-build
 
 kernel: verify-linux
-	@mkdir -p $(KERNEL_BUILD_DIR)
+	@source "$(REPO_ROOT)/scripts/lib/build-safety.sh"; aweos_prepare_build_dir "$(BUILD_DIR)" "$(REPO_ROOT)" >/dev/null
+	@mkdir -p "$(KERNEL_BUILD_DIR)"
 	@./scripts/config-kernel.sh $(KERNEL_SRC) $(KERNEL_BUILD_DIR)
 	@$(MAKE) -C $(KERNEL_SRC) O=$(KERNEL_BUILD_DIR) -j"$$(nproc)" bzImage
 	@test -s $(KERNEL_BUILD_DIR)/arch/x86/boot/bzImage
@@ -94,6 +97,7 @@ test-shell:
 	for script in $(SHELL_SCRIPTS); do \
 		bash -n "$$script"; \
 	done
+	@bash ./scripts/test-build-dir-safety.sh
 	@bash ./scripts/test-transaction-fail-closed.sh
 	@bash ./scripts/test-storage-discovery.sh
 	@bash ./scripts/test-build-iso-safety.sh
@@ -118,4 +122,4 @@ verify-artifacts:
 	done
 
 clean:
-	@rm -rf $(BUILD_DIR)
+	@bash "$(REPO_ROOT)/scripts/clean-build.sh" "$(BUILD_DIR)"
