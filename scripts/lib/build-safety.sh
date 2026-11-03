@@ -47,6 +47,13 @@ aweos_resolve_build_dir() {
             ;;
     esac
 
+    case "$resolved/" in
+        "$repo_root/.git/"*|"$repo_root/.github/"*)
+            echo "ERROR: refusing to use repository metadata or workflow files as build output: $resolved" >&2
+            return 1
+            ;;
+    esac
+
     if [[ -L "$requested" ]]; then
         echo "ERROR: refusing a build directory supplied as a symlink: $requested" >&2
         return 1
