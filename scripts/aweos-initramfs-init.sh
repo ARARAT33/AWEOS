@@ -1,7 +1,7 @@
 #!/bin/sh
 # AWEOS initramfs root discovery. Disk probing is read-only by default.
 set -u
-PATH=/bin:/sbin:/usr/bin:/usr/sbin
+PATH="${PATH:-/bin:/sbin:/usr/bin:/usr/sbin}"
 export PATH
 
 ROOT_PREFIX="${AWEOS_INITRAMFS_ROOT:-}"
