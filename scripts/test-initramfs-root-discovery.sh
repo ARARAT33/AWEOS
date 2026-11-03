@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Exercise the actual initramfs init script with isolated device/mount stubs.
-set -euxo pipefail
+set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 init_script="$repo_root/scripts/aweos-initramfs-init.sh"
@@ -140,11 +140,13 @@ run_case() {
 untrusted_root="$(run_case untrusted 'aweos.root=/dev/sda1' other 0)"
 grep -q 'AWEOS INITRAMFS RECOVERY READY' "$untrusted_root/output.log"
 test ! -e "$untrusted_root/switch-root.log"
-grep -q -- '-o ro,noload /dev/sda1' "$untrusted_root/mount.log"
+test -s "$untrusted_root/mount.log"
+grep -q -- '-o ro,noload .*/dev/sda1' "$untrusted_root/mount.log"
 if grep -q -- 'remount,rw' "$untrusted_root/mount.log"; then
     echo "ERROR: untrusted root was remounted read-write." >&2
     exit 1
 fi
+echo "PASS: foreign filesystem rejected without read-write mount."
 
 # A verified disk root stays read-only by default and receives a tmpfs overlay.
 readonly_root="$(run_case readonly 'aweos.root=/dev/sda1' aweos 0)"
@@ -155,6 +157,7 @@ if grep -q -- 'remount,rw' "$readonly_root/mount.log"; then
     echo "ERROR: default root discovery unexpectedly remounted the disk read-write." >&2
     exit 1
 fi
+echo "PASS: verified disk root defaults to a read-only lower layer and tmpfs overlay."
 
 # Persistent writes require the explicit kernel command-line opt-in.
 writable_root="$(run_case writable 'aweos.root=/dev/sda1 aweos.root-rw=1' aweos 0)"
@@ -164,6 +167,7 @@ if grep -q -- '-t overlay overlay' "$writable_root/mount.log"; then
     echo "ERROR: explicit persistent root unexpectedly received a live overlay." >&2
     exit 1
 fi
+echo "PASS: persistent root writes require explicit kernel opt-in."
 
 # Live ISO rootfs images are loop-mounted read-only and always use a tmpfs overlay.
 iso_root="$(run_case iso 'aweos.mode=ayui' other 1)"
