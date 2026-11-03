@@ -225,7 +225,9 @@ mount -t sysfs sysfs /sys 2>/dev/null || true
 mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
 mkdir -p /dev/pts /run /run/user/0 /tmp
 mount -t devpts devpts /dev/pts 2>/dev/null || true
-mount -t tmpfs tmpfs /run 2>/dev/null || true
+if ! grep -qE '^[^ ]+ /run tmpfs ' /proc/mounts 2>/dev/null; then
+    mount -t tmpfs tmpfs /run 2>/dev/null || true
+fi
 mkdir -p /run/user/0
 chmod 0700 /run/user/0
 if [ -z "${XDG_RUNTIME_DIR:-}" ]; then
