@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Exercise the actual initramfs init script with isolated device/mount stubs.
-set -euo pipefail
+set -euxo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 init_script="$repo_root/scripts/aweos-initramfs-init.sh"
