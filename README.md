@@ -1,114 +1,125 @@
-# AWEOS Architecture & Complete OS Stack Documentation
+# AWEOS
 
-> **Current default desktop:** AYUI native desktop; Ubuntu Noble GNOME is the secondary graphical environment. AWEOS supplies its own Linux kernel build, Limine boot path, native utilities and OS integration; GNOME is the actual desktop session.
+AWEOS is an x86_64 Linux-based operating-system project with its own boot
+integration, root filesystem, initramfs, Rust-based AYUI desktop work, system
+utilities, package-management experiments, and C installer/updater components.
 
-## Current Desktop Architecture
+> **Development status — 2026-11-03: not production-ready.** The repository has
+> working component tests and an image-build pipeline, but full BIOS/UEFI
+> end-to-end boot and real-hardware validation are not yet established. Do not
+> use the current installer/updater to modify a disk containing valuable data.
+> Their C transaction path deliberately fails closed until a real staging,
+> deployment, bootloader, verification, and rollback backend exists.
 
-AWEOS builds its native AYUI desktop by default and keeps a real Ubuntu 24.04 Noble GNOME userspace as a secondary graphical environment. The secondary GNOME graphical stack comes from Ubuntu packages rather than a mock desktop: GNOME Shell, Mutter, GDM, GNOME Control Center, Ubuntu session components, NetworkManager, PipeWire/WirePlumber and the normal freedesktop application model. Ubuntu's official `ubuntu-desktop-minimal` package includes GNOME Shell, GDM and GNOME Control Center. citeturn0search0turn0search2
+## Current implementation
 
-The ISO is a live environment. Its Ubuntu root filesystem is mounted as the lower OverlayFS layer and a writable RAM upper layer is created before systemd starts. Disk-image boots use the ext4 root filesystem directly. The AWEOS kernel configuration enables cgroups, namespaces and OverlayFS outside the read-only `/linux` tree.
+- **Kernel and boot:** the vendored `/linux` kernel source is strictly
+  read-only. Kernel configuration and build output are kept out of tree under
+  `build/linux-x86_64/`. Limine is used for BIOS/UEFI hybrid ISO assembly.
+- **Initramfs and root filesystem:** the image pipeline builds an ext4 root
+  image and a BusyBox initramfs. The initramfs validates AWEOS identity before
+  switching root. It probes ext4 with `ro,noload`; live sessions use a tmpfs
+  overlay. Persistent root writes require the explicit
+  `aweos.root-rw=1` boot parameter after identity verification.
+- **AYUI:** the default userland profile builds the Rust workspace under
+  `AWEUI/`. The current Smithay/Winit compositor has an Xvfb smoke test that
+  checks Wayland socket creation and first-frame rendering. This is a nested
+  test only; a native DRM/KMS display backend and bare-metal GPU/input
+  validation are not yet complete.
+- **Installer and updater:** the C transaction engine rejects unimplemented
+  staging/deployment/verification stages. It must not report installation or
+  update success while those backends are absent. Disk formatting and
+  partitioning are not performed by initramfs root discovery.
+- **Package management:** `scripts/awepkg.sh` contains the current package
+  install/remove path and safety regressions for path traversal, existing
+  files, checksums, and rollback. Treat the package system as under active
+  development, not as a mature signed distribution repository.
+- **CI:** shell/C regression tests, Rust workspace tests, userland release
+  builds, ISO assembly tests, QEMU runner tests, and the `/linux` integrity
+  check run through GitHub Actions.
 
-AYUI/AWEUI is the primary AWEOS desktop session. GNOME is retained as the secondary compatibility/full-feature desktop.
+## Boot and root-mount policy
 
-### Build profiles
+See [Boot and root-filesystem mounting](docs/BOOT-AND-ROOT-MOUNT.md) for the
+supported command-line parameters and the read-only defaults.
 
-- Default: `AWEOS_DESKTOP=ayui make image`
-- Secondary GNOME: `AWEOS_DESKTOP=gnome make image`
-- Root filesystem: 4 GiB by default; override with `AWEOS_ROOTFS_SIZE_MB`
-- QEMU desktop boot tests: 2 GiB RAM
-- CI verifies that `/linux` is unchanged before and after the build/test pipeline.
+- Live media discovery looks for an embedded `rootfs.img` without mounting
+  arbitrary disks read-write.
+- An installed root must be selected explicitly with
+  `aweos.root=/dev/<partition>` (or `root=/dev/<partition>`).
+- A verified installed root is read-only by default and receives a temporary
+  overlay. Persistent writes require `aweos.root-rw=1`.
+- UUID-based root selection is not implemented yet.
+- A failed identity check or mount handoff enters recovery rather than
+  selecting another disk or claiming a successful boot.
 
-## Overview
-AWEOS is a complete, bootable x86_64 Linux operating system featuring **AYUI as the default desktop**, a native C graphical desktop environment, double-buffered framebuffer renderer, compositor, window manager, PTY-backed terminal emulator, AOSIN package system (`.asp`, `.asa`, `.aosin`), safe OS system updater (`aweos-update`), standalone graphical installer (`aweos-installer`), cross-platform USB-less migration installer (`wlin`), and headless fallback, powered by the upstream Linux kernel source and the Limine bootloader.
+## Build profiles
 
-## Core Rules & Isolation Policy
-- **`/linux` Read-Only Rule**: The upstream Linux kernel source tree in `/linux` is strictly read-only. No files inside `/linux` are added, modified, formatted, patched, or created.
-- **Out-of-Tree Builds**: All Linux kernel configuration (`scripts/config-kernel.sh`) and build outputs are generated out-of-tree in `build/linux-x86_64/`.
-- **Read-Only Protection Guard**: Enforced via `./scripts/verify-linux-readonly.sh` before and after builds and tests.
+- Default AYUI profile: `make image`
+- Optional GNOME rootfs profile: `AWEOS_DESKTOP=gnome make image`
+- Override GNOME rootfs size with `AWEOS_ROOTFS_SIZE_MB`.
+- Build output defaults to `build/`; use a dedicated build directory.
 
-## Target Architecture & System Stack
+The main Make targets currently defined in the repository are:
+
+| Command | Purpose |
+| --- | --- |
+| `make test-shell` | Shell syntax checks and C/shell safety regressions |
+| `make test-rust` | Rust workspace tests |
+| `make test` | Read-only boundary, shell/C, and Rust tests |
+| `make image` | Build the hybrid ISO and BIOS disk image |
+| `make test-qemu` | Exercise BIOS, UEFI, and direct-kernel QEMU boot paths |
+| `make verify-linux-readonly` | Verify that the vendored `/linux` tree is unchanged |
+
+The full image and QEMU targets require the host dependencies installed by
+[the x86_64 GitHub Actions workflow](.github/workflows/build-aweos-x86_64.yml),
+including a Limine host utility, QEMU, OVMF, xorriso, BusyBox, cpio, and ext4
+tools.
+
+## Architecture
+
+```text
+Limine (BIOS / UEFI)
+        |
+        v
+Linux kernel (out-of-tree build; /linux source read-only)
+        |
+        v
+BusyBox initramfs
+  - explicit root selection
+  - read-only identity verification
+  - tmpfs overlay for live/default sessions
+        |
+        v
+Verified AWEOS root filesystem
+        |
+        v
+AWEOS init / session supervisor
+        |
+        +---- AYUI (current Winit-based implementation)
+        |
+        +---- recovery console
 ```
-                         AWEOS
-                           │
-              ┌────────────┴────────────┐
-              │                         │
-           Booting                  Installed OS
-              │                         │
-       BIOS / UEFI / QEMU               │
-              │                         │
-         Linux Kernel                   │
-              │                         │
-          AWEOS Init                    │
-              │                         │
-     device/system services             │
-              │                         │
-      graphics + input stack            │
-              │                         │
-         AYUI compositor                │
-              │                         │
-         AYUI desktop shell             │
-              │                         │
-     ┌────────┼─────────────┐            │
-     │        │             │            │
- Terminal  Settings      Installer   System Apps
-     │                      │            │
-     └──────────────┬───────┘            │
-                    │                    │
-               AYUI userspace            │
-                    │                    │
-          package/update framework       │
-                    │                    │
-          AOSIN + AWEOS package API      │
-```
 
-## Shared Core C Infrastructure (`src/core/`)
-- **`types.h` / `logging.h`**: Standardized logging, error codes, and transaction state management.
-- **`storage.c/h`**: Multi-disk, partition layout (GPT/MBR), filesystem UUID, and free space discovery.
-- **`boot.c/h`**: BIOS and UEFI Limine bootloader configuration (`limine.conf`).
-- **`iso_verify.c/h`**: ISO manifest checking, header validation, and SHA-256 checksum verification.
-- **`archive.c/h`**: Non-destructive user data preservation engine archiving directory structures into `/archiveddata/`.
-- **`transaction.c/h`**: Atomic transaction engine (`PLAN -> VALIDATE -> PREPARE -> PRESERVE -> EXECUTE -> BOOTCFG -> VERIFY -> COMMIT / ROLLBACK`).
+## Safety invariants
 
-## AOSIN Package System (`src/aosin/`)
-Native AWEOS package management system supporting three formal format specifications:
-- **`.asp` (AWEOS Software Package)**: Software/payload binary archives.
-- **`.asa` (AWEOS Standalone Application)**: Self-contained application bundles.
-- **`.aosin` (AOSIN Installer Archive)**: Multi-package installation bundles with manifests and permission bounds.
-- **`aosin` CLI Tool**: Query, install, remove, and verify packages registered under `/var/lib/awepkg/`.
-- **AYUI Integration**: Dynamic package scanning in `/var/lib/awepkg/*.meta` automatically populates the AYUI desktop application launcher menu.
+1. **`/linux` is read-only.** No patches, generated files, formatting, or
+   build outputs may be written inside it. CI verifies this boundary.
+2. **No implicit disk selection.** An installed root requires an explicit
+   device parameter and AWEOS identity metadata.
+3. **Read-only discovery.** ext4 probes use `ro,noload`; live media and the
+   embedded root image are mounted read-only.
+4. **Explicit persistent writes.** `aweos.root-rw=1` is required before a
+   verified installed root is remounted read-write.
+5. **Fail-closed installation.** The incomplete installer/updater transaction
+   backend must not format, repartition, overwrite, or claim success.
+6. **No false boot success.** Root readiness is reported only after identity
+   and mount setup succeed; recovery is reported separately.
 
-## AYUI Native Desktop Environment (`src/gui/`, `src/apps/`)
-- Built independently without external Desktop Environments (GNOME, KDE, Xfce, LXQt, etc.).
-- **Executable**: `/usr/bin/aweos-ayui` (symlinked as `aweos-wm`, `aweos-gui`, `start-ayui`, `aweos-terminal`).
-- **Graphics Abstraction**: Double-buffered `/dev/fb0` Linux framebuffer driver with resolution adaptation.
-- **Input System**: Linux `/dev/input/event*` evdev keyboard/mouse input normalization with cursor tracking.
-- **Compositor & Window Manager**: Surface layout, title bar controls, focus handling, z-ordering, and application launcher.
-- **Graphical Terminal**: Live `/bin/sh` Unix PTY (`/dev/ptmx` forkpty) execution with real-time rendering.
-- **Base Native GUI Applications**: File Manager, Settings, System Information, Network Manager, Storage Info, Package Manager, Installer, Updater, Diagnostics, About AWEOS.
+## Development notes
 
-## Safe OS System Updater (`src/updater/`)
-- **`aweos-update`**: Staged, atomic OS update tool validating candidate ISO images, staging rootfs updates, preserving `/home` user data, and managing boot target switching.
-
-## Standalone Graphical Installer (`src/installer/`)
-- **`aweos-installer`**: Interactive GUI and CLI installer supporting dual-boot installation, full-disk replacement (with explicit destructive confirmation), and BIOS/UEFI boot setup.
-
-## WLIN Cross-OS Installation Tool (`src/wlin/`)
-- **Cross-Platform Installer**: USB-less installation tool for Windows and Linux hosts.
-- **Windows Backend (`wlin.exe`)**: Compiled natively via MinGW-w64 (`x86_64-w64-mingw32-gcc`) with Win32 GUI controls (`CreateWindowEx`).
-- **Linux Backend (`wlin`)**: Native C Linux application.
-- **USB-Less Boot Staging**: Validates AWEOS ISO, stages kernel/initramfs onto boot staging partition, configures EFI/Limine boot path, and prepares computer to reboot directly into AWEOS installer.
-
-## Build System Usage
-
-- `make` or `make build`: Verify `/linux` immutability, build kernel out-of-tree, core libraries, AYUI GUI, AOSIN, installer, updater, WLIN (Linux & Win32), rootfs, initramfs, ISO (`build/AWEOS-x86_64.iso`), and raw disk image (`build/AWEOS-x86_64-disk.img`).
-- `make ayui`: Build `aweos-ayui` desktop session executable.
-- `make aosin`: Build `aosin` package management binary.
-- `make installer`: Build `aweos-installer` standalone installer binary.
-- `make updater`: Build `aweos-update` OS system updater binary.
-- `make wlin`: Build `wlin` Linux migration binary.
-- `make wlin-win32`: Build `wlin.exe` Windows MinGW migration binary.
-- `make verify-linux-readonly`: Execute read-only integrity check on `/linux`.
-- `make test`: Run automated QEMU BIOS, UEFI, and AYUI GUI verification tests.
-- `make test-gui` / `make test-ayui`: Run automated QEMU AYUI GUI boot marker test and QMP screenshot capture (`build/ayui-screenshot.png`).
-- `make qemu-gui` / `make qemu-ayui`: Launch interactive QEMU graphical desktop boot mode.
-- `make clean`: Clean build artifacts in `build/`.
+Changes should be made on an isolated branch and reviewed through a pull
+request. Do not merge a stacked PR until its base PR is merged or the stack is
+otherwise reconciled, and require fresh checks on the final head. A successful
+unit or Xvfb test is not evidence of full BIOS/UEFI or physical-hardware
+compatibility.
