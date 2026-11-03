@@ -59,6 +59,7 @@ supported command-line parameters and the read-only defaults.
 - Optional GNOME rootfs profile: `AWEOS_DESKTOP=gnome make image`
 - Override GNOME rootfs size with `AWEOS_ROOTFS_SIZE_MB`.
 - Build output defaults to `build/`; use a dedicated build directory.
+- Build directories are ownership-marked; non-empty unmarked paths are refused. See [build output directory safety](docs/BUILD-OUTPUT-SAFETY.md) before adopting an existing directory.
 
 The main Make targets currently defined in the repository are:
 
