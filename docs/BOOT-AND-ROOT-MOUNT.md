@@ -45,6 +45,12 @@ The initramfs still verifies AWEOS identity while the filesystem is mounted
 read-only before attempting the read-write remount. If that remount fails, boot
 does not continue into the selected root.
 
+The final handoff uses `exec switch_root -c /dev/console ...` so BusyBox
+`switch_root` remains PID 1, as required by its implementation. Invoking it as
+a normal child process prints its usage and cannot perform the handoff. The
+initramfs regression test asserts that the switch-root process retains the
+original init process ID.
+
 This option is not an installer. The C installer/updater transaction backend
 remains fail-closed until real target-volume staging, bootloader deployment,
 verification, and rollback are implemented. No partitioning or formatting is
