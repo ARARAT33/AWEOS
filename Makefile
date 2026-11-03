@@ -98,6 +98,7 @@ test-shell:
 		bash -n "$$script"; \
 	done
 	@bash ./scripts/test-build-dir-safety.sh
+	@bash ./scripts/test-build-disk-image-safety.sh
 	@bash ./scripts/test-transaction-fail-closed.sh
 	@bash ./scripts/test-storage-discovery.sh
 	@bash ./scripts/test-build-iso-safety.sh
