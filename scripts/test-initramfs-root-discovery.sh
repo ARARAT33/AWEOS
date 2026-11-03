@@ -88,6 +88,30 @@ make_root_fixture() {
     fi
 }
 
+assert_switch_root_exec() {
+    local root="$1"
+    if [[ ! -s "$root/switch-root.pid" || ! -s "$root/init.pid" ]]; then
+        echo "ERROR: switch_root was not executed for the original init process in $root." >&2
+        cat "$root/output.log" >&2
+        exit 1
+    fi
+    if [[ "$(cat "$root/switch-root.pid")" != "$(cat "$root/init.pid")" ]]; then
+        echo "ERROR: switch_root was forked instead of inheriting PID 1 in $root." >&2
+        echo "init PID: $(cat "$root/init.pid"); switch_root PID: $(cat "$root/switch-root.pid")" >&2
+        exit 1
+    fi
+    if ! grep -q -- '^-c /dev/console ' "$root/switch-root.log"; then
+        echo "ERROR: switch_root did not reopen the new root console in $root." >&2
+        cat "$root/switch-root.log" >&2
+        exit 1
+    fi
+    if grep -q 'switch_root returned unexpectedly' "$root/output.log"; then
+        echo "ERROR: initramfs fell back after a successful switch_root mock in $root." >&2
+        cat "$root/output.log" >&2
+        exit 1
+    fi
+}
+
 run_case() {
     local name="$1"
     local cmdline="$2"
@@ -157,9 +181,7 @@ echo "PASS: foreign filesystem rejected without read-write mount."
 readonly_root="$(run_case readonly 'aweos.root=/dev/sda1' aweos 0)"
 grep -q 'AWEOS ROOTFS READY: mode=ayui source=.*/dev/sda1 access=overlay' "$readonly_root/output.log"
 grep -q -- '-t overlay overlay' "$readonly_root/mount.log"
-test -s "$readonly_root/switch-root.log"
-test "$(cat "$readonly_root/switch-root.pid")" = "$(cat "$readonly_root/init.pid")"
-grep -q -- '^-c /dev/console ' "$readonly_root/switch-root.log"
+assert_switch_root_exec "$readonly_root"
 if grep -q -- 'remount,rw' "$readonly_root/mount.log"; then
     echo "ERROR: default root discovery unexpectedly remounted the disk read-write." >&2
     exit 1
@@ -182,8 +204,7 @@ grep -q 'AWEOS ROOTFS READY: mode=ayui source=.*/rootfs.img access=overlay' "$is
 grep -q -- '-t iso9660 -o ro' "$iso_root/mount.log"
 grep -q -- '-o loop,ro,noload' "$iso_root/mount.log"
 grep -q -- '-t overlay overlay' "$iso_root/mount.log"
-test "$(cat "$iso_root/switch-root.pid")" = "$(cat "$iso_root/init.pid")"
-grep -q -- '^-c /dev/console ' "$iso_root/switch-root.log"
+assert_switch_root_exec "$iso_root"
 if grep -q -- 'remount,rw' "$iso_root/mount.log"; then
     echo "ERROR: live ISO rootfs was remounted read-write." >&2
     exit 1
