@@ -3,8 +3,8 @@
 # Uses the real build script with mocked xorriso and Limine; no disk devices.
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "\${BASH_SOURCE[0]}")/.." && pwd)"
-tmp_root="$(mktemp -d "\${TMPDIR:-/tmp}/aweos-iso-test.XXXXXX")"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+tmp_root="$(mktemp -d "${TMPDIR:-/tmp}/aweos-iso-test.XXXXXX")"
 trap 'rm -rf -- "$tmp_root"' EXIT
 work="$tmp_root/work"
 bin="$tmp_root/bin"
@@ -30,16 +30,16 @@ cat > "$bin/xorriso" <<'MOCK_XORRISO'
 #!/usr/bin/env bash
 set -euo pipefail
 args=("$@")
-printf '%s\n' "\${args[@]}" > "$XORRISO_ARGS_FILE"
+printf '%s\n' "${args[@]}" > "$XORRISO_ARGS_FILE"
 
 found_efi_part=0
-for ((i = 0; i < \${#args[@]}; i++)); do
-    if [[ "\${args[$i]}" == "-efi-boot-part" ]]; then
-        [[ $((i + 1)) -lt \${#args[@]} ]] || {
+for ((i = 0; i < ${#args[@]}; i++)); do
+    if [[ "${args[$i]}" == "-efi-boot-part" ]]; then
+        [[ $((i + 1)) -lt ${#args[@]} ]] || {
             echo "missing -efi-boot-part argument" >&2
             exit 41
         }
-        [[ "\${args[$((i + 1))]}" == "--efi-boot-image" ]] || {
+        [[ "${args[$((i + 1))]}" == "--efi-boot-image" ]] || {
             echo "expected literal --efi-boot-image after -efi-boot-part" >&2
             exit 42
         }
@@ -51,7 +51,7 @@ done
     exit 43
 }
 [[ -s limine-uefi-cd.bin && -s limine-bios-cd.bin && -s EFI/BOOT/BOOTX64.EFI ]]
-if [[ "\${EXPECT_DEBUG_CONFIG:-0}" == "1" ]]; then
+if [[ "${EXPECT_DEBUG_CONFIG:-0}" == "1" ]]; then
     grep -q '^serial: yes$' limine.conf
     grep -q 'earlycon=uart8250' limine.conf
 fi
@@ -72,8 +72,8 @@ MOCK_XORRISO
 cat > "$bin/limine" <<'MOCK_LIMINE'
 #!/usr/bin/env bash
 set -euo pipefail
-[[ "\${1:-}" == "bios-install" && -s "\${2:-}" ]] || exit 3
-if [[ "\${FAIL_BIOS_INSTALL:-0}" == "1" ]]; then
+[[ "${1:-}" == "bios-install" && -s "${2:-}" ]] || exit 3
+if [[ "${FAIL_BIOS_INSTALL:-0}" == "1" ]]; then
     exit 42
 fi
 printf 'BIOS boot data\n' >> "$2"
