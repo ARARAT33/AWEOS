@@ -139,7 +139,7 @@ for binary in ${RUST_BINS}; do
     install -D -m 0755 "${source}" "${ROOTFS_DIR}/usr/bin/${binary}"
 done
 
-for helper in aweos-info.sh aweos-diagnostics.sh awepkg.sh; do
+for helper in aweos-info.sh aweos-diagnostics.sh awepkg.sh aweos-session.sh; do
     source="scripts/${helper}"
     test -f "${source}"
     install -D -m 0755 "${source}" "${ROOTFS_DIR}/usr/bin/${helper%.sh}"

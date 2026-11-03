@@ -40,7 +40,7 @@ jobs:
       - name: Install native C test toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config libinput-dev libxkbcommon-dev
+          sudo apt-get install -y build-essential pkg-config libinput-dev libxkbcommon-dev xvfb libgl1-mesa-dri libegl1 libgbm1 libx11-xcb1 libxkbcommon-x11-0
 
       - name: Run shell and C transaction safety tests
         run: make test-shell
@@ -62,6 +62,11 @@ jobs:
       - name: Verify expected binaries
         run: |
           set -euo pipefail
-          for binary in             aweui aweui-installer aweui-settings aweui-control-center             aweui-file-manager aweui-terminal aweui-system-monitor             aweui-diagnostics aweui-text-editor aweui-calculator             aweui-firstboot-setup aweui-user-app-template; do
+          for binary in aweui aweui-installer aweui-settings aweui-control-center \
+            aweui-file-manager aweui-terminal aweui-system-monitor aweui-diagnostics \
+            aweui-text-editor aweui-calculator aweui-firstboot-setup aweui-user-app-template; do
             test -x "target/release/${binary}"
           done
+
+      - name: Exercise AYUI Winit compositor under Xvfb
+        run: bash scripts/test-ayui-winit-smoke.sh target/release/aweui

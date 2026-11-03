@@ -41,13 +41,35 @@ aweui-user-app-template
 
 copy_runtime_deps() {
     local binary="$1"
-    command -v ldd >/dev/null 2>&1 || return 0
+    local interpreter
+
+    command -v readelf >/dev/null 2>&1 || {
+        echo "ERROR: readelf is required to package ELF runtime dependencies." >&2
+        return 1
+    }
+    command -v ldd >/dev/null 2>&1 || {
+        echo "ERROR: ldd is required to package ELF runtime dependencies." >&2
+        return 1
+    }
+
+    interpreter="$(readelf -l "${binary}" 2>/dev/null | sed -n 's/.*Requesting program interpreter: \(.*\)]/\1/p' | head -n 1)"
+    # Static executables have no PT_INTERP and need no dynamic runtime files.
+    [ -n "${interpreter}" ] || return 0
+    [ -f "${interpreter}" ] || {
+        echo "ERROR: ELF interpreter does not exist for ${binary}: ${interpreter}" >&2
+        return 1
+    }
+
     ldd "${binary}" 2>/dev/null |
         awk '/=> \/|^\/lib/ {print ($3 ~ /^\// ? $3 : $1)}' |
         while IFS= read -r lib; do
             [ -f "${lib}" ] || continue
             install -D -m 0644 "${lib}" "${ROOTFS_DIR}${lib}"
         done
+
+    # PT_INTERP is opened by the kernel as an executable. Copying it like a
+    # shared object (0644) makes every dynamically linked app fail at execve.
+    install -D -m 0755 "${interpreter}" "${ROOTFS_DIR}${interpreter}"
 }
 
 for binary in ${RUST_BINS}; do
@@ -178,7 +200,7 @@ make_desktop aweui-calculator.desktop "AWE Calculator" "aweui-calculator -i" "Sc
 make_desktop aweui-monitor.desktop "AWE System Monitor" aweui-system-monitor "System resource monitor" "System;Monitor;"
 make_desktop aweui-editor.desktop "AWE Text Viewer" aweui-text-editor "View a text file" "Utility;TextEditor;"
 
-for helper in aweos-info.sh aweos-diagnostics.sh awepkg.sh; do
+for helper in aweos-info.sh aweos-diagnostics.sh awepkg.sh aweos-session.sh; do
     source="scripts/${helper}"
     test -f "${source}" || { echo "ERROR: missing helper ${source}" >&2; exit 1; }
     install -D -m 0755 "${source}" "${ROOTFS_DIR}/usr/bin/${helper%.sh}"
@@ -203,7 +225,9 @@ mount -t sysfs sysfs /sys 2>/dev/null || true
 mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
 mkdir -p /dev/pts /run /run/user/0 /tmp
 mount -t devpts devpts /dev/pts 2>/dev/null || true
-mount -t tmpfs tmpfs /run 2>/dev/null || true
+if ! grep -qE '^[^ ]+ /run tmpfs ' /proc/mounts 2>/dev/null; then
+    mount -t tmpfs tmpfs /run 2>/dev/null || true
+fi
 mkdir -p /run/user/0
 chmod 0700 /run/user/0
 if [ -z "${XDG_RUNTIME_DIR:-}" ]; then
@@ -221,19 +245,20 @@ elif grep -qw aweos.mode=headless /proc/cmdline 2>/dev/null; then
     MODE=headless
 fi
 
-echo "AWEOS BOOT SUCCESS: mode=${MODE}"
+echo "AWEOS ROOTFS READY: mode=${MODE}"
 
 case "${MODE}" in
     installer)
-        exec /usr/bin/aweui-installer
+        exec /usr/bin/aweos-session /usr/bin/aweui-installer
         ;;
     aweui|gui)
         if [ -x /usr/bin/aweui-firstboot-setup ] && grep -q '^fresh_install=true' /etc/aweos/first_boot 2>/dev/null; then
             /usr/bin/aweui-firstboot-setup || true
         fi
-        exec /usr/bin/aweui
+        exec /usr/bin/aweos-session /usr/bin/aweui
         ;;
     headless)
+        echo "AWEOS HEADLESS CONSOLE READY"
         exec /bin/busybox cttyhack /bin/sh
         ;;
 esac
