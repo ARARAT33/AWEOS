@@ -1,36 +1,64 @@
+#define _GNU_SOURCE
 #include "iso_verify.h"
 #include "logging.h"
-#include <stdio.h>
-#include <stdlib.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
+#define AWEOS_MIN_ISO_SIZE (1024U * 1024U)
+
 int aweos_iso_validate(const char *iso_path, aweos_iso_manifest_t *manifest) {
-    if (!iso_path || !manifest) return AWEOS_ERR_INVALID_PARAM;
+    if (!iso_path || !*iso_path || !manifest) return AWEOS_ERR_INVALID_PARAM;
     memset(manifest, 0, sizeof(*manifest));
 
-    FILE *f = fopen(iso_path, "rb");
-    if (!f) {
-        LOGE("Failed to open ISO file for validation: %s", iso_path);
+    /*
+     * A file-size check is not an integrity check. The previous implementation
+     * marked every file larger than 1 MiB as valid and filled in a hard-coded
+     * SHA-256 of the empty string. Until the caller can provide a trusted
+     * expected digest (for example from signed release metadata), fail closed.
+     *
+     * O_NOFOLLOW prevents an updater from validating a symlink in place of the
+     * selected ISO. O_NONBLOCK ensures a FIFO cannot hang the updater before
+     * fstat rejects non-regular files.
+     */
+    int fd = open(iso_path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
+    if (fd < 0) {
+        LOGE("Failed to open ISO candidate without following symlinks '%s': %s",
+             iso_path, strerror(errno));
         return AWEOS_ERR_IO;
     }
 
-    fseek(f, 0, SEEK_END);
-    manifest->size_bytes = ftell(f);
-    fclose(f);
+    struct stat st;
+    if (fstat(fd, &st) != 0) {
+        int saved_errno = errno;
+        (void)close(fd);
+        errno = saved_errno;
+        LOGE("Failed to inspect ISO candidate '%s': %s", iso_path, strerror(errno));
+        return AWEOS_ERR_IO;
+    }
 
-    if (manifest->size_bytes < 1048576) {
-        LOGE("ISO file size (%lu bytes) too small!", (unsigned long)manifest->size_bytes);
+    if (!S_ISREG(st.st_mode) || st.st_size < 0) {
+        (void)close(fd);
+        LOGE("ISO candidate is not a regular file; refusing to validate '%s'", iso_path);
         return AWEOS_ERR_VERIFY;
     }
 
-    manifest->is_valid = true;
-    snprintf(manifest->version, sizeof(manifest->version), "1.0.0");
-    snprintf(manifest->arch, sizeof(manifest->arch), "x86_64");
-    snprintf(manifest->build_id, sizeof(manifest->build_id), "x86_64-release");
-    snprintf(manifest->checksum_sha256, sizeof(manifest->checksum_sha256), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    manifest->size_bytes = (uint64_t)st.st_size;
+    if (close(fd) != 0) {
+        LOGE("Failed to close ISO candidate '%s': %s", iso_path, strerror(errno));
+        memset(manifest, 0, sizeof(*manifest));
+        return AWEOS_ERR_IO;
+    }
 
-    LOGI("ISO validation PASSED: %s (Version: %s, Arch: %s, Size: %lu MB)",
-         iso_path, manifest->version, manifest->arch, (unsigned long)(manifest->size_bytes / 1024 / 1024));
-    return AWEOS_OK;
+    if (manifest->size_bytes < AWEOS_MIN_ISO_SIZE) {
+        LOGE("ISO candidate '%s' is too small (%llu bytes)",
+             iso_path, (unsigned long long)manifest->size_bytes);
+        return AWEOS_ERR_VERIFY;
+    }
+
+    LOGE("Refusing to mark ISO candidate '%s' valid: no trusted expected SHA-256 was supplied; file size alone does not establish integrity",
+         iso_path);
+    return AWEOS_ERR_VERIFY;
 }
