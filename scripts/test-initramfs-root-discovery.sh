@@ -62,7 +62,8 @@ cat > "$mock_bin/switch_root" <<'MOCK_SWITCH_ROOT'
 #!/bin/sh
 set -eu
 printf '%s\n' "$*" > "$AWEOS_TEST_SWITCH_ROOT_LOG"
-printf '%s\n' "$" > "$AWEOS_TEST_SWITCH_ROOT_PID"
+IFS=' ' read -r switch_root_pid switch_root_rest < /proc/self/stat
+printf '%s\n' "$switch_root_pid" > "$AWEOS_TEST_SWITCH_ROOT_PID"
 exit 0
 MOCK_SWITCH_ROOT
 
