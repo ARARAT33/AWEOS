@@ -34,10 +34,11 @@ static void assert_untrusted(const char *path, int expected_result, uint64_t exp
 }
 
 int main(int argc, char **argv) {
-    assert(argc == 4);
+    assert(argc == 5);
     assert_untrusted(argv[1], AWEOS_ERR_VERIFY, 2U * 1024U * 1024U);
     assert_untrusted(argv[2], AWEOS_ERR_VERIFY, 4U);
     assert_untrusted(argv[3], AWEOS_ERR_IO, 0U);
+    assert_untrusted(argv[4], AWEOS_ERR_IO, 0U);
     assert(aweos_iso_validate(NULL, &(aweos_iso_manifest_t){0}) == AWEOS_ERR_INVALID_PARAM);
     puts("PASS: ISO candidates are never marked valid without a trusted expected SHA-256; symlinks and undersized files are rejected.");
     return 0;
@@ -57,6 +58,6 @@ ln -s large.iso "$tmp_root/symlink.iso"
 ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=1:halt_on_error=1}" \
 UBSAN_OPTIONS="${UBSAN_OPTIONS:-halt_on_error=1}" \
     "$tmp_root/test_iso_verify" \
-    "$tmp_root/large.iso" "$tmp_root/small.iso" "$tmp_root/symlink.iso"
+    "$tmp_root/large.iso" "$tmp_root/small.iso" "$tmp_root/symlink.iso" "$tmp_root/missing.iso"
 
 echo "PASS: ISO verification fails closed for size-only candidates and symlink paths."
