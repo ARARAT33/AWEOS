@@ -62,6 +62,7 @@ cat > "$mock_bin/switch_root" <<'MOCK_SWITCH_ROOT'
 #!/bin/sh
 set -eu
 printf '%s\n' "$*" > "$AWEOS_TEST_SWITCH_ROOT_LOG"
+printf '%s\n' "$" > "$AWEOS_TEST_SWITCH_ROOT_PID"
 exit 0
 MOCK_SWITCH_ROOT
 
@@ -119,7 +120,7 @@ run_case() {
         overlay_fixture="$fixture"
     fi
 
-    rm -f "$root/mount.log" "$root/switch-root.log"
+    rm -f "$root/mount.log" "$root/switch-root.log" "$root/switch-root.pid" "$root/init.pid"
     env \
         PATH="$mock_bin:$PATH" \
         AWEOS_INITRAMFS_ROOT="$root" \
@@ -131,7 +132,11 @@ run_case() {
         AWEOS_TEST_MEDIA_FIXTURE="$media_fixture" \
         AWEOS_TEST_MOUNT_LOG="$root/mount.log" \
         AWEOS_TEST_SWITCH_ROOT_LOG="$root/switch-root.log" \
-        /bin/sh "$init_script" > "$root/output.log" 2>&1
+        AWEOS_TEST_SWITCH_ROOT_PID="$root/switch-root.pid" \
+        /bin/sh "$init_script" > "$root/output.log" 2>&1 &
+    local init_pid=$!
+    wait "$init_pid" || true
+    printf '%s\n' "$init_pid" > "$root/init.pid"
 
     printf '%s\n' "$root"
 }
@@ -153,6 +158,8 @@ readonly_root="$(run_case readonly 'aweos.root=/dev/sda1' aweos 0)"
 grep -q 'AWEOS ROOTFS READY: mode=ayui source=.*/dev/sda1 access=overlay' "$readonly_root/output.log"
 grep -q -- '-t overlay overlay' "$readonly_root/mount.log"
 test -s "$readonly_root/switch-root.log"
+test "$(cat "$readonly_root/switch-root.pid")" = "$(cat "$readonly_root/init.pid")"
+grep -q -- '^-c /dev/console ' "$readonly_root/switch-root.log"
 if grep -q -- 'remount,rw' "$readonly_root/mount.log"; then
     echo "ERROR: default root discovery unexpectedly remounted the disk read-write." >&2
     exit 1
@@ -175,6 +182,8 @@ grep -q 'AWEOS ROOTFS READY: mode=ayui source=.*/rootfs.img access=overlay' "$is
 grep -q -- '-t iso9660 -o ro' "$iso_root/mount.log"
 grep -q -- '-o loop,ro,noload' "$iso_root/mount.log"
 grep -q -- '-t overlay overlay' "$iso_root/mount.log"
+test "$(cat "$iso_root/switch-root.pid")" = "$(cat "$iso_root/init.pid")"
+grep -q -- '^-c /dev/console ' "$iso_root/switch-root.log"
 if grep -q -- 'remount,rw' "$iso_root/mount.log"; then
     echo "ERROR: live ISO rootfs was remounted read-write." >&2
     exit 1
