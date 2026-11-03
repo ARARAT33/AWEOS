@@ -32,6 +32,8 @@ jobs:
   build-and-boot-test:
     runs-on: ubuntu-latest
     timeout-minutes: 180
+    env:
+      AWEOS_LIMINE_CONFIG: Bootloader/x86_64/limine-debug.conf
     steps:
       - name: Checkout AWEOS
         uses: actions/checkout@v5
@@ -66,14 +68,15 @@ jobs:
           test -x bin/limine
           sudo install -m 0755 bin/limine /usr/local/bin/limine
 
+      - name: Run shell, C, rootfs, session, and QEMU-runner regressions
+        run: make test-shell
+
       - name: Verify /linux is untouched
         run: ./scripts/verify-linux-readonly.sh
 
       - name: Test Rust workspace
         run: cargo test --workspace
 
-      - name: Test safe hybrid ISO assembly and EFI partition arguments
-        run: bash scripts/test-build-iso-safety.sh
 
       - name: Build AWEOS images
         run: make image
@@ -81,10 +84,56 @@ jobs:
       - name: Verify /linux after build
         run: ./scripts/verify-linux-readonly.sh
 
-      - name: Boot-test BIOS and UEFI ISO
+      - name: Preserve ISO for boot-test diagnostics
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AWEOS-boot-test-input
+          path: build/AWEOS-x86_64.iso
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Boot-test BIOS, UEFI and direct kernel
+        id: qemu_boot
+        env:
+          AWEOS_QEMU_CPU: qemu64
         run: make test-qemu
 
+      - name: Boot diagnostic retry with QEMU max CPU and instruction trace
+        if: \${{ failure() && steps.qemu_boot.outcome == 'failure' }}
+        continue-on-error: true
+        env:
+          AWEOS_QEMU_CPU: max
+          AWEOS_QEMU_DEBUG_FLAGS: int,guest_errors,cpu_reset,in_asm
+        run: |
+          for log in build/qemu-*.log; do
+            if [ -f "$log" ] && grep -q "AWEOS RECOVERY SHELL READY" "$log"; then
+              echo "Skipping CPU/instruction retry: the guest reached its recovery console; this is a userspace/desktop failure, not an early CPU fault."
+              exit 0
+            fi
+          done
+          ./scripts/run-qemu-tests.sh build all
+
+      - name: Upload QEMU and kernel diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AWEOS-QEMU-diagnostics
+          path: |
+            build/qemu-*.log
+            build/AWEOS-x86_64.iso
+            build/linux-x86_64/vmlinux
+            build/linux-x86_64/System.map
+            build/linux-x86_64/.config
+            build/linux-x86_64/arch/x86/boot/bzImage
+            build/linux-x86_64/arch/x86/boot/compressed/vmlinux
+            build/aweos-initramfs.cpio.gz
+          if-no-files-found: ignore
+          include-hidden-files: true
+          retention-days: 7
+
       - name: Verify /linux after QEMU tests
+        if: always()
         run: ./scripts/verify-linux-readonly.sh
 
       - name: Verify release artifacts
