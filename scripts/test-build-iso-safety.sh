@@ -10,8 +10,9 @@ work="$tmp_root/work"
 bin="$tmp_root/bin"
 args_file="$tmp_root/xorriso-args.txt"
 
-mkdir -p "$work/Bootloader/x86_64" "$work/build/linux-x86_64/arch/x86/boot" "$bin"
+mkdir -p "$work/Bootloader/x86_64" "$work/build/linux-x86_64/arch/x86/boot" "$work/lib" "$bin"
 cp "$repo_root/scripts/build-iso.sh" "$work/scripts-build-iso.sh"
+cp "$repo_root/scripts/lib/build-safety.sh" "$work/lib/build-safety.sh"
 
 for file in limine-bios.sys limine-bios-cd.bin limine-uefi-cd.bin BOOTX64.EFI limine.conf; do
     printf 'mock %s\n' "$file" > "$work/Bootloader/x86_64/$file"
@@ -81,6 +82,7 @@ MOCK_LIMINE
 chmod 0755 "$bin/xorriso" "$bin/limine"
 
 mkdir -p "$work/build/iso"
+printf 'AWEOS build directory v1\n' > "$work/build/.aweos-build-dir"
 printf 'user staging data\n' > "$work/build/iso/keep.txt"
 printf 'previous valid ISO\n' > "$work/build/AWEOS-x86_64.iso"
 

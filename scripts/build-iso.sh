@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BUILD_DIR="${1:-build}"
-case "${BUILD_DIR}" in
-    /*) ;;
-    *) BUILD_DIR="${PWD}/${BUILD_DIR}" ;;
-esac
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd -P)"
+source "$SCRIPT_DIR/lib/build-safety.sh"
+
+BUILD_DIR="$(aweos_prepare_build_dir "${1:-build}" "$REPO_ROOT")"
 
 ISO_OUTPUT="${BUILD_DIR}/AWEOS-x86_64.iso"
 LIMINE_ASSET_DIR="${AWEOS_LIMINE_ASSET_DIR:-Bootloader/x86_64}"
