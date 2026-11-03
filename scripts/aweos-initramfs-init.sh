@@ -178,10 +178,11 @@ if [ "$ROOTFS_MOUNTED" -eq 1 ] && [ -x "$NEW_ROOT/sbin/init" ]; then
     [ "$ROOTFS_LIVE" -eq 0 ] && [ "$ROOT_RW" -eq 1 ] && access_mode=rw
     echo "AWEOS ROOTFS READY: mode=$MODE source=$ROOTFS_SOURCE access=$access_mode"
     echo "Transitioning to verified AWEOS root filesystem via switch_root..."
-    if switch_root "$NEW_ROOT" /sbin/init; then
-        exit 0
-    fi
-    echo "ERROR: switch_root returned unexpectedly; entering initramfs recovery." >&2
+    # BusyBox switch_root requires PID 1. A normal command invocation forks
+    # a child, which prints usage and leaves the initramfs shell running.
+    # exec preserves PID 1 and reopens stdio on the console moved into NEW_ROOT.
+    exec switch_root -c /dev/console "$NEW_ROOT" /sbin/init
+    echo "ERROR: unable to execute switch_root; entering initramfs recovery." >&2
 fi
 
 echo "AWEOS INITRAMFS RECOVERY READY"
