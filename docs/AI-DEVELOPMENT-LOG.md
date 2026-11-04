@@ -244,3 +244,22 @@
 2. Obtain QEMU screenshot/framebuffer capture to verify actual pixels, not
    only the serial first-frame marker.
 3. Verify native hardware and firmware combinations beyond QEMU.
+
+
+## 2026-11-04 — QEMU runner regression follow-up
+
+- PR #35 userland workflow #41779212914 completed successfully. Its actual
+  log confirms the framebuffer fallback hardened build, the ASan/UBSan
+  framebuffer pixel/offset/bounds test, session fallback test, Rust
+  workspace/release build, and Xvfb first-frame smoke test all passed.
+- PR #36 userland workflow #41780062941 failed inside make test-shell after
+  the build-safety, disk-image, transaction, storage, ISO, rootfs, framebuffer
+  sanitizer, and session-fallback tests had passed.
+- Inspecting the actual job log and mock runner showed the failure was a stale
+  assertion: the runner's recovery message had been clarified, but the test
+  still grepped for the old wording. Updated the assertion to the exact new
+  message. This is a test expectation correction, not a product behavior
+  change; the corrected test still requires a non-zero runner exit when
+  recovery takes over.
+- The corrected test has not yet been rerun on a fresh head and remains
+  pending validation.
