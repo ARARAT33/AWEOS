@@ -139,7 +139,7 @@ if [ "$rc" -eq 0 ]; then
     exit 1
 fi
 grep -q 'AWEOS RECOVERY SHELL READY' "$build_dir/qemu-bios.log"
-grep -q 'recovery console took over' "$tmp_root/desktop-failure-output.log"
+grep -q 'transferred control to the recovery console' "$tmp_root/desktop-failure-output.log"
 
 # A first-frame framebuffer fallback is a valid, explicitly degraded desktop boot.
 PATH="$mock_bin:$PATH" \
