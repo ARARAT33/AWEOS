@@ -17,10 +17,18 @@ printf 'NAME=AWEOS\n' > "${rootfs}/etc/os-release"
 printf 'AUTOLOGIN=true\n' > "${rootfs}/etc/aweos/config"
 printf '[desktop]\ntheme = "test"\n' > "${rootfs}/etc/aweui/config.toml"
 printf '#!/bin/sh\nexec /usr/bin/aweos-session /usr/bin/aweui /bin/busybox /usr/bin/aweos-ayui-fb\n' > "${rootfs}/sbin/init"
-printf '#!/bin/sh\nexit 0\n' > "${rootfs}/bin/busybox"
+cat > "${rootfs}/bin/busybox" <<'BUSYBOX'
+#!/bin/sh
+if [ "${1:-}" = "--list" ]; then
+    printf '%s\n' tar sha256sum find sort awk grep sed wc tr mktemp cp chmod ln mkdir rm rmdir cat mv
+    exit 0
+fi
+exit 1
+BUSYBOX
+printf '#!/bin/sh\nexit 0\n' > "${rootfs}/usr/bin/awepkg"
 printf '#!/bin/sh\nexit 0\n' > "${rootfs}/usr/bin/aweos-session"
 printf '#!/bin/sh\nexit 0\n' > "${rootfs}/usr/bin/aweos-ayui-fb"
-chmod 0755 "${rootfs}/sbin/init" "${rootfs}/bin/busybox" "${rootfs}/usr/bin/aweos-session" "${rootfs}/usr/bin/aweos-ayui-fb"
+chmod 0755 "${rootfs}/sbin/init" "${rootfs}/bin/busybox" "${rootfs}/usr/bin/awepkg" "${rootfs}/usr/bin/aweos-session" "${rootfs}/usr/bin/aweos-ayui-fb"
 printf '[Desktop Entry]\nExec=/usr/bin/aweui\n' > "${rootfs}/usr/share/wayland-sessions/ayui.desktop"
 
 cat > "${tmp_root}/main.c" <<'C_SOURCE'

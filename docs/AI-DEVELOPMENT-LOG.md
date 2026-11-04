@@ -269,3 +269,118 @@
   stale recovery-message assertion; its branch and commits were retained.
 - PR #37 contains the corrected assertion and is the active validation PR
   for the direct-kernel headless test. Its fresh CI runs are pending.
+
+
+## 2026-11-04 — Package subsystem fail-closed hardening
+
+- Inspected PR #37 head `e4b47c2c50e91e97e6abe54b81fdd1bc99b1766b`, current open boot/AYUI PR stack, recent
+  Actions runs, and package sources before editing.
+- Found the active stack still had a legacy `awepkg` implementation that
+  copied archive payloads into `/` with `cp -rf`, ignored copy failures, and
+  removed files without ownership/hash checks. PR #21 held safer code but was
+  based on stale `master` and was not integrated into the boot stack.
+- Found C AOSIN v1 still generated a dummy 1 KiB payload, hard-coded the
+  empty-file SHA-256, and accepted a magic number as verification.
+- Integrated the reviewed path/collision/archive-type/hash/rollback package
+  manager protections into this active stack. Unsigned installation now
+  fails closed by default; `AWEPKG_ALLOW_UNSIGNED=1` is development-only.
+- Normalize installed file modes to 0755/0644, constrain the package database
+  to the selected root, and test rollback with deterministic injected failure
+  so the test runs as root or unprivileged user.
+- All legacy C AOSIN v1 public operations now fail closed without touching
+  output files, target roots, or package metadata.
+- Added package-security documentation and dedicated package-safety CI.
+- No changes to `/linux`, disks, partitions, installer/updater, or user data.
+
+### Validation status
+
+- Shell package and C AOSIN ASan/UBSan tests are wired into `make test-shell`
+  and the dedicated workflow. Fresh CI results on the final PR head are
+  required before merge; validation is pending.
+
+### Remaining blockers
+
+1. Implement signed manifests and trusted key management before enabling
+   production package installation.
+2. Add archive expanded-size and file-count limits.
+3. Replace shell path checks with race-resistant descriptor-relative
+   extraction/deployment.
+4. Implement dependency resolution, repository metadata, sandboxing, and
+   application permissions.
+5. Replace AOSIN v1 with a real versioned format after compatibility review.
+
+
+### Actual validation results (2026-11-04)
+
+- Package-safety workflow run [#41782694987](https://github.com/ARARAT33/AWEOS/actions/runs/41782694987)
+  on commit `96dc3101a165f6b3e4942f26ce0536baa97c8f5d`: **PASS**.
+  The actual job completed all six steps: checkout, `/linux` read-only
+  integrity, POSIX shell syntax, shell package integration, and C AOSIN
+  AddressSanitizer/UndefinedBehaviorSanitizer regression.
+- The shell log explicitly exercised unsigned-install rejection, outside-root
+  and symlinked DB rejection, duplicate-install rejection, modified-file
+  preservation, overwrite and DB-path collision rejection, archive-link
+  rejection, protected base-system removal, permission normalization, and
+  deterministic mid-transaction rollback.
+- The C sanitizer log reported:
+  `PASS: AOSIN APIs fail closed and preserve existing files, package metadata, and target roots.`
+  and `PASS: AOSIN C API regression (ASan/UBSan).`
+- An earlier run [#41782330916](https://github.com/ARARAT33/AWEOS/actions/runs/41782330916)
+  failed because `_GNU_SOURCE` was defined both in the test source and compiler
+  flags. The duplicate definition was removed; the corrected run
+  [#41782422449](https://github.com/ARARAT33/AWEOS/actions/runs/41782422449)
+  passed before the final DB-path and help-output assertions were added.
+- Userland and full image/boot workflows on the final package head were still
+  running when this log entry was written; their results must be checked
+  separately and are not represented as passed here.
+- The prior full boot run [#41780373297](https://github.com/ARARAT33/AWEOS/actions/runs/41780373297)
+  failed in the default `qemu64` BIOS path before the kernel reached the
+  rootfs hand-off. The UEFI run reached the rootfs and AYUI framebuffer
+  fallback; the diagnostic retry using QEMU CPU model `max` reached the
+  framebuffer desktop in BIOS and UEFI. This remains a firmware/CPU-model
+  compatibility blocker, not a passing default BIOS boot.
+
+
+## 2026-11-04 — Package manager target-runtime contract
+
+- Added a second package integration pass that invokes `awepkg` through
+  BusyBox `ash` and places BusyBox applets first on `PATH`, matching the
+  minimal target rootfs rather than only the Ubuntu host environment.
+- The rootfs validator now requires executable `/usr/bin/awepkg` and checks
+  the target BusyBox binary for the applets used by archive validation,
+  hashing, staging, rollback, and removal.
+- The dedicated package-safety workflow installs BusyBox so this compatibility
+  pass cannot silently skip on GitHub-hosted runners.
+- Validation is pending on the new commit; any missing applet or unsupported
+  BusyBox option will fail the test rather than shipping a host-only package
+  manager.
+
+
+### BusyBox compatibility regression and correction (2026-11-04)
+
+- The first target-runtime run [#41783344894](https://github.com/ARARAT33/AWEOS/actions/runs/41783344894)
+  correctly exposed a host-only assumption: BusyBox 1.37.0 `find` does not
+  implement GNU `-printf`. The GNU-host package tests passed, but the BusyBox
+  replay failed at file-list generation.
+- Replaced GNU `find -printf` with `find -print` plus POSIX `sed` after the
+  existing NUL-based newline-name check. This keeps the line-delimited
+  ownership database safe while supporting BusyBox.
+- Added `sed` and `rmdir` to the target BusyBox applet contract. The
+  package-safety workflow is rerun on the corrected branch; no BusyBox pass
+  is claimed until its fresh log completes.
+
+
+### BusyBox hard-link validation regression (2026-11-04)
+
+- The second BusyBox replay exposed a security-relevant format difference:
+  BusyBox tar 1.37.0 displays a hard-link entry with a regular-file mode
+  prefix followed by `-> TARGET`, whereas GNU tar uses an `h` type marker
+  and `link to TARGET`. Checking only the first listing character therefore
+  allowed a hard-link entry through the BusyBox path.
+- Added explicit rejection of both ` -> ` and ` link to ` markers before
+  extraction. The existing hard-link archive integration case now exercises
+  both GNU tar and BusyBox tar output.
+- This is a real security regression found by the target-runtime test; the
+  previous BusyBox failure was not treated as a passing result. A fresh
+  package-safety run is required before the package change is considered
+  validated.
