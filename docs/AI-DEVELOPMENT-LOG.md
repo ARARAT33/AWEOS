@@ -411,3 +411,22 @@
   failing test is fixed. Fresh userland and package-safety runs on this new
   branch head must pass, and the annotation (if any) must be inspected before
   the underlying failure can be diagnosed and fixed.
+
+## 2026-11-04 — Attribution commit escaping defect and correction
+
+- The first attribution commit pushed a broken `test-shell` recipe: the
+  `$$script` Makefile escapes were written as single `$script`, so GNU make
+  expanded `$s` to an empty string and the loop ran `bash -n "cript"`,
+  which cannot exist. The resulting workflow run failed immediately inside
+  the syntax-check loop and never reached the real test scripts.
+- The defect was detected by the new annotation itself (the GitHub annotation
+  rendered `bash -n syntax check failed for cript`), confirming the
+  attribution mechanism works and that the failure came from the pushed
+  recipe, not from any real AWEOS test script.
+- The recipe is corrected to use `$$script`/`$$test_script` escapes. The
+  corrected file was read back from the pushed branch before CI is trusted.
+- The underlying `make test-shell` failure observed on PR #38 head
+  `d8875b4` remains undiagnosed until a run of the corrected attribution
+  completes and either passes or names the failing script.
+- No changes to `/linux`; no disk, partition, installer, updater, or
+  user-data operations.
