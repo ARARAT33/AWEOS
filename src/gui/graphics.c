@@ -99,7 +99,8 @@ int aweos_gfx_init(aweos_fb_t *fb, const char *device) {
     fb->height = vinfo.yres;
     fb->bpp = vinfo.bits_per_pixel;
     fb->pitch_bytes = finfo.line_length;
-    fb->pitch_pixels = (uint32_t)(((uint64_t)finfo.line_length + 3U) / 4U);
+    /* Back-buffer pixels are always 32-bit, independent of fbdev pixel depth. */
+    fb->pitch_pixels = fb->width;
     fb->screen_size = finfo.smem_len;
     fb->red_offset = vinfo.red.offset;
     fb->red_length = vinfo.red.length;
