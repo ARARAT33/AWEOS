@@ -91,14 +91,16 @@ test_boot() {
         return 1
     fi
 
-    if grep -q "AWEOS AYUI COMPOSITOR READY:" "${logfile}"; then
-        echo "SUCCESS: AWEOS ${mode} boot reached an initialized AYUI Wayland compositor and rendered its first frame."
-    elif grep -q "AWEOS RECOVERY SHELL READY" "${logfile}"; then
-        echo "FAIL: the OS reached its rootfs, but AYUI did not initialize; the recovery console kept PID 1 alive." >&2
-        grep -E "EventLoopCreation|AYUI|AWEOS session failed" "${logfile}" | tail -n 40 >&2 || true
+    if grep -q "AWEOS RECOVERY SHELL READY" "${logfile}"; then
+        echo "FAIL: an AYUI backend exited after startup and the recovery console took over in ${mode} mode." >&2
+        grep -E "EventLoopCreation|AYUI|AWEOS session|RECOVERY" "${logfile}" | tail -n 60 >&2 || true
         return 1
+    elif grep -q "AWEOS AYUI COMPOSITOR READY:" "${logfile}"; then
+        echo "SUCCESS: AWEOS ${mode} boot reached the nested AYUI Wayland compositor and rendered its first frame."
+    elif grep -q "AWEOS AYUI FRAMEBUFFER READY:" "${logfile}"; then
+        echo "SUCCESS: AWEOS ${mode} boot reached the AYUI framebuffer fallback and rendered its first frame (degraded desktop mode)."
     else
-        echo "FAIL: rootfs booted, but neither AYUI readiness nor the recovery-console marker appeared in ${mode} mode." >&2
+        echo "FAIL: rootfs booted, but neither AYUI backend reached its first-frame readiness marker in ${mode} mode." >&2
         return 1
     fi
 }

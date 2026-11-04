@@ -14,14 +14,13 @@ int ayui_session_init(ayui_session_t *s, bool test_mode) {
     s->theme = AYUI_THEME_DEFAULT;
     s->test_mode = test_mode;
 
-    printf("AWEOS BOOT SUCCESS\n");
-    printf("AWEOS GRAPHICS INITIALIZING\n");
+    printf("AWEOS AYUI FRAMEBUFFER INITIALIZING\n");
 
     if (aweos_gfx_init(&s->fb, "/dev/fb0") < 0) {
         fprintf(stderr, "AYUI Session: Failed to initialize framebuffer /dev/fb0\n");
         return -1;
     }
-    printf("AWEOS GRAPHICS READY\n");
+    printf("AWEOS AYUI FRAMEBUFFER OPEN: %ux%u %u bpp\n", s->fb.width, s->fb.height, s->fb.bpp);
 
     printf("AWEOS INPUT INITIALIZING\n");
     if (aweos_input_init(&s->input, s->fb.width, s->fb.height) < 0) {
@@ -29,8 +28,7 @@ int ayui_session_init(ayui_session_t *s, bool test_mode) {
     }
     printf("AWEOS INPUT READY\n");
 
-    printf("AYUI SESSION READY\n");
-    printf("AYUI COMPOSITOR READY\n");
+    printf("AYUI FRAMEBUFFER SESSION INITIALIZED\n");
 
     s->cursor_x = s->fb.width / 2;
     s->cursor_y = s->fb.height / 2;
@@ -39,7 +37,6 @@ int ayui_session_init(ayui_session_t *s, bool test_mode) {
     s->launcher_open = false;
 
     ayui_session_register_apps(s);
-    printf("AYUI DESKTOP READY\n");
 
     return 0;
 }
@@ -47,56 +44,20 @@ int ayui_session_init(ayui_session_t *s, bool test_mode) {
 #include <dirent.h>
 
 void ayui_session_register_apps(ayui_session_t *s) {
-    s->app_count = 0;
-
-    ayui_app_info_t system_apps[] = {
-        {1, "AYUI Terminal", "1.0", "PTY Shell Terminal", "terminal", "aweos-terminal", "System", NULL},
-        {2, "File Manager", "1.0", "AWEOS Directory Browser", "folder", "aweos-fm", "System", NULL},
-        {3, "Settings", "1.0", "System Configuration", "settings", "aweos-settings", "System", NULL},
-        {4, "System Info", "1.0", "Hardware & Kernel Info", "info", "aweos-info", "System", NULL},
-        {5, "Network Manager", "1.0", "Network Interface Info", "network", "aweos-net", "System", NULL},
-        {6, "Storage Info", "1.0", "Disks and Filesystems", "storage", "aweos-storage", "System", NULL},
-        {7, "Package Manager", "1.0", "AOSIN Package Tools", "package", "aosin-gui", "System", NULL},
-        {8, "Control Center", "1.0", "Quick Toggles & Settings", "control-center", "aweos-cc", "System", NULL},
-        {9, "System Monitor", "1.0", "Task & Resource Manager", "monitor", "aweos-monitor", "System", NULL},
-        {10, "Text Editor", "1.0", "AYUI Native Text Editor", "editor", "aweos-editor", "System", NULL},
-        {11, "Calculator", "1.0", "AYUI Calculator Utility", "calculator", "aweos-calc", "System", NULL},
-        {12, "Screenshot", "1.0", "Screen Capture Tool", "screenshot", "aweos-screenshot", "System", NULL},
-        {13, "Diagnostics", "1.0", "Environment Verification", "diagnostics", "aweos-diag", "System", NULL},
-        {14, "About AWEOS", "1.0", "About AWEOS Platform", "about", "aweos-about", "System", NULL}
+    memset(s->apps, 0, sizeof(s->apps));
+    s->app_count = 2;
+    s->apps[0] = (ayui_app_info_t){
+        .id = 1, .name = "Terminal", .version = "1.0",
+        .description = "Interactive BusyBox shell in a PTY",
+        .icon = "terminal", .executable = "/bin/sh",
+        .category = "System", .launch_cb = NULL
     };
-
-    int num = sizeof(system_apps) / sizeof(system_apps[0]);
-    for (int i = 0; i < num && s->app_count < AYUI_MAX_APPS; i++) {
-        s->apps[s->app_count++] = system_apps[i];
-    }
-
-    /* Scan /var/lib/awepkg/ for dynamically installed AOSIN package metadata */
-    DIR *d = opendir("/var/lib/awepkg");
-    if (d) {
-        struct dirent *ent;
-        while ((ent = readdir(d)) != NULL && s->app_count < AYUI_MAX_APPS) {
-            if (strstr(ent->d_name, ".meta")) {
-                char pkg_name[64] = {0};
-                snprintf(pkg_name, sizeof(pkg_name), "%s", ent->d_name);
-                char *dot = strstr(pkg_name, ".meta");
-                if (dot) *dot = '\0';
-
-                /* Ignore base-system */
-                if (strcmp(pkg_name, "base-system") == 0) continue;
-
-                ayui_app_info_t custom_app;
-                memset(&custom_app, 0, sizeof(custom_app));
-                custom_app.id = s->app_count + 1;
-                snprintf(custom_app.name, sizeof(custom_app.name), "%s", pkg_name);
-                snprintf(custom_app.version, sizeof(custom_app.version), "1.0");
-                snprintf(custom_app.description, sizeof(custom_app.description), "AOSIN Package %s", pkg_name);
-                snprintf(custom_app.category, sizeof(custom_app.category), "AOSIN");
-                s->apps[s->app_count++] = custom_app;
-            }
-        }
-        closedir(d);
-    }
+    s->apps[1] = (ayui_app_info_t){
+        .id = 2, .name = "Root Listing (read-only)", .version = "1.0",
+        .description = "Read-only snapshot of the root directory",
+        .icon = "folder", .executable = "internal:root-listing",
+        .category = "System", .launch_cb = NULL
+    };
 }
 
 void ayui_session_launch_app(ayui_session_t *s, int app_id) {
@@ -105,63 +66,18 @@ void ayui_session_launch_app(ayui_session_t *s, int app_id) {
 
     switch (app_id) {
         case 1:
-            win = ayui_wm_create_window(s, 40, 50, AYUI_TERM_COLS * FONT_WIDTH, AYUI_TERM_ROWS * FONT_HEIGHT, "AWEOS Terminal (x86_64)");
+            win = ayui_wm_create_window(s, 40, 50, AYUI_TERM_COLS * FONT_WIDTH, AYUI_TERM_ROWS * FONT_HEIGHT, "AWEOS Terminal");
             if (win) {
-                ayui_wm_spawn_terminal(s, win);
-                printf("AYUI TERMINAL READY\n");
+                if (ayui_wm_spawn_terminal(s, win) < 0) {
+                    fprintf(stderr, "AYUI: terminal PTY could not be started\n");
+                } else {
+                    printf("AYUI TERMINAL READY\n");
+                }
             }
             break;
         case 2:
-            win = ayui_wm_create_window(s, 60, 60, 480, 260, "File Manager");
+            win = ayui_wm_create_window(s, 60, 60, 480, 260, "Root Listing (read-only)");
             if (win) win->render_cb = render_app_file_manager;
-            break;
-        case 3:
-            win = ayui_wm_create_window(s, 80, 70, 480, 220, "System Settings");
-            if (win) win->render_cb = render_app_settings;
-            break;
-        case 4:
-            win = ayui_wm_create_window(s, 100, 80, 480, 220, "System Information");
-            if (win) win->render_cb = render_app_system_info;
-            break;
-        case 5:
-            win = ayui_wm_create_window(s, 120, 90, 480, 220, "Network Manager");
-            if (win) win->render_cb = render_app_network_manager;
-            break;
-        case 6:
-            win = ayui_wm_create_window(s, 140, 100, 480, 220, "Storage & Disk Info");
-            if (win) win->render_cb = render_app_storage_info;
-            break;
-        case 7:
-            win = ayui_wm_create_window(s, 160, 110, 480, 220, "AOSIN Package Manager");
-            if (win) win->render_cb = render_app_package_manager;
-            break;
-        case 8:
-            win = ayui_wm_create_window(s, 170, 115, 480, 220, "Control Center");
-            if (win) win->render_cb = render_app_control_center;
-            break;
-        case 9:
-            win = ayui_wm_create_window(s, 180, 120, 500, 240, "System Monitor & Tasks");
-            if (win) win->render_cb = render_app_system_monitor;
-            break;
-        case 10:
-            win = ayui_wm_create_window(s, 190, 125, 480, 220, "Text Editor");
-            if (win) win->render_cb = render_app_text_editor;
-            break;
-        case 11:
-            win = ayui_wm_create_window(s, 200, 130, 480, 240, "Calculator");
-            if (win) win->render_cb = render_app_calculator;
-            break;
-        case 12:
-            win = ayui_wm_create_window(s, 210, 135, 480, 220, "Screenshot Utility");
-            if (win) win->render_cb = render_app_screenshot;
-            break;
-        case 13:
-            win = ayui_wm_create_window(s, 220, 140, 480, 220, "System Diagnostics");
-            if (win) win->render_cb = render_app_diagnostics;
-            break;
-        case 14:
-            win = ayui_wm_create_window(s, 230, 145, 480, 220, "About AWEOS");
-            if (win) win->render_cb = render_app_about;
             break;
     }
 }
@@ -176,6 +92,7 @@ void ayui_session_run(ayui_session_t *s) {
     }
 
     int frame_counter = 0;
+    bool ready_logged = false;
 
     while (s->running) {
         frame_counter++;
@@ -245,6 +162,12 @@ void ayui_session_run(ayui_session_t *s) {
 
         ayui_shell_render_cursor(&s->fb, s->cursor_x, s->cursor_y);
         aweos_gfx_swap_buffers(&s->fb);
+        if (!ready_logged) {
+            printf("AWEOS AYUI FRAMEBUFFER READY: device=/dev/fb0 width=%u height=%u bpp=%u\n",
+                   s->fb.width, s->fb.height, s->fb.bpp);
+            fflush(stdout);
+            ready_logged = true;
+        }
 
         if (s->test_mode && frame_counter >= 30) {
             /* In automated test mode, loop enough frames to dump screenshot and exit gracefully */

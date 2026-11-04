@@ -4,7 +4,7 @@ AWEOS is an x86_64 Linux-based operating-system project with its own boot
 integration, root filesystem, initramfs, Rust-based AYUI desktop work, system
 utilities, package-management experiments, and C installer/updater components.
 
-> **Development status — 2026-11-03: not production-ready.** The repository has
+> **Development status — 2026-11-04: not production-ready.** The repository has
 > working component tests and an image-build pipeline, but full BIOS/UEFI
 > end-to-end boot and real-hardware validation are not yet established. Do not
 > use the current installer/updater to modify a disk containing valuable data.
@@ -21,11 +21,14 @@ utilities, package-management experiments, and C installer/updater components.
   switching root. It probes ext4 with `ro,noload`; live sessions use a tmpfs
   overlay. Persistent root writes require the explicit
   `aweos.root-rw=1` boot parameter after identity verification.
-- **AYUI:** the default userland profile builds the Rust workspace under
-  `AWEUI/`. The current Smithay/Winit compositor has an Xvfb smoke test that
-  checks Wayland socket creation and first-frame rendering. This is a nested
-  test only; a native DRM/KMS display backend and bare-metal GPU/input
-  validation are not yet complete.
+- **AYUI:** the Rust Smithay/Winit compositor remains the nested Wayland
+  backend and is validated under Xvfb. Bare boots first try it, then fall back
+  to a separate C fbdev session that opens the kernel framebuffer, validates
+  its pixel layout, renders a first frame, and exposes only a PTY terminal and
+  a read-only root-directory snapshot. The fallback supports 16/24/32-bpp
+  layouts with validated channel bitfields. It is a limited recovery desktop,
+  not a native DRM/KMS compositor; GPU acceleration, multi-monitor, and full
+  input-device support remain unverified.
 - **Installer and updater:** the C transaction engine rejects unimplemented
   staging/deployment/verification stages. It must not report installation or
   update success while those backends are absent. Disk formatting and
@@ -97,7 +100,11 @@ Verified AWEOS root filesystem
         v
 AWEOS init / session supervisor
         |
-        +---- AYUI (current Winit-based implementation)
+        +---- Smithay/Winit nested compositor
+        |       (used when an existing X11/Wayland display is available)
+        |
+        +---- AYUI fbdev fallback
+        |       (real framebuffer output; terminal + read-only root listing)
         |
         +---- recovery console
 ```
@@ -115,7 +122,8 @@ AWEOS init / session supervisor
 5. **Fail-closed installation.** The incomplete installer/updater transaction
    backend must not format, repartition, overwrite, or claim success.
 6. **No false boot success.** Root readiness is reported only after identity
-   and mount setup succeed; recovery is reported separately.
+   and mount setup succeed. AYUI readiness is reported only after a backend
+   submits its first frame; recovery is reported separately.
 
 ## Development notes
 

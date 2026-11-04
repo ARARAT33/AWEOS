@@ -83,6 +83,26 @@ for binary in ${RUST_BINS}; do
     copy_runtime_deps "${source}"
 done
 
+# Winit is a nested compositor and requires an existing host display. On bare
+# boots without DISPLAY/WAYLAND_DISPLAY, package the real Linux fbdev fallback.
+FB_GUI="${ROOTFS_DIR}/usr/bin/aweos-ayui-fb"
+cc -std=gnu11 -O2 -Wall -Wextra -Werror -Wno-unused-parameter \
+    -D_FORTIFY_SOURCE=2 -fstack-protector-strong -fPIE -pie \
+    -Wl,-z,relro,-z,now \
+    -I"${REPO_ROOT}/src/gui" -I"${REPO_ROOT}/src/apps" \
+    -o "${FB_GUI}" \
+    "${REPO_ROOT}/src/gui/main.c" \
+    "${REPO_ROOT}/src/gui/graphics.c" \
+    "${REPO_ROOT}/src/gui/input.c" \
+    "${REPO_ROOT}/src/gui/ayui_session.c" \
+    "${REPO_ROOT}/src/gui/ayui_shell.c" \
+    "${REPO_ROOT}/src/gui/ayui_wm.c" \
+    "${REPO_ROOT}/src/gui/font.c" \
+    "${REPO_ROOT}/src/apps/apps.c" \
+    -lutil
+chmod 0755 "${FB_GUI}"
+copy_runtime_deps "${FB_GUI}"
+
 (
     cd "${ROOTFS_DIR}"
     for applet in $(./bin/busybox --list); do
@@ -259,7 +279,7 @@ case "${MODE}" in
         if [ -x /usr/bin/aweui-firstboot-setup ] && grep -q '^fresh_install=true' /etc/aweos/first_boot 2>/dev/null; then
             /usr/bin/aweui-firstboot-setup || true
         fi
-        exec /usr/bin/aweos-session /usr/bin/aweui
+        exec /usr/bin/aweos-session /usr/bin/aweui /bin/busybox /usr/bin/aweos-ayui-fb
         ;;
     headless)
         echo "AWEOS HEADLESS CONSOLE READY"

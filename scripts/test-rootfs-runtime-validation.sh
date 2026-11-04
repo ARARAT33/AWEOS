@@ -16,10 +16,11 @@ printf 'root:*:19700:0:99999:7:::\naweos:*:19700:0:99999:7:::\n' > "${rootfs}/et
 printf 'NAME=AWEOS\n' > "${rootfs}/etc/os-release"
 printf 'AUTOLOGIN=true\n' > "${rootfs}/etc/aweos/config"
 printf '[desktop]\ntheme = "test"\n' > "${rootfs}/etc/aweui/config.toml"
-printf '#!/bin/sh\nexec /bin/sh\n' > "${rootfs}/sbin/init"
+printf '#!/bin/sh\nexec /usr/bin/aweos-session /usr/bin/aweui /bin/busybox /usr/bin/aweos-ayui-fb\n' > "${rootfs}/sbin/init"
 printf '#!/bin/sh\nexit 0\n' > "${rootfs}/bin/busybox"
 printf '#!/bin/sh\nexit 0\n' > "${rootfs}/usr/bin/aweos-session"
-chmod 0755 "${rootfs}/sbin/init" "${rootfs}/bin/busybox" "${rootfs}/usr/bin/aweos-session"
+printf '#!/bin/sh\nexit 0\n' > "${rootfs}/usr/bin/aweos-ayui-fb"
+chmod 0755 "${rootfs}/sbin/init" "${rootfs}/bin/busybox" "${rootfs}/usr/bin/aweos-session" "${rootfs}/usr/bin/aweos-ayui-fb"
 printf '[Desktop Entry]\nExec=/usr/bin/aweui\n' > "${rootfs}/usr/share/wayland-sessions/ayui.desktop"
 
 cat > "${tmp_root}/main.c" <<'C_SOURCE'
@@ -39,13 +40,13 @@ ldd "${rootfs}/usr/bin/aweui" |
         install -D -m 0644 "$lib" "${rootfs}${lib}"
     done
 
-if bash "${repo_root}/scripts/validate-rootfs-layout.sh" "${tmp_root}" > "${tmp_root}/expected-failure.log" 2>&1; then
+if AWEOS_DESKTOP=ayui bash "${repo_root}/scripts/validate-rootfs-layout.sh" "${tmp_root}" > "${tmp_root}/expected-failure.log" 2>&1; then
     echo "ERROR: rootfs validator accepted a non-executable ELF interpreter." >&2
     exit 1
 fi
 grep -Fq "ELF interpreter is missing or not executable" "${tmp_root}/expected-failure.log"
 
 chmod 0755 "${rootfs}${interpreter}"
-bash "${repo_root}/scripts/validate-rootfs-layout.sh" "${tmp_root}"
+AWEOS_DESKTOP=ayui bash "${repo_root}/scripts/validate-rootfs-layout.sh" "${tmp_root}"
 
 echo "PASS: rootfs validation rejects a non-executable ELF interpreter and accepts the corrected runtime."
