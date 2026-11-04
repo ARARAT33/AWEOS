@@ -49,8 +49,9 @@ failures=0
 test_boot() {
     local mode="$1"
     local logfile="$2"
+    local expected="$3"
     local debuglog="${logfile%.log}-debug.log"
-    shift 2
+    shift 3
 
     echo "Testing AWEOS ${mode} boot..."
     rm -f -- "${logfile}" "${debuglog}"
@@ -92,9 +93,19 @@ test_boot() {
     fi
 
     if grep -q "AWEOS RECOVERY SHELL READY" "${logfile}"; then
-        echo "FAIL: an AYUI backend exited after startup and the recovery console took over in ${mode} mode." >&2
+        echo "FAIL: a boot/session failure transferred control to the recovery console in ${mode} mode." >&2
         grep -E "EventLoopCreation|AYUI|AWEOS session|RECOVERY" "${logfile}" | tail -n 60 >&2 || true
         return 1
+    fi
+
+    if [ "${expected}" = "headless" ]; then
+        if grep -q "AWEOS ROOTFS READY: mode=headless" "${logfile}" &&
+           grep -q "AWEOS HEADLESS CONSOLE READY" "${logfile}"; then
+            echo "SUCCESS: AWEOS ${mode} boot reached the verified headless rootfs console (firmware framebuffer not expected)."
+        else
+            echo "FAIL: direct-kernel boot did not reach its explicit headless console marker." >&2
+            return 1
+        fi
     elif grep -q "AWEOS AYUI COMPOSITOR READY:" "${logfile}"; then
         echo "SUCCESS: AWEOS ${mode} boot reached the nested AYUI Wayland compositor and rendered its first frame."
     elif grep -q "AWEOS AYUI FRAMEBUFFER READY:" "${logfile}"; then
@@ -107,7 +118,7 @@ test_boot() {
 
 if [ "${TARGET_MODE}" = "all" ] || [ "${TARGET_MODE}" = "bios" ]; then
     # The legacy PC machine provides the conventional PIIX IDE CD-ROM path.
-    if ! test_boot "BIOS" "${BIOS_LOG}" \
+    if ! test_boot "BIOS" "${BIOS_LOG}" "desktop" \
         qemu-system-x86_64 \
         -machine pc \
         -m 2048M \
@@ -139,7 +150,7 @@ if [ "${TARGET_MODE}" = "all" ] || [ "${TARGET_MODE}" = "uefi" ]; then
     fi
 
     if [ -n "${UEFI_FIRMWARE}" ] && [ -f "${UEFI_FIRMWARE}" ]; then
-        if ! test_boot "UEFI" "${UEFI_LOG}" \
+        if ! test_boot "UEFI" "${UEFI_LOG}" "desktop" \
             qemu-system-x86_64 \
             -machine q35 \
             -m 2048M \
@@ -161,17 +172,18 @@ if [ "${TARGET_MODE}" = "all" ] || [ "${TARGET_MODE}" = "uefi" ]; then
     fi
 fi
 
-# This bypasses Limine and boots the exact kernel/initramfs pair from the ISO.
-# It isolates kernel + initramfs failures from bootloader/firmware failures.
+# This bypasses Limine and firmware-provided framebuffer hand-off data.
+# Use explicit headless init to isolate kernel + initramfs boot from desktop/display
+# support, which is already exercised by the BIOS and UEFI boot tests.
 if [ "${TARGET_MODE}" = "all" ] || [ "${TARGET_MODE}" = "kernel" ]; then
-    if ! test_boot "direct kernel" "${KERNEL_LOG}" \
+    if ! test_boot "direct kernel" "${KERNEL_LOG}" "headless" \
         qemu-system-x86_64 \
         -machine pc \
         -m 2048M \
         -cpu "${QEMU_CPU_MODEL}" \
         -kernel "${KERNEL_PATH}" \
         -initrd "${INITRAMFS_PATH}" \
-        -append "aweos.mode=aweui console=tty0 console=ttyS0,115200n8 earlycon=uart8250,io,0x3f8,115200 loglevel=7 ignore_loglevel" \
+        -append "aweos.mode=headless console=tty0 console=ttyS0,115200n8 earlycon=uart8250,io,0x3f8,115200 loglevel=7 ignore_loglevel" \
         -cdrom "${ISO_PATH}" \
         -display none \
         -serial stdio \

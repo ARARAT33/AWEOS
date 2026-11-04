@@ -99,9 +99,10 @@
 - The actual userland workflow #41777233762 passed, including the framebuffer
   build/format tests, session fallback regression, QEMU runner tests, Rust
   workspace tests, release binaries, and the Xvfb compositor smoke test.
-- The full image/BIOS/UEFI workflow #41777233854 had completed all pre-image
-  checks and was still building images at inspection time; no new boot result
-  was available yet.
+- The full image workflow #41777233854 built the ISO and disk image and
+  verified /linux, but the primary qemu64 BIOS/UEFI/direct-kernel boot step
+  failed. Its max-CPU diagnostic retry reached BIOS and UEFI framebuffer
+  readiness; the direct-kernel path reached rootfs but had no /dev/fb0.
 - Code review found that fbdev drawing ignored xoffset and yoffset from
   fb_var_screeninfo, and the previous bounds check only accounted for
   line_length multiplied by yres. A non-zero virtual-screen offset could
@@ -161,7 +162,7 @@
 
 ## 2026-11-04 — Cross-PR integration audit
 
-- The current AYUI/boot stack (PRs #27, #28, #30, #32, #33, and this PR #34)
+- The current AYUI/boot stack (PRs #27, #28, #30, #32, #33, #35, and #37)
   is not the whole repository's security stack. The branch was inspected
   against the separate package and ISO-validation PRs before any merge claim.
 - The current stack still contains the legacy src/core/iso_verify.c that
@@ -182,3 +183,89 @@
   these sibling security changes are integrated, their tests pass on the
   final combined head, and BIOS/UEFI boot succeeds with the current AYUI
   fallback. No branch or commit was deleted or force-pushed.
+
+
+## 2026-11-04 — Separate direct-kernel headless validation from firmware desktop boot
+
+### QEMU evidence reviewed
+
+- Full image construction and /linux read-only checks passed in workflow
+  #41777233854, but its primary qemu64 BIOS/UEFI attempts triple-faulted
+  before the verified rootfs hand-off.
+- The diagnostic retry using QEMU CPU model max booted BIOS and UEFI through
+  the verified rootfs and reached the AYUI fbdev first-frame marker at
+  1280x800, 32 bpp.
+- The same direct-kernel retry reached the verified rootfs but had no
+  /dev/fb0. This is expected for a kernel loaded directly with -kernel/-initrd:
+  that path bypasses Limine and firmware framebuffer hand-off, so it is not
+  a valid desktop test.
+- The previous QEMU runner incorrectly required a compositor/fbdev marker in
+  direct-kernel mode and therefore reported that test as a failure even
+  though the kernel/initramfs reached the rootfs. BIOS/UEFI remain the actual
+  desktop boot tests.
+
+### Implemented in follow-up branch
+
+- Direct-kernel QEMU boot now passes aweos.mode=headless explicitly.
+- The runner requires both AWEOS ROOTFS READY: mode=headless and
+  AWEOS HEADLESS CONSOLE READY for that path; a mounted rootfs alone is not
+  considered sufficient.
+- BIOS and UEFI continue to require a real first-frame AYUI compositor or
+  fbdev readiness marker, and still fail if the recovery console takes over.
+- The mock-QEMU regression now models headless direct boot and includes a
+  negative case proving that the direct-kernel path fails without its
+  headless-console marker.
+- This does not change initramfs storage discovery, root mount flags, or
+  firmware boot behavior. It does not make the qemu64 triple-fault issue
+  disappear or claim that CPU compatibility has been solved.
+- No changes to /linux and no writes to disks, partitions, or user data.
+
+### Files changed
+
+- scripts/run-qemu-tests.sh
+- scripts/test-qemu-test-runner.sh
+- docs/AI-DEVELOPMENT-LOG.md
+
+### Validation
+
+- The earlier PR #33 diagnostic retry proved BIOS and UEFI framebuffer
+  fallback readiness on QEMU CPU model max, but its full workflow remained
+  failed because the primary qemu64 attempt triple-faulted and the direct
+  kernel path had no framebuffer.
+- The new mock regression and full QEMU runner must pass on this branch.
+- The new direct-kernel path must reach the explicit headless marker in
+  actual QEMU; BIOS/UEFI must still reach their first-frame desktop markers.
+
+### Remaining blockers
+
+1. Diagnose why Limine/kernel startup triple-faults with QEMU qemu64 while
+   the diagnostic max CPU model boots BIOS/UEFI successfully. Do not silently
+   drop the qemu64 compatibility check.
+2. Obtain QEMU screenshot/framebuffer capture to verify actual pixels, not
+   only the serial first-frame marker.
+3. Verify native hardware and firmware combinations beyond QEMU.
+
+
+## 2026-11-04 — QEMU runner regression follow-up
+
+- PR #35 userland workflow #41779212914 completed successfully. Its actual
+  log confirms the framebuffer fallback hardened build, the ASan/UBSan
+  framebuffer pixel/offset/bounds test, session fallback test, Rust
+  workspace/release build, and Xvfb first-frame smoke test all passed.
+- PR #36 userland workflow #41780062941 failed inside make test-shell after
+  the build-safety, disk-image, transaction, storage, ISO, rootfs, framebuffer
+  sanitizer, and session-fallback tests had passed.
+- Inspecting the actual job log and mock runner showed the failure was a stale
+  assertion: the runner's recovery message had been clarified, but the test
+  still grepped for the old wording. Updated the assertion to the exact new
+  message. This is a test expectation correction, not a product behavior
+  change; the corrected test still requires a non-zero runner exit when
+  recovery takes over.
+- The corrected test has not yet been rerun on a fresh head and remains
+  pending validation.
+
+
+- PR #36 was closed as superseded after its actual userland run exposed the
+  stale recovery-message assertion; its branch and commits were retained.
+- PR #37 contains the corrected assertion and is the active validation PR
+  for the direct-kernel headless test. Its fresh CI runs are pending.
