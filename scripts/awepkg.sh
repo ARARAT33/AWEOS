@@ -357,9 +357,9 @@ case "$CMD" in
             CURRENT_TEMP=""
         done < "$FILES_LIST_TMP"
 
-        FILES_TMP="$DB_DIR/.${PKG_NAME}.files.$"
-        HASHES_TMP="$DB_DIR/.${PKG_NAME}.sha256.$$"
-        META_TMP="$DB_DIR/.${PKG_NAME}.meta.$$"
+        FILES_TMP=$(mktemp "$DB_DIR/.${PKG_NAME}.files.XXXXXX") || fail "cannot stage package file-list database"
+        HASHES_TMP=$(mktemp "$DB_DIR/.${PKG_NAME}.sha256.XXXXXX") || fail "cannot stage package hash database"
+        META_TMP=$(mktemp "$DB_DIR/.${PKG_NAME}.meta.XXXXXX") || fail "cannot stage package metadata database"
         cp "$FILES_LIST_TMP" "$FILES_TMP"
         : > "$HASHES_TMP"
         while IFS= read -r file; do

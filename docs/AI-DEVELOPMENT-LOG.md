@@ -451,3 +451,40 @@
   completes and either passes or names the failing script.
 - No changes to `/linux`; no disk, partition, installer, updater, or
   user-data operations.
+
+## 2026-11-04 — Trace-attributed awepkg rollback test fix and commit-temp correction
+
+- The `make test-shell` driver (`scripts/run-test-shell.sh`) now records each
+test under `bash -x` and embeds the last trace lines in the GitHub Actions
+`::error::` annotation. Fresh userland runs
+[#41853809647](https://github.com/ARARAT33/AWEOS/actions/runs/41853809647) and
+[#41854990937](https://github.com/ARARAT33/AWEOS/actions/runs/41854990937) both
+attributed the standing failure to `scripts/test-awepkg.sh`; the second run's
+trace showed the BusyBox replay failing with "ERROR: injected mid-install
+failure unexpectedly succeeded" in the rollback case.
+- Root cause: the rollback regression injected its mid-transaction failure by
+placing a mock `ln` first on `PATH`. In the userland runner's BusyBox replay
+the mock was not invoked, the third payload file was published, and the
+install completed, so the test correctly reported that the injection no longer
+failed deterministically. The dedicated package-safety workflow used an
+apt-installed BusyBox and passed, which is why code review and the
+package-safety run could not reproduce the failure.
+- Fix: the rollback injection no longer depends on PATH interception. The
+pre-existing `z-blocked` payload parent directory is made non-writable, which
+deterministically fails the staging `mktemp` for the third file in unprivileged
+runs; the PATH-fronted mock `ln` is retained so root and GNU-host runs still
+inject a publish failure. Either mechanism aborts the transaction and
+exercises the real rollback path. A staging-leftover check was added for the
+blocked directory.
+- Also fixed a latent package-database bug found during review: the
+commit-stage temporary names in `awepkg.sh` used PID-derived suffixes, and
+one had already lost a dollar sign (`.{PKG_NAME}.files.$`). All three commit
+temporaries are now created with `mktemp`, so concurrent installs cannot
+collide and no PID-derived escapes remain anywhere in the package manager.
+- No changes to `/linux`; no disk, partition, installer, updater, or
+user-data operations.
+
+### Validation status
+
+- Fresh userland and package-safety runs on this head are required before the
+fix is considered validated; all previous heads failed as described above.

@@ -154,7 +154,14 @@ test "$(stat -c '%a' "$ROOT_DIR/usr/bin/privileged")" = 755
 test "$(stat -c '%a' "$ROOT_DIR/usr/share/mode/data.txt")" = 644
 run_pkg remove mode-package
 
-# Inject a deterministic failure after two files have been published.
+# Inject a deterministic mid-transaction failure after two files have been
+# published: the pre-existing z-blocked parent directory is made non-writable,
+# which deterministically fails the staging mktemp for the third file in
+# unprivileged runs; the PATH-fronted mock ln additionally fails the atomic
+# publish step in environments that honor PATH lookups (GNU host tools, root
+# runs). Either mechanism must abort the transaction and trigger rollback;
+# the test fails loudly if the install unexpectedly succeeds, independent of
+# how a BusyBox build resolves applets.
 rollback_dir="$TMP_DIR/rollback-package"
 mkdir -p "$rollback_dir/root/b-created" "$rollback_dir/root/z-blocked" "$ROOT_DIR/z-blocked"
 cat > "$rollback_dir/manifest.meta" <<'EOF'
@@ -177,14 +184,17 @@ case "$last" in */z-blocked/third.txt) exit 1 ;; esac
 exec "$AWEPKG_REAL_LN" "$@"
 MOCK_LN
 chmod 0755 "$mock_bin/ln"
+chmod 0555 "$ROOT_DIR/z-blocked"
 if PATH="$mock_bin:$PATH" AWEPKG_REAL_LN="$real_ln" run_dev_pkg install "$TMP_DIR/rollback-package.awe"; then
     echo "ERROR: injected mid-install failure unexpectedly succeeded" >&2
     exit 1
 fi
+chmod 0755 "$ROOT_DIR/z-blocked"
 test ! -e "$ROOT_DIR/a-first.txt"
 test ! -e "$ROOT_DIR/b-created/second.txt"
 test ! -e "$ROOT_DIR/b-created"
 test ! -e "$ROOT_DIR/z-blocked/third.txt"
+test -z "$(find "$ROOT_DIR/z-blocked" -name '.awepkg.*' -print -quit)"
 test ! -e "$DB_DIR/rollback-package.meta"
 test ! -e "$DB_DIR/rollback-package.files"
 test ! -e "$DB_DIR/rollback-package.sha256"
