@@ -157,3 +157,28 @@
    on a serial readiness marker.
 4. Continue the native Smithay DRM/KMS path as a separate backend; do not
    describe fbdev as accelerated or multi-monitor capable.
+
+
+## 2026-11-04 — Cross-PR integration audit
+
+- The current AYUI/boot stack (PRs #27, #28, #30, #32, #33, and this PR #34)
+  is not the whole repository's security stack. The branch was inspected
+  against the separate package and ISO-validation PRs before any merge claim.
+- The current stack still contains the legacy src/core/iso_verify.c that
+  accepts any regular file larger than 1 MiB and fills in a hard-coded empty
+  SHA-256 value. PR #29 contains the fail-closed replacement and a regression
+  test; its userland and core-preservation workflows passed, while its full
+  image workflow failed at ISO assembly because it did not yet include the
+  hybrid-ISO EFI argument correction from PR #28. The final combined stack
+  must re-run image construction and boot validation after reconciling #29.
+- The current stack also still contains the older scripts/awepkg.sh. PR #21
+  contains the path/collision/hash/rollback hardening and its dedicated
+  package-safety workflow plus userland validation passed. Its full boot
+  workflow failed because the then-current AYUI Winit backend could not start
+  in a headless QEMU guest. The package branch is separate from the boot stack
+  and must be reconciled and revalidated before package safety is claimed for
+  the product branch.
+- Do not merge or describe the current PR stack as production-ready until
+  these sibling security changes are integrated, their tests pass on the
+  final combined head, and BIOS/UEFI boot succeeds with the current AYUI
+  fallback. No branch or commit was deleted or force-pushed.
