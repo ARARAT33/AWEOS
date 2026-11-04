@@ -94,33 +94,7 @@ test-rust:
 	@cargo test --workspace
 
 test-shell:
-	@set -euo pipefail; \
-	for script in $(SHELL_SCRIPTS); do \
-		if ! bash -n "$script"; then \
-			echo "::error::bash -n syntax check failed for $script" >&2; \
-			exit 2; \
-		fi; \
-	done; \
-	for test_script in \
-		test-build-dir-safety.sh \
-		test-build-disk-image-safety.sh \
-		test-transaction-fail-closed.sh \
-		test-storage-discovery.sh \
-		test-build-iso-safety.sh \
-		test-rootfs-runtime-validation.sh \
-		test-ayui-framebuffer-build.sh \
-		test-ayui-framebuffer-format.sh \
-		test-aweos-session-fallback.sh \
-		test-qemu-test-runner.sh \
-		test-initramfs-root-discovery.sh \
-		test-awepkg.sh \
-		test-aosin-fail-closed.sh; do \
-		echo "==> running scripts/$test_script"; \
-		if ! bash "./scripts/$test_script"; then \
-			echo "::error::make test-shell failed at scripts/$test_script" >&2; \
-			exit 2; \
-		fi; \
-	done
+	@bash ./scripts/run-test-shell.sh
 
 test-qemu: iso
 	@./scripts/run-qemu-tests.sh $(BUILD_DIR)

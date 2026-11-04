@@ -430,3 +430,24 @@
   completes and either passes or names the failing script.
 - No changes to `/linux`; no disk, partition, installer, updater, or
   user-data operations.
+
+## 2026-11-04 — Move test-shell execution into scripts/run-test-shell.sh
+
+- The inline `make test-shell` attribution recipe could not be pushed
+  reliably through the available API tooling: the required Makefile
+  double-dollar escapes were collapsed to single-dollar forms in the pushed
+  commits, so make expanded an empty variable and the loop ran
+  `bash -n "cript"`, which cannot exist. Both pushed attribution commits
+  (2d77c30 and 106dba2) are therefore defective in their inline recipe and
+  failed CI inside the syntax-check loop before reaching any real test.
+- The execution loop now lives in `scripts/run-test-shell.sh` as plain bash,
+  which needs no Make-level escaping at all. The Makefile `test-shell`
+  target is a single invocation of that driver. The script list, order, and
+  semantics are identical to the previous Makefile recipe.
+- The temporary escaping-probe file added to verify push round-tripping is
+  removed with this commit.
+- The underlying `make test-shell` failure observed on PR #38 head
+  `d8875b4` remains undiagnosed until a run of this corrected head
+  completes and either passes or names the failing script.
+- No changes to `/linux`; no disk, partition, installer, updater, or
+  user-data operations.
