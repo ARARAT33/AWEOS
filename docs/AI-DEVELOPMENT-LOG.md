@@ -339,3 +339,18 @@
   fallback; the diagnostic retry using QEMU CPU model `max` reached the
   framebuffer desktop in BIOS and UEFI. This remains a firmware/CPU-model
   compatibility blocker, not a passing default BIOS boot.
+
+
+## 2026-11-04 — Package manager target-runtime contract
+
+- Added a second package integration pass that invokes `awepkg` through
+  BusyBox `ash` and places BusyBox applets first on `PATH`, matching the
+  minimal target rootfs rather than only the Ubuntu host environment.
+- The rootfs validator now requires executable `/usr/bin/awepkg` and checks
+  the target BusyBox binary for the applets used by archive validation,
+  hashing, staging, rollback, and removal.
+- The dedicated package-safety workflow installs BusyBox so this compatibility
+  pass cannot silently skip on GitHub-hosted runners.
+- Validation is pending on the new commit; any missing applet or unsupported
+  BusyBox option will fail the test rather than shipping a host-only package
+  manager.
