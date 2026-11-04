@@ -24,10 +24,41 @@ ROOT_DIR=$(CDPATH= cd -P "$ROOT_DIR" && pwd) || fail "cannot resolve root direct
 
 DB_DIR="${AWEPKG_DB_DIR:-${ROOT_DIR%/}/var/lib/awepkg}"
 case "$DB_DIR" in /*) ;; *) fail "AWEPKG_DB_DIR must be an absolute path" ;; esac
-mkdir -p "$DB_DIR" 2>/dev/null || fail "cannot create package database $DB_DIR"
-[ -d "$DB_DIR" ] && [ ! -L "$DB_DIR" ] || fail "package database must be a real directory"
-DB_DIR=$(CDPATH= cd -P "$DB_DIR" && pwd) || fail "cannot resolve package database directory"
-case "$ROOT_DIR" in /) ;; *) case "$DB_DIR" in "$ROOT_DIR"/*) ;; *) fail "package database must remain inside AWEPKG_ROOT" ;; esac ;; esac
+
+# Create the DB path one component at a time under the canonical root. This
+# rejects outside-root paths and symlinked parents before mkdir can follow them.
+case "$ROOT_DIR" in
+    /) db_relative="${DB_DIR#/}" ;;
+    *)
+        case "$DB_DIR" in
+            "$ROOT_DIR"/*) db_relative="${DB_DIR#"$ROOT_DIR"/}" ;;
+            *) fail "package database must remain inside AWEPKG_ROOT" ;;
+        esac
+        ;;
+esac
+case "$db_relative" in
+    ""|/*|../*|*/../*|*/..|./*|*/./*|*/.) fail "unsafe package database path" ;;
+esac
+current="$ROOT_DIR"
+rest="$db_relative"
+while [ -n "$rest" ]; do
+    if [ "${rest#*/}" = "$rest" ]; then
+        component="$rest"
+        rest=""
+    else
+        component="${rest%%/*}"
+        rest="${rest#*/}"
+    fi
+    case "$component" in ""|"."|"..") fail "unsafe package database path component" ;; esac
+    current="${current%/}/$component"
+    [ ! -L "$current" ] || fail "package database path traverses a symlink: $current"
+    if [ -e "$current" ]; then
+        [ -d "$current" ] || fail "package database component is not a directory: $current"
+    else
+        mkdir -m 0755 -- "$current" || fail "cannot create package database component: $current"
+    fi
+done
+DB_DIR="$current"
 
 package_name_is_safe() {
     printf '%s\n' "$1" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$'

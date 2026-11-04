@@ -10,6 +10,26 @@ ROOT_DIR="${TMP_DIR}/root"
 DB_DIR="${ROOT_DIR}/var/lib/awepkg"
 mkdir -p "$ROOT_DIR"
 
+# Help must not create a root or package database as a side effect.
+AWEPKG_ROOT="$TMP_DIR/not-created" AWEPKG_DB_DIR="$TMP_DIR/no-db" "$AWEPKG" help >/dev/null
+test ! -e "$TMP_DIR/not-created"
+test ! -e "$TMP_DIR/no-db"
+
+# The database must remain under the canonical package root and must not
+# follow symlinked parent components outside it.
+if AWEPKG_ROOT="$ROOT_DIR" AWEPKG_DB_DIR="$TMP_DIR/outside-db" "$AWEPKG" list; then
+    echo "ERROR: package database outside AWEPKG_ROOT was accepted" >&2
+    exit 1
+fi
+test ! -e "$TMP_DIR/outside-db"
+mkdir -p "$TMP_DIR/outside-db"
+ln -s "$TMP_DIR/outside-db" "$ROOT_DIR/escape-db"
+if AWEPKG_ROOT="$ROOT_DIR" AWEPKG_DB_DIR="$ROOT_DIR/escape-db/awepkg" "$AWEPKG" list; then
+    echo "ERROR: symlinked package database parent was accepted" >&2
+    exit 1
+fi
+test ! -e "$TMP_DIR/outside-db/awepkg"
+
 run_pkg() { AWEPKG_ROOT="$ROOT_DIR" AWEPKG_DB_DIR="$DB_DIR" "$AWEPKG" "$@"; }
 run_dev_pkg() { AWEPKG_ALLOW_UNSIGNED=1 AWEPKG_ROOT="$ROOT_DIR" AWEPKG_DB_DIR="$DB_DIR" "$AWEPKG" "$@"; }
 expect_failure() { if run_pkg "$@"; then echo "unexpected package-manager success: $*" >&2; exit 1; fi; }
@@ -39,7 +59,7 @@ test "$(cat "$ROOT_DIR/usr/share/demo/message.txt")" = "installed by awepkg"
 run_pkg info demo-package | grep -qx 'PKG_NAME=demo-package'
 
 # Reinstalling the same package must not overwrite its payload or metadata.
-expect_failure install "$TMP_DIR/demo-package.awe"
+expect_dev_failure install "$TMP_DIR/demo-package.awe"
 test "$(cat "$ROOT_DIR/usr/share/demo/message.txt")" = "installed by awepkg"
 
 # Removal must preserve a file that the user changed after package installation.
