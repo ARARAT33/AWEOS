@@ -54,6 +54,8 @@ typedef struct {
     uint32_t bpp;
     uint32_t pitch_bytes;
     uint32_t pitch_pixels;
+    uint32_t xoffset;
+    uint32_t yoffset;
     size_t screen_size;
     uint32_t red_offset;
     uint32_t red_length;

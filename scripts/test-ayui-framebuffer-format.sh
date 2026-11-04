@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Exercise pixel packing for common 16/24/32-bpp Linux framebuffer layouts.
+# Exercise pixel packing and visible-region writes for Linux framebuffer layouts.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -11,6 +11,7 @@ cat > "$tmp_root/test.c" <<'C_SOURCE'
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 int main(void) {
     uint32_t packed = 0;
@@ -44,11 +45,49 @@ int main(void) {
     fb.green_offset = fb.red_offset;
     assert(aweos_gfx_pack_pixel(&fb, 0x00ffffffU, &packed) != 0);
 
-    puts("PASS: RGB565, 24-bit BGR, 32-bit XRGB and invalid overlapping layouts.");
+    /* The visible image may start inside a larger virtual framebuffer. */
+    uint8_t front[64];
+    const uint8_t sentinel = 0xa5;
+    memset(front, sentinel, sizeof(front));
+    uint32_t back[4] = {0x00112233U, 0x00445566U, 0x00778899U, 0x00aabbccU};
+    aweos_fb_t output = {
+        .width = 2, .height = 2, .bpp = 32,
+        .pitch_bytes = 16, .pitch_pixels = 2,
+        .xoffset = 1, .yoffset = 1, .screen_size = sizeof(front),
+        .red_offset = 16, .red_length = 8,
+        .green_offset = 8, .green_length = 8,
+        .blue_offset = 0, .blue_length = 8,
+        .front_buffer = front, .back_buffer = back
+    };
+    aweos_gfx_swap_buffers(&output);
+
+    const size_t expected_offsets[4] = {20, 24, 36, 40};
+    for (size_t pixel = 0; pixel < 4; pixel++) {
+        assert(memcmp(front + expected_offsets[pixel], &back[pixel], sizeof(uint32_t)) == 0);
+    }
+    for (size_t byte = 0; byte < sizeof(front); byte++) {
+        int is_pixel = 0;
+        for (size_t pixel = 0; pixel < 4; pixel++) {
+            if (byte >= expected_offsets[pixel] && byte < expected_offsets[pixel] + sizeof(uint32_t)) {
+                is_pixel = 1;
+                break;
+            }
+        }
+        if (!is_pixel) assert(front[byte] == sentinel);
+    }
+
+    /* A truncated mapped-memory extent must reject the whole frame, not write partially. */
+    memset(front, sentinel, sizeof(front));
+    output.screen_size = 24;
+    aweos_gfx_swap_buffers(&output);
+    for (size_t byte = 0; byte < sizeof(front); byte++) assert(front[byte] == sentinel);
+
+    puts("PASS: RGB565, 24-bit BGR, 32-bit XRGB, overlap rejection, virtual offsets, and mapped-memory bounds.");
     return 0;
 }
 C_SOURCE
 
-cc -std=c11 -O2 -Wall -Wextra -Werror -I"$repo_root/src/gui" \
+cc -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined \
+    -fno-omit-frame-pointer -I"$repo_root/src/gui" \
     "$tmp_root/test.c" "$repo_root/src/gui/graphics.c" -o "$tmp_root/test"
 "$tmp_root/test"

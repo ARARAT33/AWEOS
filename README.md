@@ -24,9 +24,11 @@ utilities, package-management experiments, and C installer/updater components.
 - **AYUI:** the Rust Smithay/Winit compositor remains the nested Wayland
   backend and is validated under Xvfb. Bare boots first try it, then fall back
   to a separate C fbdev session that opens the kernel framebuffer, validates
-  its pixel layout, renders a first frame, and exposes only a PTY terminal and
-  a read-only root-directory snapshot. The fallback supports 16/24/32-bpp
-  layouts with validated channel bitfields. It is a limited recovery desktop,
+  the character device, visible virtual-screen offsets, pitch, mapped-memory
+  bounds, and packed truecolor channel layout before rendering a first frame.
+  It exposes only a PTY terminal and a read-only root-directory snapshot. The
+  fallback supports 16/24/32-bpp layouts with standard bit ordering and rejects
+  unsupported modes instead of guessing. It is a limited recovery desktop,
   not a native DRM/KMS compositor; GPU acceleration, multi-monitor, and full
   input-device support remain unverified.
 - **Installer and updater:** the C transaction engine rejects unimplemented
