@@ -3,6 +3,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <linux/fb.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -10,11 +11,35 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 static uint64_t bitfield_mask(uint32_t offset, uint32_t length) {
     if (offset > 32 || length == 0 || length > 16 || length > 32 - offset) return 0;
     return ((UINT64_C(1) << length) - 1U) << offset;
+}
+
+static int framebuffer_row_offset(const aweos_fb_t *fb, uint32_t y, size_t *offset) {
+    if (!fb || !offset || !fb->pitch_bytes ||
+        (fb->bpp != 16 && fb->bpp != 24 && fb->bpp != 32)) return -1;
+
+    const uint64_t pixel_bytes = fb->bpp / 8U;
+    const uint64_t row_index = (uint64_t)fb->yoffset + y;
+    if (row_index > UINT64_MAX / fb->pitch_bytes) return -1;
+    uint64_t byte_offset = row_index * fb->pitch_bytes;
+
+    if ((uint64_t)fb->xoffset > UINT64_MAX / pixel_bytes) return -1;
+    const uint64_t x_offset = (uint64_t)fb->xoffset * pixel_bytes;
+    if (x_offset > UINT64_MAX - byte_offset) return -1;
+    byte_offset += x_offset;
+
+    if ((uint64_t)fb->width > UINT64_MAX / pixel_bytes) return -1;
+    const uint64_t row_bytes = (uint64_t)fb->width * pixel_bytes;
+    if (row_bytes > UINT64_MAX - byte_offset) return -1;
+    if (byte_offset + row_bytes > (uint64_t)fb->screen_size || byte_offset > SIZE_MAX) return -1;
+
+    *offset = (size_t)byte_offset;
+    return 0;
 }
 
 int aweos_gfx_pack_pixel(const aweos_fb_t *fb, uint32_t rgb, uint32_t *packed) {
@@ -65,10 +90,16 @@ int aweos_gfx_init(aweos_fb_t *fb, const char *device) {
     fb->fd = -1;
 
     const char *dev = device ? device : "/dev/fb0";
-    fb->fd = open(dev, O_RDWR | O_CLOEXEC);
+    fb->fd = open(dev, O_RDWR | O_CLOEXEC | O_NOFOLLOW);
     if (fb->fd < 0) {
         fprintf(stderr, "AWEOS AYUI: cannot open %s: %s\n", dev, strerror(errno));
         return -1;
+    }
+
+    struct stat device_stat;
+    if (fstat(fb->fd, &device_stat) < 0 || !S_ISCHR(device_stat.st_mode)) {
+        fprintf(stderr, "AWEOS AYUI: refusing non-character framebuffer device %s\n", dev);
+        goto fail;
     }
 
     struct fb_var_screeninfo vinfo;
@@ -79,19 +110,29 @@ int aweos_gfx_init(aweos_fb_t *fb, const char *device) {
         goto fail;
     }
 
+    if (finfo.type != FB_TYPE_PACKED_PIXELS || finfo.visual != FB_VISUAL_TRUECOLOR ||
+        vinfo.grayscale != 0 || vinfo.nonstd != 0 || vinfo.rotate != 0 ||
+        (vinfo.vmode & FB_VMODE_YWRAP) != 0 ||
+        vinfo.red.msb_right != 0 || vinfo.green.msb_right != 0 ||
+        vinfo.blue.msb_right != 0 || vinfo.transp.msb_right != 0) {
+        fprintf(stderr, "AWEOS AYUI: unsupported framebuffer type, visual, rotation, or bit ordering\n");
+        goto fail;
+    }
+
     if (vinfo.xres == 0 || vinfo.yres == 0 ||
+        vinfo.xres > INT_MAX || vinfo.yres > INT_MAX ||
         (vinfo.bits_per_pixel != 16 && vinfo.bits_per_pixel != 24 && vinfo.bits_per_pixel != 32)) {
         fprintf(stderr, "AWEOS AYUI: unsupported framebuffer geometry or pixel depth (%ux%u, %u bpp)\n",
                 vinfo.xres, vinfo.yres, vinfo.bits_per_pixel);
         goto fail;
     }
 
-    const uint32_t pixel_bytes = (vinfo.bits_per_pixel + 7U) / 8U;
-    const uint64_t minimum_pitch = (uint64_t)vinfo.xres * pixel_bytes;
-    const uint64_t required_bytes = (uint64_t)finfo.line_length * vinfo.yres;
-    if (finfo.line_length < minimum_pitch || finfo.smem_len == 0 ||
-        required_bytes > finfo.smem_len) {
-        fprintf(stderr, "AWEOS AYUI: framebuffer pitch or memory length is invalid\n");
+    const uint32_t pixel_bytes = vinfo.bits_per_pixel / 8U;
+    const uint64_t visible_right = (uint64_t)vinfo.xoffset + vinfo.xres;
+    if (visible_right > UINT64_MAX / pixel_bytes ||
+        (uint64_t)finfo.line_length < visible_right * pixel_bytes ||
+        finfo.smem_len == 0) {
+        fprintf(stderr, "AWEOS AYUI: framebuffer pitch, visible offset, or memory length is invalid\n");
         goto fail;
     }
 
@@ -99,9 +140,18 @@ int aweos_gfx_init(aweos_fb_t *fb, const char *device) {
     fb->height = vinfo.yres;
     fb->bpp = vinfo.bits_per_pixel;
     fb->pitch_bytes = finfo.line_length;
+    fb->xoffset = vinfo.xoffset;
+    fb->yoffset = vinfo.yoffset;
     /* Back-buffer pixels are always 32-bit, independent of fbdev pixel depth. */
     fb->pitch_pixels = fb->width;
     fb->screen_size = finfo.smem_len;
+
+    size_t last_row_offset = 0;
+    if (framebuffer_row_offset(fb, fb->height - 1U, &last_row_offset) < 0) {
+        fprintf(stderr, "AWEOS AYUI: visible framebuffer region exceeds mapped memory\n");
+        goto fail;
+    }
+
     fb->red_offset = vinfo.red.offset;
     fb->red_length = vinfo.red.length;
     fb->green_offset = vinfo.green.offset;
@@ -154,11 +204,17 @@ void aweos_gfx_close(aweos_fb_t *fb) {
 }
 
 void aweos_gfx_swap_buffers(aweos_fb_t *fb) {
-    if (!fb || !fb->front_buffer || !fb->back_buffer) return;
-    const uint32_t pixel_bytes = (fb->bpp + 7U) / 8U;
+    if (!fb || !fb->front_buffer || !fb->back_buffer || fb->height == 0) return;
+    const uint32_t pixel_bytes = fb->bpp / 8U;
+    uint32_t probe = 0;
+    size_t last_row_offset = 0;
+    if (aweos_gfx_pack_pixel(fb, 0x00ffffffU, &probe) < 0 ||
+        framebuffer_row_offset(fb, fb->height - 1U, &last_row_offset) < 0) return;
 
     for (uint32_t y = 0; y < fb->height; y++) {
-        uint8_t *destination = fb->front_buffer + (size_t)y * fb->pitch_bytes;
+        size_t row_offset = 0;
+        if (framebuffer_row_offset(fb, y, &row_offset) < 0) return;
+        uint8_t *destination = fb->front_buffer + row_offset;
         const uint32_t *source = fb->back_buffer + (size_t)y * fb->pitch_pixels;
         for (uint32_t x = 0; x < fb->width; x++) {
             uint32_t packed = 0;
@@ -193,10 +249,14 @@ void aweos_gfx_fill_rect(aweos_fb_t *fb, int x, int y, int w, int h, uint32_t co
 
 void aweos_gfx_draw_rect(aweos_fb_t *fb, int x, int y, int w, int h, uint32_t color) {
     if (w <= 0 || h <= 0) return;
+    const int64_t right = (int64_t)x + w - 1;
+    const int64_t bottom = (int64_t)y + h - 1;
     aweos_gfx_fill_rect(fb, x, y, w, 1, color);
-    aweos_gfx_fill_rect(fb, x, y + h - 1, w, 1, color);
+    if (bottom >= INT_MIN && bottom <= INT_MAX)
+        aweos_gfx_fill_rect(fb, x, (int)bottom, w, 1, color);
     aweos_gfx_fill_rect(fb, x, y, 1, h, color);
-    aweos_gfx_fill_rect(fb, x + w - 1, y, 1, h, color);
+    if (right >= INT_MIN && right <= INT_MAX)
+        aweos_gfx_fill_rect(fb, (int)right, y, 1, h, color);
 }
 
 void aweos_gfx_draw_line(aweos_fb_t *fb, int x0, int y0, int x1, int y1, uint32_t color) {
