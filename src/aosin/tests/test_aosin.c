@@ -1,4 +1,3 @@
-#define _GNU_SOURCE
 #include "../aosin_spec.h"
 #include "../../core/logging.h"
 #include <assert.h>
