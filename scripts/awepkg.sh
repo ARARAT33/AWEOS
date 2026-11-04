@@ -275,7 +275,7 @@ case "$CMD" in
             # names before generating it so removal can never target a different path.
             newline_count=$(find "$TMP_DIR/root" -type f -print0 | LC_ALL=C tr -cd '\n' | wc -c)
             [ "$newline_count" -eq 0 ] || fail "package paths must not contain newline characters"
-            (cd "$TMP_DIR/root" && find . -type f -printf '%P\n' | LC_ALL=C sort) > "$FILES_LIST_TMP"
+            (cd "$TMP_DIR/root" && find . -type f -print | sed 's#^\./##' | LC_ALL=C sort) > "$FILES_LIST_TMP"
         else
             : > "$FILES_LIST_TMP"
         fi

@@ -37,7 +37,7 @@ done
 
 # Require the BusyBox applets used by the package manager in the target root.
 busybox_applets="$("${ROOTFS_DIR}/bin/busybox" --list)" || fail "cannot enumerate target BusyBox applets"
-for applet in tar sha256sum find sort awk grep wc tr mktemp cp chmod ln mkdir rm cat mv; do
+for applet in tar sha256sum find sort awk grep sed wc tr mktemp cp chmod ln mkdir rm rmdir cat mv; do
     printf '%s\n' "$busybox_applets" | grep -Fxq "$applet" || fail "target BusyBox is missing the applet required by awepkg: $applet"
 done
 if [ "${AWEOS_DESKTOP:-ayui}" = "ayui" ]; then

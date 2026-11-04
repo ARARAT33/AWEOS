@@ -354,3 +354,17 @@
 - Validation is pending on the new commit; any missing applet or unsupported
   BusyBox option will fail the test rather than shipping a host-only package
   manager.
+
+
+### BusyBox compatibility regression and correction (2026-11-04)
+
+- The first target-runtime run [#41783344894](https://github.com/ARARAT33/AWEOS/actions/runs/41783344894)
+  correctly exposed a host-only assumption: BusyBox 1.37.0 `find` does not
+  implement GNU `-printf`. The GNU-host package tests passed, but the BusyBox
+  replay failed at file-list generation.
+- Replaced GNU `find -printf` with `find -print` plus POSIX `sed` after the
+  existing NUL-based newline-name check. This keeps the line-delimited
+  ownership database safe while supporting BusyBox.
+- Added `sed` and `rmdir` to the target BusyBox applet contract. The
+  package-safety workflow is rerun on the corrected branch; no BusyBox pass
+  is claimed until its fresh log completes.
