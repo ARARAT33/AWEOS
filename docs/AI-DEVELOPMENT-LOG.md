@@ -488,3 +488,22 @@ user-data operations.
 
 - Fresh userland and package-safety runs on this head are required before the
 fix is considered validated; all previous heads failed as described above.
+
+## 2026-11-04 — Checked-out file mode regression from the API transport
+
+- The commit that rewrote `awepkg.sh` lost the file's executable mode: the
+  available push tooling commits blobs as mode 100644 and cannot restore
+  100755. Both the userland run [#41856656063](https://github.com/ARARAT33/AWEOS/actions/runs/41856656063)
+  and the package-safety run [#41856656113](https://github.com/ARARAT33/AWEOS/actions/runs/41856656113)
+  failed with exit 126 ("Permission denied" executing `scripts/awepkg.sh`),
+  attributed exactly by the new `bash -x` trace annotation.
+- `scripts/test-awepkg.sh` now invokes the package manager through `sh` in
+  its host pass (the BusyBox pass already did), so the suite no longer
+  depends on the checked-out mode. `build-rootfs.sh` installs the rootfs
+  copy with `install -D -m 0755`, so the produced image is unaffected.
+- The `scripts/awepkg.sh` blob remains mode 100644 in this branch; a future
+  run with direct git access should restore 100755 (for example
+  `git update-index --chmod=+x scripts/awepkg.sh`) for developer
+  convenience. The shebang and all functional behavior are unchanged.
+- No changes to `/linux`; no disk, partition, installer, updater, or
+  user-data operations.

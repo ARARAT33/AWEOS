@@ -3,6 +3,8 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 AWEPKG="${REPO_ROOT}/scripts/awepkg.sh"
+# awepkg is invoked through `sh` in both passes so the suite does not depend
+# on the checked-out file mode; build-rootfs.sh installs it with mode 0755.
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/awepkg-test.XXXXXX")"
 trap 'rm -rf -- "${TMP_DIR}"' EXIT
 
@@ -11,21 +13,21 @@ DB_DIR="${ROOT_DIR}/var/lib/awepkg"
 mkdir -p "$ROOT_DIR"
 
 # Help must not create a root or package database as a side effect.
-help_output=$(AWEPKG_ROOT="$TMP_DIR/not-created" AWEPKG_DB_DIR="$TMP_DIR/no-db" "$AWEPKG" help)
+help_output=$(AWEPKG_ROOT="$TMP_DIR/not-created" AWEPKG_DB_DIR="$TMP_DIR/no-db" sh "$AWEPKG" help)
 printf '%s\n' "$help_output" | grep -qx 'AWEOS Package Manager (awepkg) v1.3.0'
 test ! -e "$TMP_DIR/not-created"
 test ! -e "$TMP_DIR/no-db"
 
 # The database must remain under the canonical package root and must not
 # follow symlinked parent components outside it.
-if AWEPKG_ROOT="$ROOT_DIR" AWEPKG_DB_DIR="$TMP_DIR/outside-db" "$AWEPKG" list; then
+if AWEPKG_ROOT="$ROOT_DIR" AWEPKG_DB_DIR="$TMP_DIR/outside-db" sh "$AWEPKG" list; then
     echo "ERROR: package database outside AWEPKG_ROOT was accepted" >&2
     exit 1
 fi
 test ! -e "$TMP_DIR/outside-db"
 mkdir -p "$TMP_DIR/outside-db"
 ln -s "$TMP_DIR/outside-db" "$ROOT_DIR/escape-db"
-if AWEPKG_ROOT="$ROOT_DIR" AWEPKG_DB_DIR="$ROOT_DIR/escape-db/awepkg" "$AWEPKG" list; then
+if AWEPKG_ROOT="$ROOT_DIR" AWEPKG_DB_DIR="$ROOT_DIR/escape-db/awepkg" sh "$AWEPKG" list; then
     echo "ERROR: symlinked package database parent was accepted" >&2
     exit 1
 fi
@@ -35,14 +37,14 @@ run_pkg() {
     if [ "${AWEPKG_TEST_BUSYBOX:-0}" = "1" ]; then
         AWEPKG_ROOT="$ROOT_DIR" AWEPKG_DB_DIR="$DB_DIR" busybox sh "$AWEPKG" "$@"
     else
-        AWEPKG_ROOT="$ROOT_DIR" AWEPKG_DB_DIR="$DB_DIR" "$AWEPKG" "$@"
+        AWEPKG_ROOT="$ROOT_DIR" AWEPKG_DB_DIR="$DB_DIR" sh "$AWEPKG" "$@"
     fi
 }
 run_dev_pkg() {
     if [ "${AWEPKG_TEST_BUSYBOX:-0}" = "1" ]; then
         AWEPKG_ALLOW_UNSIGNED=1 AWEPKG_ROOT="$ROOT_DIR" AWEPKG_DB_DIR="$DB_DIR" busybox sh "$AWEPKG" "$@"
     else
-        AWEPKG_ALLOW_UNSIGNED=1 AWEPKG_ROOT="$ROOT_DIR" AWEPKG_DB_DIR="$DB_DIR" "$AWEPKG" "$@"
+        AWEPKG_ALLOW_UNSIGNED=1 AWEPKG_ROOT="$ROOT_DIR" AWEPKG_DB_DIR="$DB_DIR" sh "$AWEPKG" "$@"
     fi
 }
 expect_failure() { if run_pkg "$@"; then echo "unexpected package-manager success: $*" >&2; exit 1; fi; }
