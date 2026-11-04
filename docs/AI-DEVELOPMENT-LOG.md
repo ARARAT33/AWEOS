@@ -117,8 +117,8 @@
   device; open it with O_NOFOLLOW and O_CLOEXEC.
 - Accept only packed-pixel truecolor modes with standard bit ordering and no
   unsupported rotation, non-standard encoding, grayscale, or Y-wrap mode.
-- Include virtual-screen xoffset/yoffset when validating pitch and mapped
-  memory bounds.
+- Validate xoffset/yoffset against the reported virtual resolution, then
+  include those offsets when checking pitch and mapped-memory bounds.
 - Use checked 64-bit offset arithmetic before mapping and before every frame
   copy; refuse a frame if the complete visible region does not fit.
 - Render into the selected visible region instead of always writing from
