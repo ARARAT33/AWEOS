@@ -308,3 +308,34 @@
 4. Implement dependency resolution, repository metadata, sandboxing, and
    application permissions.
 5. Replace AOSIN v1 with a real versioned format after compatibility review.
+
+
+### Actual validation results (2026-11-04)
+
+- Package-safety workflow run [#41782694987](https://github.com/ARARAT33/AWEOS/actions/runs/41782694987)
+  on commit `96dc3101a165f6b3e4942f26ce0536baa97c8f5d`: **PASS**.
+  The actual job completed all six steps: checkout, `/linux` read-only
+  integrity, POSIX shell syntax, shell package integration, and C AOSIN
+  AddressSanitizer/UndefinedBehaviorSanitizer regression.
+- The shell log explicitly exercised unsigned-install rejection, outside-root
+  and symlinked DB rejection, duplicate-install rejection, modified-file
+  preservation, overwrite and DB-path collision rejection, archive-link
+  rejection, protected base-system removal, permission normalization, and
+  deterministic mid-transaction rollback.
+- The C sanitizer log reported:
+  `PASS: AOSIN APIs fail closed and preserve existing files, package metadata, and target roots.`
+  and `PASS: AOSIN C API regression (ASan/UBSan).`
+- An earlier run [#41782330916](https://github.com/ARARAT33/AWEOS/actions/runs/41782330916)
+  failed because `_GNU_SOURCE` was defined both in the test source and compiler
+  flags. The duplicate definition was removed; the corrected run
+  [#41782422449](https://github.com/ARARAT33/AWEOS/actions/runs/41782422449)
+  passed before the final DB-path and help-output assertions were added.
+- Userland and full image/boot workflows on the final package head were still
+  running when this log entry was written; their results must be checked
+  separately and are not represented as passed here.
+- The prior full boot run [#41780373297](https://github.com/ARARAT33/AWEOS/actions/runs/41780373297)
+  failed in the default `qemu64` BIOS path before the kernel reached the
+  rootfs hand-off. The UEFI run reached the rootfs and AYUI framebuffer
+  fallback; the diagnostic retry using QEMU CPU model `max` reached the
+  framebuffer desktop in BIOS and UEFI. This remains a firmware/CPU-model
+  compatibility blocker, not a passing default BIOS boot.
