@@ -368,3 +368,19 @@
 - Added `sed` and `rmdir` to the target BusyBox applet contract. The
   package-safety workflow is rerun on the corrected branch; no BusyBox pass
   is claimed until its fresh log completes.
+
+
+### BusyBox hard-link validation regression (2026-11-04)
+
+- The second BusyBox replay exposed a security-relevant format difference:
+  BusyBox tar 1.37.0 displays a hard-link entry with a regular-file mode
+  prefix followed by `-> TARGET`, whereas GNU tar uses an `h` type marker
+  and `link to TARGET`. Checking only the first listing character therefore
+  allowed a hard-link entry through the BusyBox path.
+- Added explicit rejection of both ` -> ` and ` link to ` markers before
+  extraction. The existing hard-link archive integration case now exercises
+  both GNU tar and BusyBox tar output.
+- This is a real security regression found by the target-runtime test; the
+  previous BusyBox failure was not treated as a passing result. A fresh
+  package-safety run is required before the package change is considered
+  validated.

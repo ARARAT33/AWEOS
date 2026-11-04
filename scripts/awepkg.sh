@@ -148,6 +148,11 @@ validate_archive_types() {
     # hard links, devices, FIFOs and sockets before extraction can interpret them.
     tar -tvzf "$archive" | while IFS= read -r record; do
         entry_type=${record%"${record#?}"}
+        # GNU tar marks hard links with "h"/"link to"; BusyBox tar 1.37
+        # prints them as regular files followed by " -> TARGET".
+        case "$record" in
+            *" -> "*|*" link to "*) exit 1 ;;
+        esac
         case "$entry_type" in
             -|d) ;;
             *) exit 1 ;;
