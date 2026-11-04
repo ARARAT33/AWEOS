@@ -5,6 +5,7 @@
 SHELL := /bin/bash
 REPO_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 BUILD_DIR ?= $(REPO_ROOT)/build
+AWEOS_DESKTOP ?= ayui
 KERNEL_SRC := $(REPO_ROOT)/linux
 KERNEL_BUILD_DIR := $(BUILD_DIR)/linux-x86_64
 ISO_PATH := $(BUILD_DIR)/AWEOS-x86_64.iso
@@ -49,11 +50,11 @@ kernel: verify-linux
 	@test -s $(KERNEL_BUILD_DIR)/arch/x86/boot/bzImage
 
 rootfs: rust-build
-	@AWEOS_DESKTOP=${AWEOS_DESKTOP:-ayui} ./scripts/build-rootfs.sh $(BUILD_DIR)
-	@bash ./scripts/validate-rootfs-layout.sh $(BUILD_DIR)
+	@AWEOS_DESKTOP=$(AWEOS_DESKTOP) ./scripts/build-rootfs.sh $(BUILD_DIR)
+	@AWEOS_DESKTOP=$(AWEOS_DESKTOP) bash ./scripts/validate-rootfs-layout.sh $(BUILD_DIR)
 
 validate-rootfs:
-	@bash ./scripts/validate-rootfs-layout.sh $(BUILD_DIR)
+	@AWEOS_DESKTOP=$(AWEOS_DESKTOP) bash ./scripts/validate-rootfs-layout.sh $(BUILD_DIR)
 
 initramfs: rootfs
 	@./scripts/build-initramfs.sh $(BUILD_DIR)
@@ -103,6 +104,8 @@ test-shell:
 	@bash ./scripts/test-storage-discovery.sh
 	@bash ./scripts/test-build-iso-safety.sh
 	@bash ./scripts/test-rootfs-runtime-validation.sh
+	@bash ./scripts/test-ayui-framebuffer-build.sh
+	@bash ./scripts/test-ayui-framebuffer-format.sh
 	@bash ./scripts/test-aweos-session-fallback.sh
 	@bash ./scripts/test-qemu-test-runner.sh
 	@bash ./scripts/test-initramfs-root-discovery.sh
@@ -117,6 +120,7 @@ verify-artifacts:
 		$(BUILD_DIR)/aweui-control-center $(BUILD_DIR)/aweui-file-manager $(BUILD_DIR)/aweui-terminal \
 		$(BUILD_DIR)/aweui-system-monitor $(BUILD_DIR)/aweui-diagnostics $(BUILD_DIR)/aweui-text-editor \
 		$(BUILD_DIR)/aweui-calculator $(BUILD_DIR)/aweui-firstboot-setup $(BUILD_DIR)/aweui-user-app-template \
+		$(if $(filter ayui,$(AWEOS_DESKTOP)),$(ROOTFS_DIR)/usr/bin/aweos-ayui-fb,) \
 		$(KERNEL_BUILD_DIR)/arch/x86/boot/bzImage $(INITRAMFS) $(ROOTFS_IMG) \
 		$(ISO_PATH) $(BUILD_DIR)/AWEOS-x86_64-disk.img; do \
 		test -s "$$artifact" || { echo "ERROR: missing or empty artifact $$artifact" >&2; exit 1; }; \

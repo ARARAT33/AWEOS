@@ -50,6 +50,12 @@ if [[ "${MOCK_QEMU_MODE:-success}" == "desktop-fails" ]]; then
     exit 0
 fi
 
+if [[ "${MOCK_QEMU_MODE:-success}" == "framebuffer-fallback" ]]; then
+    echo 'AWEOS ROOTFS READY: mode=ayui'
+    echo 'AWEOS AYUI FRAMEBUFFER READY: device=/dev/fb0 width=800 height=600 bpp=32'
+    exit 0
+fi
+
 if [[ "${MOCK_QEMU_MODE:-success}" == "fail-bios" && "$is_uefi" -eq 0 && "$is_kernel" -eq 0 ]]; then
     if [[ -n "$debug_log" ]]; then
         printf 'simulated BIOS reset\n' > "$debug_log"
@@ -111,7 +117,18 @@ if [ "$rc" -eq 0 ]; then
     exit 1
 fi
 grep -q 'AWEOS RECOVERY SHELL READY' "$build_dir/qemu-bios.log"
-grep -q 'AYUI did not initialize' "$tmp_root/desktop-failure-output.log"
+grep -q 'recovery console took over' "$tmp_root/desktop-failure-output.log"
+
+# A first-frame framebuffer fallback is a valid, explicitly degraded desktop boot.
+PATH="$mock_bin:$PATH" \
+AWEOS_UEFI_FIRMWARE="$firmware" \
+MOCK_QEMU_MODE=framebuffer-fallback \
+    bash "$repo_root/scripts/run-qemu-tests.sh" "$build_dir" all \
+    > "$tmp_root/framebuffer-fallback-output.log" 2>&1
+grep -q 'AYUI framebuffer fallback' "$tmp_root/framebuffer-fallback-output.log"
+grep -q 'AWEOS AYUI FRAMEBUFFER READY' "$build_dir/qemu-bios.log"
+grep -q 'AWEOS AYUI FRAMEBUFFER READY' "$build_dir/qemu-uefi.log"
+grep -q 'AWEOS AYUI FRAMEBUFFER READY' "$build_dir/qemu-kernel.log"
 
 # A requested UEFI test must fail if the explicitly selected firmware is missing.
 set +e
@@ -127,4 +144,4 @@ if [ "$rc" -eq 0 ]; then
 fi
 grep -q 'OVMF firmware not found' "$tmp_root/missing-firmware-output.log"
 
-echo "PASS: QEMU runner independently tests BIOS, UEFI and direct kernel boot, aggregates failures, and requires UEFI firmware."
+echo "PASS: QEMU runner validates BIOS, UEFI and direct-kernel boot, requires a first-frame AYUI backend, aggregates failures, and requires UEFI firmware."

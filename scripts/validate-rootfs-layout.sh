@@ -32,6 +32,11 @@ done
 [ -x "${ROOTFS_DIR}/sbin/init" ] || fail "/sbin/init is not executable"
 [ -x "${ROOTFS_DIR}/bin/busybox" ] || fail "/bin/busybox is not executable"
 [ -x "${ROOTFS_DIR}/usr/bin/aweos-session" ] || fail "/usr/bin/aweos-session is not executable"
+if [ "${AWEOS_DESKTOP:-ayui}" = "ayui" ]; then
+    [ -s "${ROOTFS_DIR}/usr/bin/aweos-ayui-fb" ] || fail "AYUI framebuffer fallback is missing"
+    [ -x "${ROOTFS_DIR}/usr/bin/aweos-ayui-fb" ] || fail "AYUI framebuffer fallback is not executable"
+    grep -Fq '/usr/bin/aweos-ayui-fb' "${ROOTFS_DIR}/sbin/init" || fail "AYUI init does not configure the framebuffer fallback"
+fi
 
 awk -F: 'BEGIN { ok=0 } $1 == "aweos" && $3 == "1000" { ok=1 } END { exit ok ? 0 : 1 }' "${ROOTFS_DIR}/etc/passwd" \
     || fail "the aweos user with UID 1000 is missing from /etc/passwd"
