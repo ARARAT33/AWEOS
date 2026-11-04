@@ -182,3 +182,64 @@
   these sibling security changes are integrated, their tests pass on the
   final combined head, and BIOS/UEFI boot succeeds with the current AYUI
   fallback. No branch or commit was deleted or force-pushed.
+
+
+## 2026-11-04 — Separate direct-kernel headless validation from firmware desktop boot
+
+### QEMU evidence reviewed
+
+- Full image construction and /linux read-only checks passed in workflow
+  #41777233854, but its primary qemu64 BIOS/UEFI attempts triple-faulted
+  before the verified rootfs hand-off.
+- The diagnostic retry using QEMU CPU model max booted BIOS and UEFI through
+  the verified rootfs and reached the AYUI fbdev first-frame marker at
+  1280x800, 32 bpp.
+- The same direct-kernel retry reached the verified rootfs but had no
+  /dev/fb0. This is expected for a kernel loaded directly with -kernel/-initrd:
+  that path bypasses Limine and firmware framebuffer hand-off, so it is not
+  a valid desktop test.
+- The previous QEMU runner incorrectly required a compositor/fbdev marker in
+  direct-kernel mode and therefore reported that test as a failure even
+  though the kernel/initramfs reached the rootfs. BIOS/UEFI remain the actual
+  desktop boot tests.
+
+### Implemented in follow-up branch
+
+- Direct-kernel QEMU boot now passes aweos.mode=headless explicitly.
+- The runner requires both AWEOS ROOTFS READY: mode=headless and
+  AWEOS HEADLESS CONSOLE READY for that path; a mounted rootfs alone is not
+  considered sufficient.
+- BIOS and UEFI continue to require a real first-frame AYUI compositor or
+  fbdev readiness marker, and still fail if the recovery console takes over.
+- The mock-QEMU regression now models headless direct boot and includes a
+  negative case proving that the direct-kernel path fails without its
+  headless-console marker.
+- This does not change initramfs storage discovery, root mount flags, or
+  firmware boot behavior. It does not make the qemu64 triple-fault issue
+  disappear or claim that CPU compatibility has been solved.
+- No changes to /linux and no writes to disks, partitions, or user data.
+
+### Files changed
+
+- scripts/run-qemu-tests.sh
+- scripts/test-qemu-test-runner.sh
+- docs/AI-DEVELOPMENT-LOG.md
+
+### Validation
+
+- The earlier PR #33 diagnostic retry proved BIOS and UEFI framebuffer
+  fallback readiness on QEMU CPU model max, but its full workflow remained
+  failed because the primary qemu64 attempt triple-faulted and the direct
+  kernel path had no framebuffer.
+- The new mock regression and full QEMU runner must pass on this branch.
+- The new direct-kernel path must reach the explicit headless marker in
+  actual QEMU; BIOS/UEFI must still reach their first-frame desktop markers.
+
+### Remaining blockers
+
+1. Diagnose why Limine/kernel startup triple-faults with QEMU qemu64 while
+   the diagnostic max CPU model boots BIOS/UEFI successfully. Do not silently
+   drop the qemu64 compatibility check.
+2. Obtain QEMU screenshot/framebuffer capture to verify actual pixels, not
+   only the serial first-frame marker.
+3. Verify native hardware and firmware combinations beyond QEMU.
