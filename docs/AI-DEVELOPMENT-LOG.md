@@ -162,7 +162,7 @@
 
 ## 2026-11-04 — Cross-PR integration audit
 
-- The current AYUI/boot stack (PRs #27, #28, #30, #32, #33, #35, and #36)
+- The current AYUI/boot stack (PRs #27, #28, #30, #32, #33, #35, and #37)
   is not the whole repository's security stack. The branch was inspected
   against the separate package and ISO-validation PRs before any merge claim.
 - The current stack still contains the legacy src/core/iso_verify.c that
@@ -263,3 +263,9 @@
   recovery takes over.
 - The corrected test has not yet been rerun on a fresh head and remains
   pending validation.
+
+
+- PR #36 was closed as superseded after its actual userland run exposed the
+  stale recovery-message assertion; its branch and commits were retained.
+- PR #37 contains the corrected assertion and is the active validation PR
+  for the direct-kernel headless test. Its fresh CI runs are pending.
