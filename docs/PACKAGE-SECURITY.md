@@ -37,3 +37,12 @@ format, authenticated manifest, and atomic deployment backend exist.
 `make test-shell` and the dedicated package-safety workflow run the shell
 package integration test and the C AOSIN fail-closed regression with
 AddressSanitizer and UndefinedBehaviorSanitizer.
+
+
+## Target BusyBox compatibility
+
+The package integration test also reruns install/remove/rollback cases through
+BusyBox `ash` and BusyBox applets. The rootfs validator requires executable
+`/usr/bin/awepkg` and checks that every BusyBox applet used by the package
+manager is present in the actual target BusyBox binary. This catches
+host-only GNU utility assumptions before an image is considered valid.
