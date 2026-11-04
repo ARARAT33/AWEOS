@@ -99,9 +99,10 @@
 - The actual userland workflow #41777233762 passed, including the framebuffer
   build/format tests, session fallback regression, QEMU runner tests, Rust
   workspace tests, release binaries, and the Xvfb compositor smoke test.
-- The full image/BIOS/UEFI workflow #41777233854 had completed all pre-image
-  checks and was still building images at inspection time; no new boot result
-  was available yet.
+- The full image workflow #41777233854 built the ISO and disk image and
+  verified /linux, but the primary qemu64 BIOS/UEFI/direct-kernel boot step
+  failed. Its max-CPU diagnostic retry reached BIOS and UEFI framebuffer
+  readiness; the direct-kernel path reached rootfs but had no /dev/fb0.
 - Code review found that fbdev drawing ignored xoffset and yoffset from
   fb_var_screeninfo, and the previous bounds check only accounted for
   line_length multiplied by yres. A non-zero virtual-screen offset could
@@ -161,7 +162,7 @@
 
 ## 2026-11-04 — Cross-PR integration audit
 
-- The current AYUI/boot stack (PRs #27, #28, #30, #32, #33, and this PR #34)
+- The current AYUI/boot stack (PRs #27, #28, #30, #32, #33, #35, and #36)
   is not the whole repository's security stack. The branch was inspected
   against the separate package and ISO-validation PRs before any merge claim.
 - The current stack still contains the legacy src/core/iso_verify.c that
