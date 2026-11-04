@@ -11,7 +11,8 @@ DB_DIR="${ROOT_DIR}/var/lib/awepkg"
 mkdir -p "$ROOT_DIR"
 
 # Help must not create a root or package database as a side effect.
-AWEPKG_ROOT="$TMP_DIR/not-created" AWEPKG_DB_DIR="$TMP_DIR/no-db" "$AWEPKG" help >/dev/null
+help_output=$(AWEPKG_ROOT="$TMP_DIR/not-created" AWEPKG_DB_DIR="$TMP_DIR/no-db" "$AWEPKG" help)
+printf '%s\n' "$help_output" | grep -qx 'AWEOS Package Manager (awepkg) v1.3.0'
 test ! -e "$TMP_DIR/not-created"
 test ! -e "$TMP_DIR/no-db"
 

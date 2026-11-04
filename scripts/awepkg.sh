@@ -429,7 +429,7 @@ case "$CMD" in
         ;;
 
     help|--help|-h)
-        echo "AWEOS Package Manager (awepkg) v1.2.0"
+        echo "AWEOS Package Manager (awepkg) v1.3.0"
         echo "Usage: awepkg {list|info|install|remove|help} [target]"
         ;;
 
