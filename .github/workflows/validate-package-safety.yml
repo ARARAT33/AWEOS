@@ -26,6 +26,11 @@ jobs:
     steps:
       - name: Checkout AWEOS
         uses: actions/checkout@v5
+      - name: Install BusyBox for target-runtime compatibility tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y busybox
+
       - name: Verify /linux remains read-only
         run: bash scripts/verify-linux-readonly.sh
       - name: Check package manager shell syntax
