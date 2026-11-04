@@ -384,3 +384,161 @@
   previous BusyBox failure was not treated as a passing result. A fresh
   package-safety run is required before the package change is considered
   validated.
+
+## 2026-11-04 — test-shell failure attribution for the package stack
+
+- PR #38 head `d8875b4` passed the dedicated package-safety workflow, but both
+  the userland and full image workflows failed inside the `make test-shell`
+  step (exit 2) on that same commit. Raw job logs are not readable from this
+  environment, so the exact failing script could not be identified from the
+  step-level annotation alone.
+- Code review of every test-shell script on this head found no reproduction:
+  the rootfs runtime fixture and validator contract were replayed locally with
+  stubbed cc/readelf/ldd and pass both the expected-failure and success
+  phases; the awepkg and AOSIN suites passed in the package-safety run on the
+  same commit; every other test-shell script is unchanged since PR #37's
+  green userland run.
+- To make CI failures attributable without raw log access, `make test-shell`
+  now prints the name of each script before running it and emits a GitHub
+  Actions `::error::` annotation naming the exact script that failed. The
+  test list, order, and semantics are unchanged.
+- No changes to `/linux`; no disk, partition, installer, updater, or
+  user-data operations.
+
+### Validation status
+
+- This change only adds failure attribution; it does not claim any previously
+  failing test is fixed. Fresh userland and package-safety runs on this new
+  branch head must pass, and the annotation (if any) must be inspected before
+  the underlying failure can be diagnosed and fixed.
+
+## 2026-11-04 — Attribution commit escaping defect and correction
+
+- The first attribution commit pushed a broken `test-shell` recipe: the
+  `$$script` Makefile escapes were written as single `$script`, so GNU make
+  expanded `$s` to an empty string and the loop ran `bash -n "cript"`,
+  which cannot exist. The resulting workflow run failed immediately inside
+  the syntax-check loop and never reached the real test scripts.
+- The defect was detected by the new annotation itself (the GitHub annotation
+  rendered `bash -n syntax check failed for cript`), confirming the
+  attribution mechanism works and that the failure came from the pushed
+  recipe, not from any real AWEOS test script.
+- The recipe is corrected to use `$$script`/`$$test_script` escapes. The
+  corrected file was read back from the pushed branch before CI is trusted.
+- The underlying `make test-shell` failure observed on PR #38 head
+  `d8875b4` remains undiagnosed until a run of the corrected attribution
+  completes and either passes or names the failing script.
+- No changes to `/linux`; no disk, partition, installer, updater, or
+  user-data operations.
+
+## 2026-11-04 — Move test-shell execution into scripts/run-test-shell.sh
+
+- The inline `make test-shell` attribution recipe could not be pushed
+  reliably through the available API tooling: the required Makefile
+  double-dollar escapes were collapsed to single-dollar forms in the pushed
+  commits, so make expanded an empty variable and the loop ran
+  `bash -n "cript"`, which cannot exist. Both pushed attribution commits
+  (2d77c30 and 106dba2) are therefore defective in their inline recipe and
+  failed CI inside the syntax-check loop before reaching any real test.
+- The execution loop now lives in `scripts/run-test-shell.sh` as plain bash,
+  which needs no Make-level escaping at all. The Makefile `test-shell`
+  target is a single invocation of that driver. The script list, order, and
+  semantics are identical to the previous Makefile recipe.
+- The temporary escaping-probe file added to verify push round-tripping is
+  removed with this commit.
+- The underlying `make test-shell` failure observed on PR #38 head
+  `d8875b4` remains undiagnosed until a run of this corrected head
+  completes and either passes or names the failing script.
+- No changes to `/linux`; no disk, partition, installer, updater, or
+  user-data operations.
+
+## 2026-11-04 — Trace-attributed awepkg rollback test fix and commit-temp correction
+
+- The `make test-shell` driver (`scripts/run-test-shell.sh`) now records each
+test under `bash -x` and embeds the last trace lines in the GitHub Actions
+`::error::` annotation. Fresh userland runs
+[#41853809647](https://github.com/ARARAT33/AWEOS/actions/runs/41853809647) and
+[#41854990937](https://github.com/ARARAT33/AWEOS/actions/runs/41854990937) both
+attributed the standing failure to `scripts/test-awepkg.sh`; the second run's
+trace showed the BusyBox replay failing with "ERROR: injected mid-install
+failure unexpectedly succeeded" in the rollback case.
+- Root cause: the rollback regression injected its mid-transaction failure by
+placing a mock `ln` first on `PATH`. In the userland runner's BusyBox replay
+the mock was not invoked, the third payload file was published, and the
+install completed, so the test correctly reported that the injection no longer
+failed deterministically. The dedicated package-safety workflow used an
+apt-installed BusyBox and passed, which is why code review and the
+package-safety run could not reproduce the failure.
+- Fix: the rollback injection no longer depends on PATH interception. The
+pre-existing `z-blocked` payload parent directory is made non-writable, which
+deterministically fails the staging `mktemp` for the third file in unprivileged
+runs; the PATH-fronted mock `ln` is retained so root and GNU-host runs still
+inject a publish failure. Either mechanism aborts the transaction and
+exercises the real rollback path. A staging-leftover check was added for the
+blocked directory.
+- Also fixed a latent package-database bug found during review: the
+commit-stage temporary names in `awepkg.sh` used PID-derived suffixes, and
+one had already lost a dollar sign (`.{PKG_NAME}.files.$`). All three commit
+temporaries are now created with `mktemp`, so concurrent installs cannot
+collide and no PID-derived escapes remain anywhere in the package manager.
+- No changes to `/linux`; no disk, partition, installer, updater, or
+user-data operations.
+
+### Validation status
+
+- Fresh userland and package-safety runs on this head are required before the
+fix is considered validated; all previous heads failed as described above.
+
+## 2026-11-04 — Checked-out file mode regression from the API transport
+
+- The commit that rewrote `awepkg.sh` lost the file's executable mode: the
+  available push tooling commits blobs as mode 100644 and cannot restore
+  100755. Both the userland run [#41856656063](https://github.com/ARARAT33/AWEOS/actions/runs/41856656063)
+  and the package-safety run [#41856656113](https://github.com/ARARAT33/AWEOS/actions/runs/41856656113)
+  failed with exit 126 ("Permission denied" executing `scripts/awepkg.sh`),
+  attributed exactly by the new `bash -x` trace annotation.
+- `scripts/test-awepkg.sh` now invokes the package manager through `sh` in
+  its host pass (the BusyBox pass already did), so the suite no longer
+  depends on the checked-out mode. `build-rootfs.sh` installs the rootfs
+  copy with `install -D -m 0755`, so the produced image is unaffected.
+- The `scripts/awepkg.sh` blob remains mode 100644 in this branch; a future
+  run with direct git access should restore 100755 (for example
+  `git update-index --chmod=+x scripts/awepkg.sh`) for developer
+  convenience. The shebang and all functional behavior are unchanged.
+- No changes to `/linux`; no disk, partition, installer, updater, or
+  user-data operations.
+
+## 2026-11-04 — Actual validation results: test-shell green on the package stack
+
+- On commit `4fb83c9be607f59c7b3aca8e943bdb1f35eaba78` (branch
+  `fix/test-shell-failure-attribution-20261104`, PR #39):
+  - userland run [#41857308158](https://github.com/ARARAT33/AWEOS/actions/runs/41857308158): **PASS** —
+    all 13 test-shell scripts (including the corrected awepkg suite with
+    its BusyBox replay), repository boundary check, Rust workspace tests,
+    release binaries, and the Xvfb compositor smoke test.
+  - package-safety run [#41857308305](https://github.com/ARARAT33/AWEOS/actions/runs/41857308305): **PASS**.
+  - A duplicate pair of runs ([#41857292552](https://github.com/ARARAT33/AWEOS/actions/runs/41857292552),
+    [#41857292715](https://github.com/ARARAT33/AWEOS/actions/runs/41857292715)) also passed.
+- This is the first fully green userland validation since the package
+  fail-closed hardening entered the stack; the standing `make test-shell`
+  failure attributed to `scripts/test-awepkg.sh` is resolved.
+- The full build-and-boot workflow remains the known outstanding blocker:
+  the default `qemu64` BIOS path triple-faults before the rootfs hand-off
+  while the diagnostic `max` CPU model boots. That failure is unrelated to
+  this branch and is tracked as the top boot priority.
+- No changes to `/linux`; no disk, partition, installer, updater, or
+  user-data operations.
+
+### Next priorities
+
+1. Restore mode 100755 on `scripts/awepkg.sh` with a git-capable client.
+2. Diagnose the qemu64 triple-fault (BIOS boot) with QEMU debugging
+   (-d int,cpu_reset) and compare Limine/kernel hand-off against the
+   working `max` CPU model.
+3. Reconcile PR #29 (fail-closed ISO verification) into this stack and
+   re-run image construction and boot validation on the combined head.
+4. Begin signed package manifests and trusted key management so
+   `AWEPKG_ALLOW_UNSIGNED=1` can be retired for real installs.
+5. Merge the validated PR chain (#27 through #39) toward master only
+   after the boot blocker is diagnosed or an explicit merge decision
+   is made by the maintainer.

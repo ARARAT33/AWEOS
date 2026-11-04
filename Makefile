@@ -94,23 +94,7 @@ test-rust:
 	@cargo test --workspace
 
 test-shell:
-	@set -euo pipefail; \
-	for script in $(SHELL_SCRIPTS); do \
-		bash -n "$$script"; \
-	done
-	@bash ./scripts/test-build-dir-safety.sh
-	@bash ./scripts/test-build-disk-image-safety.sh
-	@bash ./scripts/test-transaction-fail-closed.sh
-	@bash ./scripts/test-storage-discovery.sh
-	@bash ./scripts/test-build-iso-safety.sh
-	@bash ./scripts/test-rootfs-runtime-validation.sh
-	@bash ./scripts/test-ayui-framebuffer-build.sh
-	@bash ./scripts/test-ayui-framebuffer-format.sh
-	@bash ./scripts/test-aweos-session-fallback.sh
-	@bash ./scripts/test-qemu-test-runner.sh
-	@bash ./scripts/test-initramfs-root-discovery.sh
-	@bash ./scripts/test-awepkg.sh
-	@bash ./scripts/test-aosin-fail-closed.sh
+	@bash ./scripts/run-test-shell.sh
 
 test-qemu: iso
 	@./scripts/run-qemu-tests.sh $(BUILD_DIR)
