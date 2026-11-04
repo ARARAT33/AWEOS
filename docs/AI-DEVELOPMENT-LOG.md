@@ -269,3 +269,42 @@
   stale recovery-message assertion; its branch and commits were retained.
 - PR #37 contains the corrected assertion and is the active validation PR
   for the direct-kernel headless test. Its fresh CI runs are pending.
+
+
+## 2026-11-04 — Package subsystem fail-closed hardening
+
+- Inspected PR #37 head `e4b47c2c50e91e97e6abe54b81fdd1bc99b1766b`, current open boot/AYUI PR stack, recent
+  Actions runs, and package sources before editing.
+- Found the active stack still had a legacy `awepkg` implementation that
+  copied archive payloads into `/` with `cp -rf`, ignored copy failures, and
+  removed files without ownership/hash checks. PR #21 held safer code but was
+  based on stale `master` and was not integrated into the boot stack.
+- Found C AOSIN v1 still generated a dummy 1 KiB payload, hard-coded the
+  empty-file SHA-256, and accepted a magic number as verification.
+- Integrated the reviewed path/collision/archive-type/hash/rollback package
+  manager protections into this active stack. Unsigned installation now
+  fails closed by default; `AWEPKG_ALLOW_UNSIGNED=1` is development-only.
+- Normalize installed file modes to 0755/0644, constrain the package database
+  to the selected root, and test rollback with deterministic injected failure
+  so the test runs as root or unprivileged user.
+- All legacy C AOSIN v1 public operations now fail closed without touching
+  output files, target roots, or package metadata.
+- Added package-security documentation and dedicated package-safety CI.
+- No changes to `/linux`, disks, partitions, installer/updater, or user data.
+
+### Validation status
+
+- Shell package and C AOSIN ASan/UBSan tests are wired into `make test-shell`
+  and the dedicated workflow. Fresh CI results on the final PR head are
+  required before merge; validation is pending.
+
+### Remaining blockers
+
+1. Implement signed manifests and trusted key management before enabling
+   production package installation.
+2. Add archive expanded-size and file-count limits.
+3. Replace shell path checks with race-resistant descriptor-relative
+   extraction/deployment.
+4. Implement dependency resolution, repository metadata, sandboxing, and
+   application permissions.
+5. Replace AOSIN v1 with a real versioned format after compatibility review.

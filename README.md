@@ -35,10 +35,15 @@ utilities, package-management experiments, and C installer/updater components.
   staging/deployment/verification stages. It must not report installation or
   update success while those backends are absent. Disk formatting and
   partitioning are not performed by initramfs root discovery.
-- **Package management:** `scripts/awepkg.sh` contains the current package
-  install/remove path and safety regressions for path traversal, existing
-  files, checksums, and rollback. Treat the package system as under active
-  development, not as a mature signed distribution repository.
+- **Package management:** `awepkg` validates archive paths and entry types,
+  refuses overwrites and symlink traversal, records SHA-256 ownership hashes,
+  rolls back interrupted installs, and preserves locally modified files on
+  removal. Unsigned installation is disabled by default; the
+  `AWEPKG_ALLOW_UNSIGNED=1` override is development-only, not signature
+  verification. Legacy C AOSIN v1 APIs fail closed instead of generating
+  dummy payloads. Dependency resolution, trusted signing/key management,
+  sandboxing, and a full repository lifecycle remain unimplemented. See
+  [package security status](docs/PACKAGE-SECURITY.md).
 - **CI:** shell/C regression tests, Rust workspace tests, userland release
   builds, ISO assembly tests, QEMU runner tests, and the `/linux` integrity
   check run through GitHub Actions.
