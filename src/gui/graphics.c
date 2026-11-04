@@ -129,10 +129,13 @@ int aweos_gfx_init(aweos_fb_t *fb, const char *device) {
 
     const uint32_t pixel_bytes = vinfo.bits_per_pixel / 8U;
     const uint64_t visible_right = (uint64_t)vinfo.xoffset + vinfo.xres;
-    if (visible_right > UINT64_MAX / pixel_bytes ||
+    const uint64_t visible_bottom = (uint64_t)vinfo.yoffset + vinfo.yres;
+    if (vinfo.xres_virtual == 0 || vinfo.yres_virtual == 0 ||
+        visible_right > vinfo.xres_virtual || visible_bottom > vinfo.yres_virtual ||
+        visible_right > UINT64_MAX / pixel_bytes ||
         (uint64_t)finfo.line_length < visible_right * pixel_bytes ||
         finfo.smem_len == 0) {
-        fprintf(stderr, "AWEOS AYUI: framebuffer pitch, visible offset, or memory length is invalid\n");
+        fprintf(stderr, "AWEOS AYUI: framebuffer virtual geometry, pitch, or memory length is invalid\n");
         goto fail;
     }
 
