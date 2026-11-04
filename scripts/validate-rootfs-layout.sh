@@ -25,6 +25,7 @@ for required_file in \
     sbin/init \
     usr/share/wayland-sessions/ayui.desktop \
     usr/bin/aweui \
+    usr/bin/awepkg \
     usr/bin/aweos-session; do
     [ -s "${ROOTFS_DIR}/${required_file}" ] || fail "required rootfs file is missing or empty: /${required_file}"
 done
@@ -32,6 +33,13 @@ done
 [ -x "${ROOTFS_DIR}/sbin/init" ] || fail "/sbin/init is not executable"
 [ -x "${ROOTFS_DIR}/bin/busybox" ] || fail "/bin/busybox is not executable"
 [ -x "${ROOTFS_DIR}/usr/bin/aweos-session" ] || fail "/usr/bin/aweos-session is not executable"
+[ -x "${ROOTFS_DIR}/usr/bin/awepkg" ] || fail "/usr/bin/awepkg is not executable"
+
+# Require the BusyBox applets used by the package manager in the target root.
+busybox_applets="$("${ROOTFS_DIR}/bin/busybox" --list)" || fail "cannot enumerate target BusyBox applets"
+for applet in tar sha256sum find sort awk grep wc tr mktemp cp chmod ln mkdir rm cat mv; do
+    printf '%s\n' "$busybox_applets" | grep -Fxq "$applet" || fail "target BusyBox is missing the applet required by awepkg: $applet"
+done
 if [ "${AWEOS_DESKTOP:-ayui}" = "ayui" ]; then
     [ -s "${ROOTFS_DIR}/usr/bin/aweos-ayui-fb" ] || fail "AYUI framebuffer fallback is missing"
     [ -x "${ROOTFS_DIR}/usr/bin/aweos-ayui-fb" ] || fail "AYUI framebuffer fallback is not executable"
