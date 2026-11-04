@@ -507,3 +507,38 @@ fix is considered validated; all previous heads failed as described above.
   convenience. The shebang and all functional behavior are unchanged.
 - No changes to `/linux`; no disk, partition, installer, updater, or
   user-data operations.
+
+## 2026-11-04 — Actual validation results: test-shell green on the package stack
+
+- On commit `4fb83c9be607f59c7b3aca8e943bdb1f35eaba78` (branch
+  `fix/test-shell-failure-attribution-20261104`, PR #39):
+  - userland run [#41857308158](https://github.com/ARARAT33/AWEOS/actions/runs/41857308158): **PASS** —
+    all 13 test-shell scripts (including the corrected awepkg suite with
+    its BusyBox replay), repository boundary check, Rust workspace tests,
+    release binaries, and the Xvfb compositor smoke test.
+  - package-safety run [#41857308305](https://github.com/ARARAT33/AWEOS/actions/runs/41857308305): **PASS**.
+  - A duplicate pair of runs ([#41857292552](https://github.com/ARARAT33/AWEOS/actions/runs/41857292552),
+    [#41857292715](https://github.com/ARARAT33/AWEOS/actions/runs/41857292715)) also passed.
+- This is the first fully green userland validation since the package
+  fail-closed hardening entered the stack; the standing `make test-shell`
+  failure attributed to `scripts/test-awepkg.sh` is resolved.
+- The full build-and-boot workflow remains the known outstanding blocker:
+  the default `qemu64` BIOS path triple-faults before the rootfs hand-off
+  while the diagnostic `max` CPU model boots. That failure is unrelated to
+  this branch and is tracked as the top boot priority.
+- No changes to `/linux`; no disk, partition, installer, updater, or
+  user-data operations.
+
+### Next priorities
+
+1. Restore mode 100755 on `scripts/awepkg.sh` with a git-capable client.
+2. Diagnose the qemu64 triple-fault (BIOS boot) with QEMU debugging
+   (-d int,cpu_reset) and compare Limine/kernel hand-off against the
+   working `max` CPU model.
+3. Reconcile PR #29 (fail-closed ISO verification) into this stack and
+   re-run image construction and boot validation on the combined head.
+4. Begin signed package manifests and trusted key management so
+   `AWEPKG_ALLOW_UNSIGNED=1` can be retired for real installs.
+5. Merge the validated PR chain (#27 through #39) toward master only
+   after the boot blocker is diagnosed or an explicit merge decision
+   is made by the maintainer.
