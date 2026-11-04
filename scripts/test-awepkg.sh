@@ -31,8 +31,20 @@ if AWEPKG_ROOT="$ROOT_DIR" AWEPKG_DB_DIR="$ROOT_DIR/escape-db/awepkg" "$AWEPKG" 
 fi
 test ! -e "$TMP_DIR/outside-db/awepkg"
 
-run_pkg() { AWEPKG_ROOT="$ROOT_DIR" AWEPKG_DB_DIR="$DB_DIR" "$AWEPKG" "$@"; }
-run_dev_pkg() { AWEPKG_ALLOW_UNSIGNED=1 AWEPKG_ROOT="$ROOT_DIR" AWEPKG_DB_DIR="$DB_DIR" "$AWEPKG" "$@"; }
+run_pkg() {
+    if [ "${AWEPKG_TEST_BUSYBOX:-0}" = "1" ]; then
+        AWEPKG_ROOT="$ROOT_DIR" AWEPKG_DB_DIR="$DB_DIR" busybox sh "$AWEPKG" "$@"
+    else
+        AWEPKG_ROOT="$ROOT_DIR" AWEPKG_DB_DIR="$DB_DIR" "$AWEPKG" "$@"
+    fi
+}
+run_dev_pkg() {
+    if [ "${AWEPKG_TEST_BUSYBOX:-0}" = "1" ]; then
+        AWEPKG_ALLOW_UNSIGNED=1 AWEPKG_ROOT="$ROOT_DIR" AWEPKG_DB_DIR="$DB_DIR" busybox sh "$AWEPKG" "$@"
+    else
+        AWEPKG_ALLOW_UNSIGNED=1 AWEPKG_ROOT="$ROOT_DIR" AWEPKG_DB_DIR="$DB_DIR" "$AWEPKG" "$@"
+    fi
+}
 expect_failure() { if run_pkg "$@"; then echo "unexpected package-manager success: $*" >&2; exit 1; fi; }
 expect_dev_failure() { if run_dev_pkg "$@"; then echo "unexpected development package-manager success: $*" >&2; exit 1; fi; }
 make_package() {
@@ -165,7 +177,7 @@ case "$last" in */z-blocked/third.txt) exit 1 ;; esac
 exec "$AWEPKG_REAL_LN" "$@"
 MOCK_LN
 chmod 0755 "$mock_bin/ln"
-if PATH="$mock_bin:$PATH" AWEPKG_REAL_LN="$real_ln" AWEPKG_ALLOW_UNSIGNED=1 AWEPKG_ROOT="$ROOT_DIR" AWEPKG_DB_DIR="$DB_DIR" "$AWEPKG" install "$TMP_DIR/rollback-package.awe"; then
+if PATH="$mock_bin:$PATH" AWEPKG_REAL_LN="$real_ln" run_dev_pkg install "$TMP_DIR/rollback-package.awe"; then
     echo "ERROR: injected mid-install failure unexpectedly succeeded" >&2
     exit 1
 fi
@@ -178,3 +190,13 @@ test ! -e "$DB_DIR/rollback-package.files"
 test ! -e "$DB_DIR/rollback-package.sha256"
 
 echo "awepkg safety integration tests passed"
+
+# Repeat with BusyBox ash and BusyBox applets, matching the target rootfs.
+if [ "${AWEPKG_TEST_BUSYBOX:-0}" != "1" ] && command -v busybox >/dev/null 2>&1; then
+    (
+        busybox_dir="$(mktemp -d "${TMPDIR:-/tmp}/awepkg-busybox.XXXXXX")"
+        trap 'rm -rf -- "$busybox_dir"' EXIT
+        busybox --install -s "$busybox_dir"
+        AWEPKG_TEST_BUSYBOX=1 PATH="$busybox_dir:$PATH" bash "$0"
+    )
+fi
