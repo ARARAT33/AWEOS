@@ -113,7 +113,7 @@ grep -q 'AWEOS ROOTFS READY: mode=ayui' "$build_dir/qemu-uefi.log"
 grep -q 'AWEOS AYUI COMPOSITOR READY' "$build_dir/qemu-uefi.log"
 grep -q 'AWEOS ROOTFS READY: mode=headless' "$build_dir/qemu-kernel.log"
 grep -q 'AWEOS HEADLESS CONSOLE READY' "$build_dir/qemu-kernel.log"
-! grep -q 'AWEOS HEADLESS CONSOLE READY' "$build_dir/qemu-kernel.log"
+! grep -q 'AWEOS AYUI COMPOSITOR READY' "$build_dir/qemu-kernel.log"
 test -s "$build_dir/qemu-bios-debug.log"
 
 # All three boot paths must pass when the mock firmware and QEMU runs succeed.
@@ -150,8 +150,6 @@ MOCK_QEMU_MODE=framebuffer-fallback \
 grep -q 'AYUI framebuffer fallback' "$tmp_root/framebuffer-fallback-output.log"
 grep -q 'AWEOS AYUI FRAMEBUFFER READY' "$build_dir/qemu-bios.log"
 grep -q 'AWEOS AYUI FRAMEBUFFER READY' "$build_dir/qemu-uefi.log"
-grep -q 'AWEOS HEADLESS CONSOLE READY' "$build_dir/qemu-kernel.log"
-
 grep -q 'AWEOS HEADLESS CONSOLE READY' "$build_dir/qemu-kernel.log"
 
 # Direct-kernel boot must not pass merely because the rootfs mounted; it must
