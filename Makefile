@@ -96,21 +96,31 @@ test-rust:
 test-shell:
 	@set -euo pipefail; \
 	for script in $(SHELL_SCRIPTS); do \
-		bash -n "$$script"; \
+		if ! bash -n "$script"; then \
+			echo "::error::bash -n syntax check failed for $script" >&2; \
+			exit 2; \
+		fi; \
+	done; \
+	for test_script in \
+		test-build-dir-safety.sh \
+		test-build-disk-image-safety.sh \
+		test-transaction-fail-closed.sh \
+		test-storage-discovery.sh \
+		test-build-iso-safety.sh \
+		test-rootfs-runtime-validation.sh \
+		test-ayui-framebuffer-build.sh \
+		test-ayui-framebuffer-format.sh \
+		test-aweos-session-fallback.sh \
+		test-qemu-test-runner.sh \
+		test-initramfs-root-discovery.sh \
+		test-awepkg.sh \
+		test-aosin-fail-closed.sh; do \
+		echo "==> running scripts/$test_script"; \
+		if ! bash "./scripts/$test_script"; then \
+			echo "::error::make test-shell failed at scripts/$test_script" >&2; \
+			exit 2; \
+		fi; \
 	done
-	@bash ./scripts/test-build-dir-safety.sh
-	@bash ./scripts/test-build-disk-image-safety.sh
-	@bash ./scripts/test-transaction-fail-closed.sh
-	@bash ./scripts/test-storage-discovery.sh
-	@bash ./scripts/test-build-iso-safety.sh
-	@bash ./scripts/test-rootfs-runtime-validation.sh
-	@bash ./scripts/test-ayui-framebuffer-build.sh
-	@bash ./scripts/test-ayui-framebuffer-format.sh
-	@bash ./scripts/test-aweos-session-fallback.sh
-	@bash ./scripts/test-qemu-test-runner.sh
-	@bash ./scripts/test-initramfs-root-discovery.sh
-	@bash ./scripts/test-awepkg.sh
-	@bash ./scripts/test-aosin-fail-closed.sh
 
 test-qemu: iso
 	@./scripts/run-qemu-tests.sh $(BUILD_DIR)

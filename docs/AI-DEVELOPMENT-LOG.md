@@ -384,3 +384,30 @@
   previous BusyBox failure was not treated as a passing result. A fresh
   package-safety run is required before the package change is considered
   validated.
+
+## 2026-11-04 — test-shell failure attribution for the package stack
+
+- PR #38 head `d8875b4` passed the dedicated package-safety workflow, but both
+  the userland and full image workflows failed inside the `make test-shell`
+  step (exit 2) on that same commit. Raw job logs are not readable from this
+  environment, so the exact failing script could not be identified from the
+  step-level annotation alone.
+- Code review of every test-shell script on this head found no reproduction:
+  the rootfs runtime fixture and validator contract were replayed locally with
+  stubbed cc/readelf/ldd and pass both the expected-failure and success
+  phases; the awepkg and AOSIN suites passed in the package-safety run on the
+  same commit; every other test-shell script is unchanged since PR #37's
+  green userland run.
+- To make CI failures attributable without raw log access, `make test-shell`
+  now prints the name of each script before running it and emits a GitHub
+  Actions `::error::` annotation naming the exact script that failed. The
+  test list, order, and semantics are unchanged.
+- No changes to `/linux`; no disk, partition, installer, updater, or
+  user-data operations.
+
+### Validation status
+
+- This change only adds failure attribution; it does not claim any previously
+  failing test is fixed. Fresh userland and package-safety runs on this new
+  branch head must pass, and the annotation (if any) must be inspected before
+  the underlying failure can be diagnosed and fixed.
