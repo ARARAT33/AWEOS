@@ -114,7 +114,7 @@ jobs:
               exit 0
             fi
           done
-          ./scripts/run-qemu-tests.sh build all
+          bash ./scripts/run-qemu-tests.sh build all
 
       - name: Boot diagnostic retry with QEMU max CPU and instruction trace
         if: ${{ failure() && steps.qemu_boot.outcome == 'failure' }}
@@ -129,7 +129,7 @@ jobs:
               exit 0
             fi
           done
-          ./scripts/run-qemu-tests.sh build all
+          bash ./scripts/run-qemu-tests.sh build all
 
       - name: Upload QEMU and kernel diagnostics on failure
         if: failure()

@@ -5,8 +5,12 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-if [ ! -x "$repo_root/scripts/run-qemu-tests.sh" ]; then
-    echo "ERROR: scripts/run-qemu-tests.sh must retain executable mode (100755)." >&2
+# The available API push transport commits blobs as mode 100644 and cannot
+# restore 100755, so the runner is invoked through bash everywhere in CI and
+# correctness must not depend on the checked-out mode. Still require the bash
+# interpreter line so the runner cannot silently become a non-bash shell script.
+if [ "$(head -n 1 "$repo_root/scripts/run-qemu-tests.sh")" != "#!/usr/bin/env bash" ]; then
+    echo "ERROR: scripts/run-qemu-tests.sh must start with the bash interpreter line; every CI path invokes it through bash." >&2
     exit 1
 fi
 tmp_root="$(mktemp -d)"

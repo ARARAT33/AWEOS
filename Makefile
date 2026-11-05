@@ -97,7 +97,7 @@ test-shell:
 	@bash ./scripts/run-test-shell.sh
 
 test-qemu: iso
-	@./scripts/run-qemu-tests.sh $(BUILD_DIR)
+	@bash ./scripts/run-qemu-tests.sh $(BUILD_DIR)
 
 verify-artifacts:
 	@set -euo pipefail; \
@@ -106,7 +106,7 @@ verify-artifacts:
 		$(BUILD_DIR)/aweui-control-center $(BUILD_DIR)/aweui-file-manager $(BUILD_DIR)/aweui-terminal \
 		$(BUILD_DIR)/aweui-system-monitor $(BUILD_DIR)/aweui-diagnostics $(BUILD_DIR)/aweui-text-editor \
 		$(BUILD_DIR)/aweui-calculator $(BUILD_DIR)/aweui-firstboot-setup $(BUILD_DIR)/aweui-user-app-template \
-		$(if $(filter ayui,$(AWEOS_DESKTOP)),$(ROOTFS_DIR)/usr/bin/aweos-ayui-fb,) \
+		$(if $(filter ayui,$(AWEOS_DESKTOP)),$(ROOTFS_DIR)/usr/bin/aweui-ayui-fb,) \
 		$(KERNEL_BUILD_DIR)/arch/x86/boot/bzImage $(INITRAMFS) $(ROOTFS_IMG) \
 		$(ISO_PATH) $(BUILD_DIR)/AWEOS-x86_64-disk.img; do \
 		test -s "$$artifact" || { echo "ERROR: missing or empty artifact $$artifact" >&2; exit 1; }; \

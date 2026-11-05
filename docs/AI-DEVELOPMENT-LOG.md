@@ -880,3 +880,49 @@ is not counted as a primary boot pass.
 3. Re-run BIOS/UEFI/direct-kernel boot validation on the fixed head.
 4. Reconcile PR #29 (fail-closed ISO verification) into the stack and re-run
    image construction on the combined head.
+
+
+## 2026-11-05 — QEMU runner file-mode regression repeat and mode-independent fix
+
+### Evidence
+
+- The first CI runs on commit `5f503b1` (userland run
+  [#42046350969](https://github.com/ARARAT33/AWEOS/actions/runs/42046350969),
+  PR-triggered duplicates, and both full image/boot workflows) failed within
+  about a minute.
+- The userland annotation names the exact cause: `make test-shell` failed at
+  `scripts/test-qemu-test-runner.sh` on the executable-mode assertion, because
+  the available API push transport again committed
+  `scripts/run-qemu-tests.sh` as mode `100644`, exactly the documented
+  transport defect from 2026-11-04/05. No other test failure is claimed or
+  implied by these runs; they stopped before exercising any new trace logic.
+
+### Implemented on the same branch
+
+- `make test-qemu` and both QEMU diagnostic retry steps in the boot workflow
+  now invoke the runner through `bash ./scripts/run-qemu-tests.sh`, so no CI
+  path depends on the checked-out executable mode. This mirrors the
+  `awepkg.sh` precedent from the 2026-11-04 mode regression.
+- The runner regression now requires the bash interpreter line
+  (`#!/usr/bin/env bash`) instead of the executable bit. The interpreter
+  contract is what correctness actually depends on, because every CI path
+  calls the runner through bash.
+- A future run with direct git access may still restore mode `100755` on
+  `scripts/run-qemu-tests.sh` (and `scripts/awepkg.sh`) for developer
+  convenience; CI no longer requires it.
+- No changes to `/linux`; no disk, partition, installer, updater, or
+  user-data operations.
+
+### Files changed
+
+- `Makefile`
+- `scripts/test-qemu-test-runner.sh`
+- `.github/workflows/build-aweos-x86_64.yml`
+- `docs/AI-DEVELOPMENT-LOG.md`
+
+### Validation status
+
+- Fresh userland and full image/boot runs on this corrected head are required;
+  the failed runs on `5f503b1` did not exercise the new tagged-trace logic and
+  prove nothing about it.
+
