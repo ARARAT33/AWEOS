@@ -75,7 +75,7 @@ pub fn render_screen(state: &InstallerState, i18n: &I18n) -> String {
         }
         InstallerStep::Partitioning => {
             out.push_str("  [ PARTITION PLAN — PREVIEW ONLY ]\n\n");
-            out.push_str(&format!("  Detected Firmware Mode: {:?}\n", state.boot_mode));
+            out.push_str("  Firmware mode is not used while disk installation is disabled.\n");
             if let Some(disk) = &state.selected_disk {
                 out.push_str(&format!("  Informational Device: {} ({:.1} GB)\n", disk.device, disk.size_gb));
             } else {
