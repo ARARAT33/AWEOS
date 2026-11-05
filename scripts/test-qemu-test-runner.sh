@@ -27,12 +27,17 @@ set -euo pipefail
 
 debug_log=""
 append=""
+dfilter=""
 is_uefi=0
 is_kernel=0
 while (($#)); do
     case "$1" in
         -D)
             debug_log="${2:-}"
+            shift 2
+            ;;
+        -dfilter)
+            dfilter="${2:-}"
             shift 2
             ;;
         -bios)
@@ -57,6 +62,9 @@ done
 # This verifies that a later diagnostic retry cannot overwrite primary logs.
 if [[ -n "$debug_log" ]]; then
     printf 'mock cpu=%s\n' "${AWEOS_QEMU_CPU:-qemu64}" > "$debug_log"
+    if [[ -n "$dfilter" ]]; then
+        printf 'mock dfilter=%s\n' "$dfilter" >> "$debug_log"
+    fi
 fi
 
 if [[ "${MOCK_QEMU_MODE:-success}" == "desktop-fails" ]]; then
@@ -198,4 +206,25 @@ if [ "$rc" -eq 0 ]; then
 fi
 grep -q 'OVMF firmware not found' "$tmp_root/missing-firmware-output.log"
 
-echo "PASS: QEMU runner requires first-frame AYUI for BIOS/UEFI, an explicit headless-console hand-off for direct kernel, aggregates failures, and requires UEFI firmware."
+# A diagnostic instruction-trace retry with the same CPU model must write to
+# its own tagged logs and must not overwrite the primary or max-CPU logs.
+PATH="$mock_bin:$PATH" \
+AWEOS_QEMU_LOG_SUFFIX=instrtrace \
+AWEOS_QEMU_DFILTER=0x3c00000-0x3d00000 \
+MOCK_QEMU_MODE=success \
+    bash "$repo_root/scripts/run-qemu-tests.sh" "$build_dir" all \
+    > "$tmp_root/trace-output.log" 2>&1
+for mode in bios uefi kernel; do
+    test -s "$build_dir/qemu-$mode-instrtrace.log"
+    test -s "$build_dir/qemu-$mode-instrtrace-debug.log"
+    grep -q "^mock cpu=qemu64$" "$build_dir/qemu-$mode-instrtrace-debug.log"
+    grep -q "^mock dfilter=0x3c00000-0x3d00000$" "$build_dir/qemu-$mode-instrtrace-debug.log"
+done
+for mode in bios uefi kernel; do
+    grep -q "^mock cpu=max$" "$build_dir/qemu-$mode-max-debug.log"
+done
+grep -q "SUCCESS: AWEOS BIOS boot" "$tmp_root/trace-output.log"
+grep -q "SUCCESS: AWEOS UEFI boot" "$tmp_root/trace-output.log"
+grep -q "SUCCESS: AWEOS direct kernel boot" "$tmp_root/trace-output.log"
+
+echo "PASS: QEMU runner requires first-frame AYUI for BIOS/UEFI, an explicit headless-console hand-off for direct kernel, aggregates failures, requires UEFI firmware, and keeps diagnostic retries in separate tagged logs."
