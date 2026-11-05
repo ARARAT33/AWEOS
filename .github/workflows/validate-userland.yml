@@ -68,5 +68,8 @@ jobs:
             test -x "target/release/${binary}"
           done
 
+      - name: Verify Rust installer refuses all unattended disk writes
+        run: bash scripts/test-installer-no-writes.sh target/release/aweui-installer
+
       - name: Exercise AYUI Winit compositor under Xvfb
         run: bash scripts/test-ayui-winit-smoke.sh target/release/aweui
