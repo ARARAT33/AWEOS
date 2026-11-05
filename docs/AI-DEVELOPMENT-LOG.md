@@ -942,3 +942,40 @@ is not counted as a primary boot pass.
   `AWEOS_UEFI_FIRMWARE`, matching every other pass in the suite.
 
 
+### Actual validation results on the final head (2026-11-05)
+
+- Final head: `6d12b44c3524e2d7c2477286ba27d07bbcb30b4c` (branch
+  `boot/qemu64-instruction-trace-20261105`, PR #42).
+- Userland runs [#42047481992](https://github.com/ARARAT33/AWEOS/actions/runs/42047481992)
+  and [#42047499037](https://github.com/ARARAT33/AWEOS/actions/runs/42047499037):
+  **PASS** — the full shell/C suite including the new `instrtrace` regression,
+  Rust workspace tests, release binaries, installer no-write test, and the
+  Xvfb AYUI smoke test.
+- Package-safety run [#42047499168](https://github.com/ARARAT33/AWEOS/actions/runs/42047499168):
+  **PASS**.
+- Full image/boot runs [#42047499118](https://github.com/ARARAT33/AWEOS/actions/runs/42047499118)
+  and its duplicate: **FAILURE**, at the pre-existing primary `qemu64` boot
+  blocker (the default qemu64 BIOS/direct-kernel boots still fault before the
+  rootfs hand-off). The run reached the QEMU stage, ran the diagnostic retries,
+  and uploaded the `AWEOS-QEMU-diagnostics` artifact (106 MB), which should
+  now contain the tagged `qemu-bios/uefi/kernel-instrtrace` logs with the
+  `-dfilter 0x3c00000-0x3d00000` instruction trace. This failure is the known
+  blocker, not a regression from this change.
+- The artifact contents were not yet inspected from this environment; that is
+  the next run's first priority, together with mapping the captured faulting
+  instruction to the bootloader/kernel image.
+
+### Next priorities
+
+1. Download and inspect the `AWEOS-QEMU-diagnostics` artifact from run
+   #42047499118; read the qemu64 `instrtrace` logs around the `#UD` at
+   `RIP=0x3cd63c7` and map the faulting instruction to the exact image.
+2. Fix the underlying qemu64 compatibility fault without weakening the
+   baseline CPU test, then re-run the full boot validation.
+3. Reconcile PR #29 (fail-closed ISO verification) into the stack and re-run
+   image construction on the combined head.
+4. Merge the validated PR chain toward master only after the boot blocker is
+   diagnosed/fixed or the maintainer makes an explicit merge decision.
+
+
+
