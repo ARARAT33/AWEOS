@@ -728,3 +728,75 @@ fix is considered validated; all previous heads failed as described above.
    contract; until then ISO validation must fail closed.
 5. Keep the installer disabled until partition-preserving staging, verified
    backup, bootloader rollback, and VM tests exist.
+
+
+### Post-change CI and QEMU artifact review — 2026-11-05
+
+#### Rust installer change validation
+
+The final installer/UI commit at head
+`e3860fd94210b51e0837b43d1eff9f6ed5c09650` has a successful userland run:
+
+- [Validate AWEOS Userland #41974393089](https://github.com/ARARAT33/AWEOS/actions/runs/41974393089) — **success**.
+- `make test-shell` — success, including build-dir, disk-image, C transaction,
+  storage-discovery, ISO assembly, rootfs runtime, AYUI framebuffer, session,
+  and QEMU-runner regressions.
+- `verify-linux-readonly.sh` — `/linux: UNMODIFIED`.
+- `cargo metadata --no-deps` — success.
+- `cargo test --workspace` — success. The installer binary's test target
+  reports **10 passed, 0 failed**, including the no-callback/no-target-path
+  guard, disabled partition API, blank credentials, terminal Summary, and
+  safety disclosure.
+- All release userland binaries built and expected binaries were present.
+- `scripts/test-installer-no-writes.sh target/release/aweui-installer` —
+  success with `AWEOS_ALLOW_DESTRUCTIVE_INSTALL=1`; the built `--auto`
+  binary still exited 2 before disk operations.
+- AYUI Xvfb smoke — success; Winit bound `wayland-1` and rendered its first
+  frame.
+
+The final-head userland job is green. The full image/boot workflow
+[#41974393087](https://github.com/ARARAT33/AWEOS/actions/runs/41974393087)
+was still building AWEOS images at the time of this log update; no new
+BIOS/UEFI result is claimed for PR #41.
+
+#### Actual PR #40 QEMU diagnostics inspected
+
+Downloaded and inspected the QEMU diagnostics artifact from
+[full build #41972270906](https://github.com/ARARAT33/AWEOS/actions/runs/41972270906)
+(artifact `AWEOS-QEMU-diagnostics`, 113,082,030 bytes).
+
+Observed results:
+
+- Image build and the pre-boot safety checks passed.
+- Primary `qemu64` BIOS boot failed before a rootfs-ready marker. Its serial
+  output stopped after Limine's handoff and `acpi: Found RSDP at 0xf5290`.
+  The QEMU debug state recorded `#UD` (vector 6) at
+  `RIP=0x3cd63c7`, followed by `#GP` (vector 13, error code `0x0032`),
+  double fault (vector 8), and a triple fault.
+- Primary `qemu64` direct-kernel serial output was empty and did not reach the
+  explicit headless-console marker.
+- Primary `qemu64` UEFI boot did reach the rootfs and AYUI startup. Winit
+  could not create a display event loop because the QEMU run had no
+  `DISPLAY`/`WAYLAND_DISPLAY`; the framebuffer fallback then initialized
+  `/dev/fb0` at 1280x800 and emitted
+  `AWEOS AYUI FRAMEBUFFER READY`.
+- The `max` CPU diagnostic retry reached the rootfs/framebuffer fallback in
+  BIOS and UEFI and emitted `AWEOS HEADLESS CONSOLE READY` for direct-kernel
+  boot. This is diagnostic evidence only; it does not turn the failed
+  `qemu64` BIOS/direct-kernel tests into passes.
+
+The current primary qemu64 debug flags do not include `in_asm`, so the
+instruction bytes at the failing RIP were not captured. The `max` trace is
+not a substitute because it follows a different CPU feature model and does
+not reproduce the qemu64 fault. Next boot-debug work must add a targeted
+qemu64 instruction trace for only the failing modes, preserve the original
+primary logs, and map the faulting instruction before changing kernel config
+or CPU feature handling.
+
+The full PR #40 run
+[#41972270906](https://github.com/ARARAT33/AWEOS/actions/runs/41972270906)
+and its duplicate
+[#41972263483](https://github.com/ARARAT33/AWEOS/actions/runs/41972263483)
+both completed with failure because the primary qemu64 BIOS/UEFI/direct-kernel
+boot step failed. The max-CPU retry completed and uploaded diagnostics, but
+is not counted as a primary boot pass.
