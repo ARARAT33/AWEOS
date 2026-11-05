@@ -5,6 +5,10 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [ ! -x "$repo_root/scripts/run-qemu-tests.sh" ]; then
+    echo "ERROR: scripts/run-qemu-tests.sh must retain executable mode (100755)." >&2
+    exit 1
+fi
 tmp_root="$(mktemp -d)"
 trap 'rm -rf -- "$tmp_root"' EXIT
 

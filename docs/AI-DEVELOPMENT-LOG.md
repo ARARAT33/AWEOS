@@ -600,3 +600,43 @@ fix is considered validated; all previous heads failed as described above.
 3. Fix the underlying qemu64 compatibility fault without weakening the
    baseline CPU test.
 4. Re-run image build, BIOS/UEFI desktop boot, and direct-kernel headless boot.
+
+
+## 2026-11-05 — Restore QEMU runner executable mode
+
+- The new userland workflow [#41970701983](https://github.com/ARARAT33/AWEOS/actions/runs/41970701983)
+  passed on PR #40 head `767e75c3d887c405927a257be0330388a19ca476`:
+  all 13 shell/C regression scripts, repository-boundary and Cargo metadata
+  checks, Rust workspace tests, release binaries, expected-binary checks, and
+  the Xvfb AYUI compositor smoke test succeeded.
+- The full image workflow [#41970701981](https://github.com/ARARAT33/AWEOS/actions/runs/41970701981)
+  built the kernel, rootfs, initramfs, and hybrid ISO and passed both
+  `/linux` integrity checks. It then failed before launching QEMU:
+  `./scripts/run-qemu-tests.sh: Permission denied` (exit 126). The diagnostic
+  retry hit the same error, so this run produced no new BIOS/UEFI/direct-kernel
+  boot result.
+- Root cause: the Git tree commit that added CPU-suffixed debug paths recorded
+  `scripts/run-qemu-tests.sh` as mode `100644`, although its parent had mode
+  `100755`. This was a Git file-mode regression introduced by the API tree
+  update, not a kernel or QEMU failure.
+- Restore `scripts/run-qemu-tests.sh` to mode `100755` and add a regression
+  assertion that fails the shell suite if this directly executed runner loses
+  its executable bit again.
+- No changes to `/linux`, installer/updater behavior, disks, partitions, or
+  user data.
+
+### Validation status
+
+- Userland validation: PASS on the previous code head as above.
+- The executable-mode assertion and corrected mode require a fresh CI run.
+- QEMU boot validation remains pending; do not infer a qemu64 result from
+  workflow #41970701981 because QEMU was never launched.
+
+### Next priorities
+
+1. Verify the executable-mode assertion and the full shell/C suite on the new
+   head.
+2. Re-run image build and confirm QEMU is actually launched.
+3. Preserve and inspect qemu64 and max CPU debug logs separately.
+4. Diagnose and fix the qemu64 boot fault without treating the max retry as
+   a compatibility pass.
