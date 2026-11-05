@@ -213,6 +213,7 @@ grep -q 'OVMF firmware not found' "$tmp_root/missing-firmware-output.log"
 # A diagnostic instruction-trace retry with the same CPU model must write to
 # its own tagged logs and must not overwrite the primary or max-CPU logs.
 PATH="$mock_bin:$PATH" \
+AWEOS_UEFI_FIRMWARE="$firmware" \
 AWEOS_QEMU_LOG_SUFFIX=instrtrace \
 AWEOS_QEMU_DFILTER=0x3c00000-0x3d00000 \
 MOCK_QEMU_MODE=success \

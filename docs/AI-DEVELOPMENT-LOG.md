@@ -926,3 +926,19 @@ is not counted as a primary boot pass.
   the failed runs on `5f503b1` did not exercise the new tagged-trace logic and
   prove nothing about it.
 
+### Missing-firmware regression in the new trace test (2026-11-05)
+
+- The corrected head `5b57906` passed the mode check and executed the full
+  QEMU-runner suite, but userland runs
+  [#42046994236](https://github.com/ARARAT33/AWEOS/actions/runs/42046994236)
+  and [#42046981706](https://github.com/ARARAT33/AWEOS/actions/runs/42046981706)
+  still failed inside the new `instrtrace` pass.
+- Trace-attributed annotation shows the suite reached the new block and then
+  exited during its runner invocation. Root cause: the new test invocation did
+  not export `AWEOS_UEFI_FIRMWARE` like the other passes, so the runner looked
+  for real OVMF firmware on the userland runner, found none, and correctly
+  failed the UEFI boot test.
+- Fix: the `instrtrace` pass now passes the mock firmware explicitly via
+  `AWEOS_UEFI_FIRMWARE`, matching every other pass in the suite.
+
+
