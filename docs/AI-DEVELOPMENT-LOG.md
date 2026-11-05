@@ -640,3 +640,163 @@ fix is considered validated; all previous heads failed as described above.
 3. Preserve and inspect qemu64 and max CPU debug logs separately.
 4. Diagnose and fix the qemu64 boot fault without treating the max retry as
    a compatibility pass.
+
+
+## 2026-11-05 — Disable the Rust whole-disk installer until data preservation exists
+
+### Inspection and finding
+
+- Re-inspected the repository tree outside the protected `/linux` source,
+  current PR stack (#38–#40), recent workflow runs, README, build workflows,
+  initramfs/session scripts, C transaction engine, package manager, and Rust
+  installer sources before editing.
+- Found a critical gap not covered by the C transaction fail-closed work:
+  `AWEUI/installer/src/engine.rs` still called `sfdisk` and `mkfs` on the
+  selected whole disk before deploying the root filesystem. The interactive
+  path had no target-specific destructive confirmation or verified backup.
+- `AWEUI/installer/src/main.rs` silently selected the first discovered disk.
+  Its `--auto` path allowed whole-disk writes when
+  `AWEOS_ALLOW_DESTRUCTIVE_INSTALL=1` was set.
+- `InstallerState::default()` supplied the known password `aweos` and the
+  same confirmation value. This was not a safe credential default.
+- The C transaction engine already fails closed, but that did not protect the
+  separate Rust GUI installer path. This change closes that bypass rather than
+  duplicating C transaction work.
+- Current PR #40 head `48c9dd7e32f79d2b441966b2011ba6b3e28dda39` has a green
+  userland run [#41972271067](https://github.com/ARARAT33/AWEOS/actions/runs/41972271067).
+  The two full image/boot runs #41972270906 and #41972263483 were still in
+  progress at inspection time; no new qemu64 result is inferred from them.
+
+### Implemented on a new stacked branch
+
+- Disabled `engine::execute_installation` before device inspection, progress
+  callbacks, target directory creation, mounting, copying, or bootloader work.
+- Replaced `partition_and_format_disk` with a fail-closed compatibility
+  guard; removed the reachable `sfdisk` / `mkfs.vfat` / `mke2fs` execution
+  path from the Rust installer module.
+- Removed automatic first-disk selection. Discovered devices are informational
+  only and no target is selected.
+- Disabled `--auto` unconditionally. The legacy
+  `AWEOS_ALLOW_DESTRUCTIVE_INSTALL=1` environment variable no longer bypasses
+  the safety hold.
+- Made the Summary step non-advancing; pressing `I` reports that installation
+  is disabled and exits non-zero rather than entering a fake progress flow.
+- Cleared the default password and confirmation fields.
+- Updated the installer screens and README to state that no disk operation is
+  performed.
+- Added `docs/INSTALLER-SAFETY.md` with explicit requirements before
+  installation may be re-enabled.
+- Added Rust unit regressions for no callbacks/no target path creation,
+  disabled partitioning, empty default credentials, terminal Summary state,
+  and user-visible safety disclosure.
+- Added `scripts/test-installer-no-writes.sh` and a userland workflow step
+  that exercises the built installer binary with the legacy override enabled
+  and checks that `--auto` exits with status 2 before any disk command.
+
+### Files changed
+
+- `AWEUI/installer/src/engine.rs`
+- `AWEUI/installer/src/partition.rs`
+- `AWEUI/installer/src/state.rs`
+- `AWEUI/installer/src/ui.rs`
+- `AWEUI/installer/src/main.rs`
+- `scripts/test-installer-no-writes.sh` (new)
+- `.github/workflows/validate-userland.yml`
+- `README.md`
+- `docs/INSTALLER-SAFETY.md` (new)
+- `docs/AI-DEVELOPMENT-LOG.md`
+
+### Validation status
+
+- The Rust unit and built-binary integration tests are wired into the
+  userland workflow. Fresh CI on this branch is required before claiming PASS.
+- The new branch is stacked on PR #40; no changes were made to `master` or
+  `/linux`. No disk, partition, filesystem, bootloader, or user-data write was
+  attempted during this development run.
+- The active qemu64 BIOS/UEFI/direct-kernel triple-fault remains a separate
+  boot blocker. The PR #40 CPU-suffixed debug-log fix must complete its fresh
+  full build and preserve the primary qemu64 traces before that fault can be
+  diagnosed.
+
+### Next priorities
+
+1. Inspect this branch's fresh userland run and the actual `--auto` test log.
+2. Check PR #40's full build and retrieve both qemu64 and `max` diagnostics.
+3. Diagnose the qemu64 invalid-opcode / general-protection / triple-fault
+   sequence without treating the `max` retry as a qemu64 pass.
+4. Replace the fake ISO verifier with a real, trusted-digest verification
+   contract; until then ISO validation must fail closed.
+5. Keep the installer disabled until partition-preserving staging, verified
+   backup, bootloader rollback, and VM tests exist.
+
+
+### Post-change CI and QEMU artifact review — 2026-11-05
+
+#### Rust installer change validation
+
+The final installer/UI commit at head
+`e3860fd94210b51e0837b43d1eff9f6ed5c09650` has a successful userland run:
+
+- [Validate AWEOS Userland #41974393089](https://github.com/ARARAT33/AWEOS/actions/runs/41974393089) — **success**.
+- `make test-shell` — success, including build-dir, disk-image, C transaction,
+  storage-discovery, ISO assembly, rootfs runtime, AYUI framebuffer, session,
+  and QEMU-runner regressions.
+- `verify-linux-readonly.sh` — `/linux: UNMODIFIED`.
+- `cargo metadata --no-deps` — success.
+- `cargo test --workspace` — success. The installer binary's test target
+  reports **10 passed, 0 failed**, including the no-callback/no-target-path
+  guard, disabled partition API, blank credentials, terminal Summary, and
+  safety disclosure.
+- All release userland binaries built and expected binaries were present.
+- `scripts/test-installer-no-writes.sh target/release/aweui-installer` —
+  success with `AWEOS_ALLOW_DESTRUCTIVE_INSTALL=1`; the built `--auto`
+  binary still exited 2 before disk operations.
+- AYUI Xvfb smoke — success; Winit bound `wayland-1` and rendered its first
+  frame.
+
+The final-head userland job is green. The full image/boot workflow
+[#41974393087](https://github.com/ARARAT33/AWEOS/actions/runs/41974393087)
+was still building AWEOS images at the time of this log update; no new
+BIOS/UEFI result is claimed for PR #41.
+
+#### Actual PR #40 QEMU diagnostics inspected
+
+Downloaded and inspected the QEMU diagnostics artifact from
+[full build #41972270906](https://github.com/ARARAT33/AWEOS/actions/runs/41972270906)
+(artifact `AWEOS-QEMU-diagnostics`, 113,082,030 bytes).
+
+Observed results:
+
+- Image build and the pre-boot safety checks passed.
+- Primary `qemu64` BIOS boot failed before a rootfs-ready marker. Its serial
+  output stopped after Limine's handoff and `acpi: Found RSDP at 0xf5290`.
+  The QEMU debug state recorded `#UD` (vector 6) at
+  `RIP=0x3cd63c7`, followed by `#GP` (vector 13, error code `0x0032`),
+  double fault (vector 8), and a triple fault.
+- Primary `qemu64` direct-kernel serial output was empty and did not reach the
+  explicit headless-console marker.
+- Primary `qemu64` UEFI boot did reach the rootfs and AYUI startup. Winit
+  could not create a display event loop because the QEMU run had no
+  `DISPLAY`/`WAYLAND_DISPLAY`; the framebuffer fallback then initialized
+  `/dev/fb0` at 1280x800 and emitted
+  `AWEOS AYUI FRAMEBUFFER READY`.
+- The `max` CPU diagnostic retry reached the rootfs/framebuffer fallback in
+  BIOS and UEFI and emitted `AWEOS HEADLESS CONSOLE READY` for direct-kernel
+  boot. This is diagnostic evidence only; it does not turn the failed
+  `qemu64` BIOS/direct-kernel tests into passes.
+
+The current primary qemu64 debug flags do not include `in_asm`, so the
+instruction bytes at the failing RIP were not captured. The `max` trace is
+not a substitute because it follows a different CPU feature model and does
+not reproduce the qemu64 fault. Next boot-debug work must add a targeted
+qemu64 instruction trace for only the failing modes, preserve the original
+primary logs, and map the faulting instruction before changing kernel config
+or CPU feature handling.
+
+The full PR #40 run
+[#41972270906](https://github.com/ARARAT33/AWEOS/actions/runs/41972270906)
+and its duplicate
+[#41972263483](https://github.com/ARARAT33/AWEOS/actions/runs/41972263483)
+both completed with failure because the primary qemu64 BIOS/UEFI/direct-kernel
+boot step failed. The max-CPU retry completed and uploaded diagnostics, but
+is not counted as a primary boot pass.

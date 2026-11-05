@@ -18,17 +18,24 @@ fn main() {
     let mut i18n = I18n::new(state.language);
 
     let disks = disk::discover_disks();
-    if let Some(disk) = disks.first() {
-        state.selected_disk = Some(disk.clone());
-        println!(
-            "Detected target disk: {} ({:.1} GiB, {} partitions)",
-            disk.device,
-            disk.size_gb,
-            disk.partitions.len()
-        );
+    if disks.is_empty() {
+        println!("No block storage devices were detected.");
     } else {
-        println!("No block storage devices were detected. Installation cannot proceed until a target disk is available.");
+        println!(
+            "Detected {} block storage device(s). No target disk was selected automatically.",
+            disks.len()
+        );
+        for disk in &disks {
+            println!(
+                "  Candidate: {} — {} ({:.1} GiB, {} partition(s)); informational only",
+                disk.device,
+                disk.model,
+                disk.size_gb,
+                disk.partitions.len()
+            );
+        }
     }
+    println!("Disk installation is disabled until a data-preserving deployment and rollback backend is available.");
 
     let args: Vec<String> = env::args().collect();
     let is_test = args.iter().any(|arg| arg == "--test");
@@ -44,42 +51,11 @@ fn main() {
         return;
     }
 
-    if is_auto && env::var("AWEOS_ALLOW_DESTRUCTIVE_INSTALL").ok().as_deref() != Some("1") {
-        eprintln!("[INSTALLER AUTO] Refusing destructive unattended installation.");
-        eprintln!("[INSTALLER AUTO] Set AWEOS_ALLOW_DESTRUCTIVE_INSTALL=1 only in a controlled environment.");
-        std::process::exit(2);
-    }
-
     if is_auto {
-        println!("[INSTALLER AUTO] Destructive non-interactive installation explicitly authorized.");
-        loop {
-            println!("{}", ui::render_screen(&state, &i18n));
-            if matches!(state.current_step, InstallerStep::Complete | InstallerStep::Error(_)) {
-                break;
-            }
-            if state.current_step == InstallerStep::Installing {
-                let target_mount = std::path::Path::new("/mnt/aweos-target");
-                let res = engine::execute_installation(&mut state, target_mount, |st, pct, op| {
-                    st.progress_percent = pct;
-                    st.current_operation = op.to_string();
-                    println!("[INSTALL ENGINE {}%] {}", pct, op);
-                });
-                match res {
-                    Ok(_) => state.current_step = InstallerStep::Complete,
-                    Err(e) => state.current_step = InstallerStep::Error(e),
-                }
-                continue;
-            }
-            state.next_step();
-        }
-
-        if matches!(state.current_step, InstallerStep::Error(_)) {
-            eprintln!("[INSTALLER AUTO] Installation failed: {:?}", state.current_step);
-            std::process::exit(1);
-        }
-
-        println!("[INSTALLER AUTO] Installation completed successfully.");
-        return;
+        eprintln!("[INSTALLER AUTO] Disabled for data safety.");
+        eprintln!("[INSTALLER AUTO] The current installer cannot preserve existing partitions and user data.");
+        eprintln!("[INSTALLER AUTO] AWEOS_ALLOW_DESTRUCTIVE_INSTALL is not an override; no disk operations were attempted.");
+        std::process::exit(2);
     }
 
     let stdin = io::stdin();
@@ -133,9 +109,18 @@ fn main() {
                 i18n.set_language(state.language);
             }
             "B" => state.prev_step(),
-            "I" if state.current_step == InstallerStep::Summary => state.current_step = InstallerStep::Installing,
+            "I" if state.current_step == InstallerStep::Summary => {
+                state.current_step = InstallerStep::Error(
+                    "Disk installation is disabled for data safety; no disk operations were attempted.".to_string()
+                );
+            },
             _ => state.next_step(),
         }
+    }
+
+    if let InstallerStep::Error(error) = &state.current_step {
+        eprintln!("[INSTALLER] {}", error);
+        std::process::exit(1);
     }
 }
 
@@ -153,6 +138,23 @@ mod tests {
         assert_eq!(state.current_step, InstallerStep::Keyboard);
         state.prev_step();
         assert_eq!(state.current_step, InstallerStep::Language);
+    }
+
+    #[test]
+    fn test_default_password_is_not_a_known_credential() {
+        let state = InstallerState::default();
+        assert!(state.password.is_empty());
+        assert!(state.password_confirm.is_empty());
+    }
+
+    #[test]
+    fn test_summary_cannot_advance_to_installation() {
+        let mut state = InstallerState::default();
+        while state.current_step != InstallerStep::Summary {
+            state.next_step();
+        }
+        state.next_step();
+        assert_eq!(state.current_step, InstallerStep::Summary);
     }
 
     #[test]
@@ -175,6 +177,18 @@ mod tests {
     }
 
     #[test]
+    fn test_summary_discloses_disabled_installation() {
+        let mut state = InstallerState::default();
+        while state.current_step != InstallerStep::Summary {
+            state.next_step();
+        }
+        let rendered = ui::render_screen(&state, &I18n::new(state.language));
+        assert!(rendered.contains("DISK INSTALLATION IS DISABLED"));
+        assert!(rendered.contains("No disk, partition, filesystem, bootloader, or user data will be changed"));
+        assert!(rendered.contains("[I] Unavailable"));
+    }
+
+    #[test]
     fn test_installer_rejects_missing_target_device() {
         let mut state = InstallerState::default();
         state.selected_disk = Some(disk::DiskInfo {
@@ -189,6 +203,6 @@ mod tests {
         let target = std::path::Path::new("build/test-target");
         let res = engine::execute_installation(&mut state, target, |_st, _pct, _op| {});
         assert!(res.is_err());
-        assert!(res.unwrap_err().contains("not a real block device"));
+        assert!(res.unwrap_err().contains("disabled for data safety"));
     }
 }

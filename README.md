@@ -4,12 +4,16 @@ AWEOS is an x86_64 Linux-based operating-system project with its own boot
 integration, root filesystem, initramfs, Rust-based AYUI desktop work, system
 utilities, package-management experiments, and C installer/updater components.
 
-> **Development status — 2026-11-04: not production-ready.** The repository has
+> **Development status — 2026-11-05: not production-ready.** The repository has
 > working component tests and an image-build pipeline, but full BIOS/UEFI
 > end-to-end boot and real-hardware validation are not yet established. Do not
-> use the current installer/updater to modify a disk containing valuable data.
-> Their C transaction path deliberately fails closed until a real staging,
-> deployment, bootloader, verification, and rollback backend exists.
+> use the installer/updater to modify a disk containing valuable data. Both
+> the C transaction path and the Rust GUI installer now fail closed: the
+> previous Rust flow automatically selected the first disk and repartitioned
+> and formatted it without a tested data-preserving backup/rollback path.
+> Unattended `--auto` installation is disabled even if the legacy environment
+> override is set. No target disk is selected automatically. See
+> [installer safety status](docs/INSTALLER-SAFETY.md).
 
 ## Current implementation
 
@@ -31,10 +35,14 @@ utilities, package-management experiments, and C installer/updater components.
   unsupported modes instead of guessing. It is a limited recovery desktop,
   not a native DRM/KMS compositor; GPU acceleration, multi-monitor, and full
   input-device support remain unverified.
-- **Installer and updater:** the C transaction engine rejects unimplemented
-  staging/deployment/verification stages. It must not report installation or
-  update success while those backends are absent. Disk formatting and
-  partitioning are not performed by initramfs root discovery.
+- **Installer and updater:** both the C transaction engine and Rust GUI
+  installer fail closed. The Rust whole-disk partition/format API is disabled,
+  the first disk is not auto-selected, the default password is empty, and
+  `--auto` cannot bypass the safety hold. The installer remains a preview only
+  until a data-preserving target-volume staging, backup, verification,
+  bootloader deployment, and rollback backend is implemented and tested.
+  Disk formatting and partitioning are not performed by initramfs root
+  discovery.
 - **Package management:** `awepkg` validates archive paths and entry types,
   refuses overwrites and symlink traversal, records SHA-256 ownership hashes,
   rolls back interrupted installs, and preserves locally modified files on
