@@ -542,3 +542,101 @@ fix is considered validated; all previous heads failed as described above.
 5. Merge the validated PR chain (#27 through #39) toward master only
    after the boot blocker is diagnosed or an explicit merge decision
    is made by the maintainer.
+
+
+## 2026-11-05 — Preserve primary QEMU CPU diagnostics across retry
+
+### Inspection and evidence
+
+- Re-inspected the active PR #39 head `2b59d27385cf8d2def28a1b504e007b865a4dbd4`,
+  open PR stack, current workflow runs, and the QEMU diagnostic artifact from
+  run [#41858076657](https://github.com/ARARAT33/AWEOS/actions/runs/41858076657).
+- The full image build, ISO assembly, /linux integrity checks, and shell/C
+  regression suite passed on that head. The primary QEMU `qemu64` run failed
+  before rootfs hand-off in BIOS, UEFI, and direct-kernel modes; QEMU reported
+  invalid-opcode (#UD), then #GP and a triple fault.
+- The diagnostic retry with CPU model `max` reached the AYUI framebuffer
+  first-frame marker in BIOS and UEFI and the explicit headless console in
+  direct-kernel mode. This is diagnostic evidence only; it does not resolve
+  the qemu64 failure.
+- Found that serial logs were CPU-suffixed, but QEMU `-D` instruction/debug
+  paths were hard-coded. The `max` retry therefore overwrote the primary
+  `qemu64` debug logs, preventing reliable comparison of the failing and
+  working CPU models.
+
+### Implemented
+
+- Give BIOS, UEFI, and direct-kernel QEMU debug logs the same CPU-model suffix
+  as their corresponding serial logs.
+- Extend the mock QEMU runner test to write a marker into each `-D` file,
+  run a failing `qemu64` pass followed by a successful `max` pass, and assert
+  that all six debug logs remain distinct and retain the correct CPU marker.
+- Keep the primary `qemu64` boot check mandatory; no fallback to `max` is
+  treated as a passing compatibility result.
+- No changes to `/linux`, installer/updater behavior, disks, partitions, or
+  user data.
+
+### Files changed
+
+- `scripts/run-qemu-tests.sh`
+- `scripts/test-qemu-test-runner.sh`
+- `docs/AI-DEVELOPMENT-LOG.md`
+
+### Validation
+
+- The new regression is wired into the existing `make test-shell` driver via
+  `scripts/test-qemu-test-runner.sh`.
+- A fresh GitHub Actions run on this branch is required to establish PASS.
+  The prior PR #39 results do not validate this change.
+- BIOS/UEFI with `qemu64` remain failed until the preserved instruction trace
+  is inspected and the underlying CPU/boot issue is fixed.
+
+### Next priorities
+
+1. Run the QEMU runner regression and verify primary/retry debug artifacts are
+   both retained.
+2. Inspect the preserved qemu64 instruction trace at the faulting RIP and map
+   it to the exact bootloader/kernel image.
+3. Fix the underlying qemu64 compatibility fault without weakening the
+   baseline CPU test.
+4. Re-run image build, BIOS/UEFI desktop boot, and direct-kernel headless boot.
+
+
+## 2026-11-05 — Restore QEMU runner executable mode
+
+- The new userland workflow [#41970701983](https://github.com/ARARAT33/AWEOS/actions/runs/41970701983)
+  passed on PR #40 head `767e75c3d887c405927a257be0330388a19ca476`:
+  all 13 shell/C regression scripts, repository-boundary and Cargo metadata
+  checks, Rust workspace tests, release binaries, expected-binary checks, and
+  the Xvfb AYUI compositor smoke test succeeded.
+- The full image workflow [#41970701981](https://github.com/ARARAT33/AWEOS/actions/runs/41970701981)
+  built the kernel, rootfs, initramfs, and hybrid ISO and passed both
+  `/linux` integrity checks. It then failed before launching QEMU:
+  `./scripts/run-qemu-tests.sh: Permission denied` (exit 126). The diagnostic
+  retry hit the same error, so this run produced no new BIOS/UEFI/direct-kernel
+  boot result.
+- Root cause: the Git tree commit that added CPU-suffixed debug paths recorded
+  `scripts/run-qemu-tests.sh` as mode `100644`, although its parent had mode
+  `100755`. This was a Git file-mode regression introduced by the API tree
+  update, not a kernel or QEMU failure.
+- Restore `scripts/run-qemu-tests.sh` to mode `100755` and add a regression
+  assertion that fails the shell suite if this directly executed runner loses
+  its executable bit again.
+- No changes to `/linux`, installer/updater behavior, disks, partitions, or
+  user data.
+
+### Validation status
+
+- Userland validation: PASS on the previous code head as above.
+- The executable-mode assertion and corrected mode require a fresh CI run.
+- QEMU boot validation remains pending; do not infer a qemu64 result from
+  workflow #41970701981 because QEMU was never launched.
+
+### Next priorities
+
+1. Verify the executable-mode assertion and the full shell/C suite on the new
+   head.
+2. Re-run image build and confirm QEMU is actually launched.
+3. Preserve and inspect qemu64 and max CPU debug logs separately.
+4. Diagnose and fix the qemu64 boot fault without treating the max retry as
+   a compatibility pass.

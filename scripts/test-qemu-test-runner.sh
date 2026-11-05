@@ -5,6 +5,10 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [ ! -x "$repo_root/scripts/run-qemu-tests.sh" ]; then
+    echo "ERROR: scripts/run-qemu-tests.sh must retain executable mode (100755)." >&2
+    exit 1
+fi
 tmp_root="$(mktemp -d)"
 trap 'rm -rf -- "$tmp_root"' EXIT
 
@@ -49,6 +53,12 @@ while (($#)); do
     esac
 done
 
+# Record the CPU model in the exact debug file passed through QEMU's -D option.
+# This verifies that a later diagnostic retry cannot overwrite primary logs.
+if [[ -n "$debug_log" ]]; then
+    printf 'mock cpu=%s\n' "${AWEOS_QEMU_CPU:-qemu64}" > "$debug_log"
+fi
+
 if [[ "${MOCK_QEMU_MODE:-success}" == "desktop-fails" ]]; then
     echo 'AWEOS ROOTFS READY: mode=ayui'
     echo 'AWEOS RECOVERY SHELL READY'
@@ -74,7 +84,7 @@ fi
 
 if [[ "${MOCK_QEMU_MODE:-success}" == "fail-bios" && "$is_uefi" -eq 0 && "$is_kernel" -eq 0 ]]; then
     if [[ -n "$debug_log" ]]; then
-        printf 'simulated BIOS reset\n' > "$debug_log"
+        printf 'simulated BIOS reset\n' >> "$debug_log"
     fi
     echo 'simulated BIOS boot failure' >&2
     exit 1
@@ -118,6 +128,7 @@ test -s "$build_dir/qemu-bios-debug.log"
 
 # All three boot paths must pass when the mock firmware and QEMU runs succeed.
 PATH="$mock_bin:$PATH" \
+AWEOS_QEMU_CPU=max \
 AWEOS_UEFI_FIRMWARE="$firmware" \
 MOCK_QEMU_MODE=success \
     bash "$repo_root/scripts/run-qemu-tests.sh" "$build_dir" all \
@@ -125,6 +136,12 @@ MOCK_QEMU_MODE=success \
 grep -q 'SUCCESS: AWEOS BIOS boot' "$tmp_root/success-output.log"
 grep -q 'SUCCESS: AWEOS UEFI boot' "$tmp_root/success-output.log"
 grep -q 'SUCCESS: AWEOS direct kernel boot reached the verified headless rootfs console' "$tmp_root/success-output.log"
+for mode in bios uefi kernel; do
+    test -s "$build_dir/qemu-$mode-debug.log"
+    test -s "$build_dir/qemu-$mode-max-debug.log"
+    grep -q "^mock cpu=qemu64$" "$build_dir/qemu-$mode-debug.log"
+    grep -q "^mock cpu=max$" "$build_dir/qemu-$mode-max-debug.log"
+done
 
 # A rootfs that falls back to the recovery console must not be misreported as a desktop boot.
 set +e
