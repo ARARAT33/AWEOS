@@ -130,7 +130,7 @@ if [ "${TARGET_MODE}" = "all" ] || [ "${TARGET_MODE}" = "bios" ]; then
         -monitor none \
         -no-reboot \
         -d "${QEMU_DEBUG_FLAGS}" \
-        -D "${BUILD_DIR}/qemu-bios-debug.log"; then
+        -D "${BUILD_DIR}/qemu-bios${CPU_SUFFIX}-debug.log"; then
         failures=$((failures + 1))
     fi
 fi
@@ -163,7 +163,7 @@ if [ "${TARGET_MODE}" = "all" ] || [ "${TARGET_MODE}" = "uefi" ]; then
             -monitor none \
             -no-reboot \
             -d "${QEMU_DEBUG_FLAGS}" \
-            -D "${BUILD_DIR}/qemu-uefi-debug.log"; then
+            -D "${BUILD_DIR}/qemu-uefi${CPU_SUFFIX}-debug.log"; then
             failures=$((failures + 1))
         fi
     else
@@ -190,7 +190,7 @@ if [ "${TARGET_MODE}" = "all" ] || [ "${TARGET_MODE}" = "kernel" ]; then
         -monitor none \
         -no-reboot \
         -d "${QEMU_DEBUG_FLAGS}" \
-        -D "${BUILD_DIR}/qemu-kernel-debug.log"; then
+        -D "${BUILD_DIR}/qemu-kernel${CPU_SUFFIX}-debug.log"; then
         failures=$((failures + 1))
     fi
 fi
