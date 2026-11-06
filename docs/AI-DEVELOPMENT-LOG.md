@@ -1066,3 +1066,79 @@ is not counted as a primary boot pass.
   - https://github.com/ARARAT33/AWEOS/actions/runs/42164070638
   - https://github.com/ARARAT33/AWEOS/actions/runs/42164070651
   - https://github.com/ARARAT33/AWEOS/actions/runs/42164070703
+
+## 2026-11-06 — Publish the qemu64 faulting instruction from CI instead of a 108 MB artifact download
+
+### Inspection and evidence
+
+- Followed the protocol: re-inspected the repository tree outside the
+  protected `/linux` source, the open PR stack (#27–#42), the latest runs,
+  and this log before editing.
+- PR #42 head `caf5bc6` has green userland and package-safety runs; the full
+  image/boot workflow `#42164070703` completed with **failure** at the known
+  primary `qemu64` boot blocker (exit 1/exit 2 annotations), after ~20 minutes.
+  It produced the corrected `-dfilter 0x3c00000..0x3d00000` tagged instruction
+  trace in the 108 MB `AWEOS-QEMU-diagnostics` artifact.
+- The full diagnostics artifact cannot be downloaded from this environment
+  (unauthenticated GitHub API rate limit, no HTTP client in the sandbox), so
+  the captured faulting instruction was still unread. The run page
+  annotations are readable without authentication, which is the already
+  proven route for publishing CI evidence.
+
+### Implemented on a new stacked branch (head `caf5bc6`)
+
+- Added `scripts/extract-qemu-instrtrace.sh`: summarizes the last CPU fault
+  event (`v=06`/`v=08`/`v=0d`), the recent `check_exception` lines, and the
+  `in_asm` disassembly around the faulting instruction pointer from a tagged
+  QEMU debug log. Output is bounded (80 lines per log), and missing, empty,
+  and fault-free logs are reported explicitly instead of failing silently.
+- Added `scripts/test-qemu-instrtrace-extract.sh`: a fabricated-log
+  regression covering fault-event extraction, faulting-address disassembly
+  lookup, output bounds (≤320 lines for four logs), the fault-free tail
+  fallback, and the empty/missing/usage-error paths.
+- Wired the new test into `make test-shell` via `scripts/run-test-shell.sh`
+  (14 test scripts now; list order otherwise unchanged).
+- Extended `build-aweos-x86_64.yml`: after the tagged qemu64 instruction-trace
+  retry, a new step runs the extractor over every
+  `build/qemu-*-instrtrace-debug.log`, prints the summary in the job log and
+  `GITHUB_STEP_SUMMARY`, and emits a `::error::` annotation with the faulting
+  event line and instruction, so the exact faulting instruction becomes
+  readable from the run page without any artifact download. A small dedicated
+  `AWEOS-qemu64-instrtrace-summary` artifact (30-day retention) holds the same
+  text. The summary step is diagnostics-only and is skipped when the guest
+  reached its recovery console; it cannot turn a failed primary qemu64 boot
+  into a pass.
+- No changes to `/linux`; no disk, partition, installer, updater, or user-data
+  operations.
+
+### Files changed
+
+- `scripts/extract-qemu-instrtrace.sh` (new)
+- `scripts/test-qemu-instrtrace-extract.sh` (new)
+- `scripts/run-test-shell.sh`
+- `.github/workflows/build-aweos-x86_64.yml`
+- `docs/AI-DEVELOPMENT-LOG.md`
+
+### Validation status
+
+- All pushed files were read back from the branch after the push to verify the
+  API transport did not corrupt shell syntax or YAML expressions (a known
+  past defect with Makefile/`$` escapes and file modes).
+- Fresh userland and full image/boot workflows on this branch are required
+  before this change is considered validated; the PR #42 results do not
+  validate it.
+- The qemu64 #UD at `RIP=0x3cd63c7` remains undiagnosed until the new summary
+  annotation or artifact from a failing full-image run is inspected.
+
+### Next priorities
+
+1. Run this branch's userland workflow (new extraction regression) and the
+   full image/boot workflow.
+2. Read the faulting instruction from the new `::error::` annotation or the
+   small `AWEOS-qemu64-instrtrace-summary` artifact, and map it to the exact
+   image (Limine decompressor stage, compressed kernel head, or kernel
+   proper) using `System.map`/`vmlinux` from the diagnostics artifact.
+3. Fix the underlying qemu64 compatibility fault without weakening the
+   baseline CPU test, then re-run BIOS/UEFI/direct-kernel validation.
+4. Reconcile the fail-closed ISO-verification work (PR #29) into the reviewed
+   stack and re-run image construction on the combined head.
