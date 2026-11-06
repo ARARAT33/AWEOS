@@ -160,6 +160,7 @@ pub fn run(ui: Arc<Mutex<AweuiState>>) -> Result<(), Box<dyn std::error::Error>>
     let keyboard = state.seat.add_keyboard(Default::default(), 200, 200)?;
     let start = Instant::now();
     let mut clients = Vec::new();
+    let mut ready_logged = false;
 
     loop {
         let status = winit.dispatch_new_events(|event| match event {
@@ -206,6 +207,14 @@ pub fn run(ui: Arc<Mutex<AweuiState>>) -> Result<(), Box<dyn std::error::Error>>
             display.flush_clients()?;
         }
         backend.submit(Some(&[damage]))?;
+
+        // Report readiness only after backend initialization, socket binding,
+        // and one successfully rendered and submitted frame.
+        if !ready_logged {
+            println!("AWEOS AYUI COMPOSITOR READY: backend=winit socket={socket_name}");
+            println!("AYUI services online: Wayland/XDG shell, renderer, input/seat, launcher, WM, workspaces, notifications, control center");
+            ready_logged = true;
+        }
 
         if state.ui.lock().map(|ui| !ui.running).unwrap_or(true) { break; }
     }

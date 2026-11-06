@@ -1,0 +1,41 @@
+name: Validate AWEOS Package Security
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/validate-package-safety.yml'
+      - 'scripts/awepkg.sh'
+      - 'scripts/test-awepkg.sh'
+      - 'scripts/test-aosin-fail-closed.sh'
+      - 'src/aosin/**'
+      - 'Makefile'
+  pull_request:
+    paths:
+      - '.github/workflows/validate-package-safety.yml'
+      - 'scripts/awepkg.sh'
+      - 'scripts/test-awepkg.sh'
+      - 'scripts/test-aosin-fail-closed.sh'
+      - 'src/aosin/**'
+      - 'Makefile'
+permissions:
+  contents: read
+jobs:
+  package-safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout AWEOS
+        uses: actions/checkout@v5
+      - name: Install BusyBox for target-runtime compatibility tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y busybox
+
+      - name: Verify /linux remains read-only
+        run: bash scripts/verify-linux-readonly.sh
+      - name: Check package manager shell syntax
+        run: sh -n scripts/awepkg.sh
+      - name: Run shell package-manager integration tests
+        run: bash scripts/test-awepkg.sh
+      - name: Run C AOSIN fail-closed regression with sanitizers
+        run: bash scripts/test-aosin-fail-closed.sh

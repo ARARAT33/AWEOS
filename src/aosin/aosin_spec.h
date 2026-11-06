@@ -31,6 +31,7 @@ typedef struct {
     bool is_installed;
 } aosin_pkg_info_t;
 
+/* These v1 APIs fail closed until authenticated payload serialization and deployment exist. */
 int aosin_pkg_create(const char *output_file, aosin_pkg_type_t type, const char *name, const char *version, const char *payload_dir);
 int aosin_pkg_inspect(const char *pkg_file, aosin_pkg_info_t *info);
 int aosin_pkg_install(const char *pkg_file, const char *install_root);

@@ -1,7 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
-BUILD_DIR="${1:-build}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd -P)"
+source "$SCRIPT_DIR/lib/build-safety.sh"
+
+BUILD_DIR="$(aweos_prepare_build_dir "${1:-build}" "$REPO_ROOT")"
 ROOTFS_DIR="${BUILD_DIR}/rootfs"
 ROOTFS_IMG="${BUILD_DIR}/rootfs.img"
 IMG_SIZE_MB="${AWEOS_ROOTFS_SIZE_MB:-4096}"
@@ -139,7 +143,7 @@ for binary in ${RUST_BINS}; do
     install -D -m 0755 "${source}" "${ROOTFS_DIR}/usr/bin/${binary}"
 done
 
-for helper in aweos-info.sh aweos-diagnostics.sh awepkg.sh; do
+for helper in aweos-info.sh aweos-diagnostics.sh awepkg.sh aweos-session.sh; do
     source="scripts/${helper}"
     test -f "${source}"
     install -D -m 0755 "${source}" "${ROOTFS_DIR}/usr/bin/${helper%.sh}"

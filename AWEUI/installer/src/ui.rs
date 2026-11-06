@@ -52,31 +52,37 @@ pub fn render_screen(state: &InstallerState, i18n: &I18n) -> String {
             out.push_str(&format!("  Actions: [C] {}   [B] {}\n", i18n.t("continue"), i18n.t("back")));
         }
         InstallerStep::InstallationType => {
-            out.push_str("  [ INSTALLATION TYPE ]\n\n");
-            out.push_str(&format!("  {}\n\n", i18n.t("install_type_title")));
-            out.push_str(&format!("   (*) {}\n", i18n.t("erase_disk")));
-            out.push_str(&format!("   ( ) {}\n\n", i18n.t("custom_part")));
+            out.push_str("  [ INSTALLATION TYPE — SAFETY HOLD ]\n\n");
+            out.push_str("  Disk installation is currently DISABLED.\n");
+            out.push_str("  The former flow repartitioned and formatted the whole selected disk.\n");
+            out.push_str("  A tested data-preserving backup and rollback backend is not ready.\n");
+            out.push_str("  [DISABLED] Erase entire disk\n");
+            out.push_str("  [NOT IMPLEMENTED] Custom partition / preserve existing OS\n\n");
+            out.push_str("  No disk will be modified by this installer build.\n\n");
             out.push_str(&format!("  Actions: [C] {}   [B] {}\n", i18n.t("continue"), i18n.t("back")));
         }
         InstallerStep::DiskSelection => {
-            out.push_str("  [ TARGET DISK SELECTION ]\n\n");
+            out.push_str("  [ TARGET DISK INFORMATION ]\n\n");
             out.push_str(&format!("  {}\n\n", i18n.t("select_disk_title")));
             if let Some(disk) = &state.selected_disk {
                 out.push_str(&format!("  Selected Target Disk: {} - {} ({:.1} GB)\n\n", disk.device, disk.model, disk.size_gb));
             } else {
-                out.push_str("  No disk selected.\n\n");
+                out.push_str("  No target disk is selected.\n\n");
             }
+            out.push_str("  Device discovery is informational only; no disk is auto-selected.\n");
+            out.push_str("  Disk installation remains disabled and this screen cannot authorize writes.\n\n");
             out.push_str(&format!("  Actions: [C] {}   [B] {}\n", i18n.t("continue"), i18n.t("back")));
         }
         InstallerStep::Partitioning => {
-            out.push_str("  [ PARTITION PLAN SUMMARY ]\n\n");
-            out.push_str(&format!("  Boot Firmware Mode: {:?}\n", state.boot_mode));
+            out.push_str("  [ PARTITION PLAN — PREVIEW ONLY ]\n\n");
+            out.push_str("  Firmware mode is not used while disk installation is disabled.\n");
             if let Some(disk) = &state.selected_disk {
-                out.push_str(&format!("  Target Device: {}\n\n", disk.device));
-                out.push_str("  Planned Partition Layout:\n");
-                out.push_str("   - Partition 1: ESP (512 MB, FAT32, /boot/efi)\n");
-                out.push_str(&format!("   - Partition 2: AWEOS Root ({:.1} GB, ext4, /)\n\n", disk.size_gb - 0.5));
+                out.push_str(&format!("  Informational Device: {} ({:.1} GB)\n", disk.device, disk.size_gb));
+            } else {
+                out.push_str("  No target device selected.\n");
             }
+            out.push_str("\n  No partition table will be written and no filesystem will be formatted.\n");
+            out.push_str("  Data-preserving partition selection and rollback are not implemented.\n\n");
             out.push_str(&format!("  Actions: [C] {}   [B] {}\n", i18n.t("continue"), i18n.t("back")));
         }
         InstallerStep::UserAccount => {
@@ -85,8 +91,10 @@ pub fn render_screen(state: &InstallerState, i18n: &I18n) -> String {
             out.push_str(&format!("   Full Name:     [ {} ]\n", state.full_name));
             out.push_str(&format!("   Username:      [ {} ]\n", state.username));
             out.push_str(&format!("   Hostname:      [ {} ]\n", state.hostname));
-            out.push_str(&format!("   Password:      [ {} ]\n", "*".repeat(state.password.len())));
-            out.push_str(&format!("   Confirm Pass:  [ {} ]\n\n", "*".repeat(state.password_confirm.len())));
+            let password_display = if state.password.is_empty() { "(not set)".to_string() } else { "*".repeat(state.password.len()) };
+            let confirm_display = if state.password_confirm.is_empty() { "(not set)".to_string() } else { "*".repeat(state.password_confirm.len()) };
+            out.push_str(&format!("   Password:      [ {} ]\n", password_display));
+            out.push_str(&format!("   Confirm Pass:  [ {} ]\n\n", confirm_display));
             out.push_str(&format!("  Actions: [C] {}   [B] {}\n", i18n.t("continue"), i18n.t("back")));
         }
         InstallerStep::Timezone => {
@@ -96,16 +104,19 @@ pub fn render_screen(state: &InstallerState, i18n: &I18n) -> String {
             out.push_str(&format!("  Actions: [C] {}   [B] {}\n", i18n.t("continue"), i18n.t("back")));
         }
         InstallerStep::Summary => {
-            out.push_str("  [ INSTALLATION SUMMARY ]\n\n");
+            out.push_str("  [ INSTALLATION SUMMARY — NOT EXECUTABLE ]\n\n");
             out.push_str(&format!("  {}\n\n", i18n.t("summary_title")));
             out.push_str(&format!("   Language: {}\n", state.language.name()));
             out.push_str(&format!("   Keyboard: {}\n", state.keyboard_layout));
-            out.push_str(&format!("   Target Disk: {}\n", state.selected_disk.as_ref().map(|d| d.device.as_str()).unwrap_or("None")));
+            out.push_str(&format!("   Target Disk: {}\n", state.selected_disk.as_ref().map(|d| d.device.as_str()).unwrap_or("Not selected")));
             out.push_str(&format!("   User: {} ({})\n", state.username, state.full_name));
             out.push_str(&format!("   Hostname: {}\n", state.hostname));
             out.push_str(&format!("   Timezone: {}\n\n", state.timezone));
-            out.push_str(&format!("  {}\n\n", i18n.t("confirm_install_warning")));
-            out.push_str(&format!("  Actions: [I] {}   [B] {}\n", i18n.t("install"), i18n.t("back")));
+            out.push_str("  DISK INSTALLATION IS DISABLED FOR DATA SAFETY.\n");
+            out.push_str("  The old implementation erased/reformatted the selected disk.\n");
+            out.push_str("  A tested backup, staging, verification, and rollback path is not available.\n");
+            out.push_str("  No disk, partition, filesystem, bootloader, or user data will be changed.\n\n");
+            out.push_str("  Actions: [I] Unavailable   [B] Back\n");
         }
         InstallerStep::Installing => {
             out.push_str("  [ INSTALLATION IN PROGRESS ]\n\n");
@@ -115,9 +126,8 @@ pub fn render_screen(state: &InstallerState, i18n: &I18n) -> String {
         }
         InstallerStep::Complete => {
             out.push_str("  [ INSTALLATION COMPLETE ]\n\n");
-            out.push_str(&format!("  {}\n", i18n.t("complete_title")));
-            out.push_str("  AWEOS has been successfully installed to target disk.\n");
-            out.push_str("  You can now restart into your newly installed system.\n\n");
+            out.push_str("  No disk installation is enabled in this build.\n");
+            out.push_str("  This screen must not be used to claim that a target disk was installed.\n\n");
             out.push_str(&format!("  Actions: [R] {}\n", i18n.t("reboot")));
         }
         InstallerStep::Error(err) => {

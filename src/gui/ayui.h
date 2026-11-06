@@ -54,8 +54,18 @@ typedef struct {
     uint32_t bpp;
     uint32_t pitch_bytes;
     uint32_t pitch_pixels;
+    uint32_t xoffset;
+    uint32_t yoffset;
     size_t screen_size;
-    uint32_t *front_buffer;
+    uint32_t red_offset;
+    uint32_t red_length;
+    uint32_t green_offset;
+    uint32_t green_length;
+    uint32_t blue_offset;
+    uint32_t blue_length;
+    uint32_t transp_offset;
+    uint32_t transp_length;
+    uint8_t *front_buffer;
     uint32_t *back_buffer;
 } ayui_fb_t;
 

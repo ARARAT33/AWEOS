@@ -3,8 +3,10 @@
 # IMPORTANT: /linux is a vendored, strictly read-only kernel tree.
 
 SHELL := /bin/bash
-BUILD_DIR ?= $(PWD)/build
-KERNEL_SRC := $(PWD)/linux
+REPO_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+BUILD_DIR ?= $(REPO_ROOT)/build
+AWEOS_DESKTOP ?= ayui
+KERNEL_SRC := $(REPO_ROOT)/linux
 KERNEL_BUILD_DIR := $(BUILD_DIR)/linux-x86_64
 ISO_PATH := $(BUILD_DIR)/AWEOS-x86_64.iso
 ROOTFS_IMG := $(BUILD_DIR)/rootfs.img
@@ -29,7 +31,8 @@ verify-linux verify-linux-readonly:
 	@./scripts/verify-linux-readonly.sh
 
 rust-build:
-	@mkdir -p $(BUILD_DIR)
+	@source "$(REPO_ROOT)/scripts/lib/build-safety.sh"; aweos_prepare_build_dir "$(BUILD_DIR)" "$(REPO_ROOT)" >/dev/null
+	@mkdir -p "$(BUILD_DIR)"
 	@cargo build --workspace --release
 	@set -euo pipefail; \
 	for binary in $(RUST_BINS); do \
@@ -40,17 +43,18 @@ rust-build:
 userland: rust-build
 
 kernel: verify-linux
-	@mkdir -p $(KERNEL_BUILD_DIR)
+	@source "$(REPO_ROOT)/scripts/lib/build-safety.sh"; aweos_prepare_build_dir "$(BUILD_DIR)" "$(REPO_ROOT)" >/dev/null
+	@mkdir -p "$(KERNEL_BUILD_DIR)"
 	@./scripts/config-kernel.sh $(KERNEL_SRC) $(KERNEL_BUILD_DIR)
 	@$(MAKE) -C $(KERNEL_SRC) O=$(KERNEL_BUILD_DIR) -j"$$(nproc)" bzImage
 	@test -s $(KERNEL_BUILD_DIR)/arch/x86/boot/bzImage
 
 rootfs: rust-build
-	@AWEOS_DESKTOP=${AWEOS_DESKTOP:-ayui} ./scripts/build-rootfs.sh $(BUILD_DIR)
-	@./scripts/validate-rootfs-layout.sh $(BUILD_DIR)
+	@AWEOS_DESKTOP=$(AWEOS_DESKTOP) ./scripts/build-rootfs.sh $(BUILD_DIR)
+	@AWEOS_DESKTOP=$(AWEOS_DESKTOP) bash ./scripts/validate-rootfs-layout.sh $(BUILD_DIR)
 
 validate-rootfs:
-	@./scripts/validate-rootfs-layout.sh $(BUILD_DIR)
+	@AWEOS_DESKTOP=$(AWEOS_DESKTOP) bash ./scripts/validate-rootfs-layout.sh $(BUILD_DIR)
 
 initramfs: rootfs
 	@./scripts/build-initramfs.sh $(BUILD_DIR)
@@ -90,13 +94,10 @@ test-rust:
 	@cargo test --workspace
 
 test-shell:
-	@set -euo pipefail; \
-	for script in $(SHELL_SCRIPTS); do \
-		bash -n "$$script"; \
-	done
+	@bash ./scripts/run-test-shell.sh
 
 test-qemu: iso
-	@./scripts/run-qemu-tests.sh $(BUILD_DIR)
+	@bash ./scripts/run-qemu-tests.sh $(BUILD_DIR)
 
 verify-artifacts:
 	@set -euo pipefail; \
@@ -105,10 +106,11 @@ verify-artifacts:
 		$(BUILD_DIR)/aweui-control-center $(BUILD_DIR)/aweui-file-manager $(BUILD_DIR)/aweui-terminal \
 		$(BUILD_DIR)/aweui-system-monitor $(BUILD_DIR)/aweui-diagnostics $(BUILD_DIR)/aweui-text-editor \
 		$(BUILD_DIR)/aweui-calculator $(BUILD_DIR)/aweui-firstboot-setup $(BUILD_DIR)/aweui-user-app-template \
+		$(if $(filter ayui,$(AWEOS_DESKTOP)),$(ROOTFS_DIR)/usr/bin/aweui-ayui-fb,) \
 		$(KERNEL_BUILD_DIR)/arch/x86/boot/bzImage $(INITRAMFS) $(ROOTFS_IMG) \
 		$(ISO_PATH) $(BUILD_DIR)/AWEOS-x86_64-disk.img; do \
 		test -s "$$artifact" || { echo "ERROR: missing or empty artifact $$artifact" >&2; exit 1; }; \
 	done
 
 clean:
-	@rm -rf $(BUILD_DIR)
+	@bash "$(REPO_ROOT)/scripts/clean-build.sh" "$(BUILD_DIR)"

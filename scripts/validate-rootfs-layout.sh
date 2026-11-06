@@ -24,12 +24,27 @@ for required_file in \
     etc/aweui/config.toml \
     sbin/init \
     usr/share/wayland-sessions/ayui.desktop \
-    usr/bin/aweui; do
+    usr/bin/aweui \
+    usr/bin/awepkg \
+    usr/bin/aweos-session; do
     [ -s "${ROOTFS_DIR}/${required_file}" ] || fail "required rootfs file is missing or empty: /${required_file}"
 done
 
 [ -x "${ROOTFS_DIR}/sbin/init" ] || fail "/sbin/init is not executable"
 [ -x "${ROOTFS_DIR}/bin/busybox" ] || fail "/bin/busybox is not executable"
+[ -x "${ROOTFS_DIR}/usr/bin/aweos-session" ] || fail "/usr/bin/aweos-session is not executable"
+[ -x "${ROOTFS_DIR}/usr/bin/awepkg" ] || fail "/usr/bin/awepkg is not executable"
+
+# Require the BusyBox applets used by the package manager in the target root.
+busybox_applets="$("${ROOTFS_DIR}/bin/busybox" --list)" || fail "cannot enumerate target BusyBox applets"
+for applet in tar sha256sum find sort awk grep sed wc tr mktemp cp chmod ln mkdir rm rmdir cat mv; do
+    printf '%s\n' "$busybox_applets" | grep -Fxq "$applet" || fail "target BusyBox is missing the applet required by awepkg: $applet"
+done
+if [ "${AWEOS_DESKTOP:-ayui}" = "ayui" ]; then
+    [ -s "${ROOTFS_DIR}/usr/bin/aweos-ayui-fb" ] || fail "AYUI framebuffer fallback is missing"
+    [ -x "${ROOTFS_DIR}/usr/bin/aweos-ayui-fb" ] || fail "AYUI framebuffer fallback is not executable"
+    grep -Fq '/usr/bin/aweos-ayui-fb' "${ROOTFS_DIR}/sbin/init" || fail "AYUI init does not configure the framebuffer fallback"
+fi
 
 awk -F: 'BEGIN { ok=0 } $1 == "aweos" && $3 == "1000" { ok=1 } END { exit ok ? 0 : 1 }' "${ROOTFS_DIR}/etc/passwd" \
     || fail "the aweos user with UID 1000 is missing from /etc/passwd"
@@ -42,5 +57,36 @@ if grep -q 'Exec=/usr/bin/aweui$' "${ROOTFS_DIR}/usr/share/wayland-sessions/ayui
 else
     fail "AYUI Wayland session does not launch /usr/bin/aweui"
 fi
+
+# Validate the actual ELF runtime closure of every packaged userland binary.
+# A file can exist and be executable while still failing execve when PT_INTERP
+# is absent or non-executable inside the target root filesystem.
+validate_elf_runtime() {
+    local binary="$1"
+    local interpreter loader ldd_output lib
+
+    readelf -h "$binary" >/dev/null 2>&1 || return 0
+    interpreter="$(readelf -l "$binary" 2>/dev/null | sed -n 's/.*Requesting program interpreter: \(.*\)]/\1/p' | head -n 1)"
+    [ -n "$interpreter" ] || return 0
+
+    loader="${ROOTFS_DIR}${interpreter}"
+    [ -f "$loader" ] && [ -x "$loader" ] || fail "ELF interpreter is missing or not executable for ${binary}: ${interpreter}"
+
+    ldd_output="$(ldd "$binary" 2>&1)" || fail "cannot inspect ELF runtime dependencies for ${binary}: ${ldd_output}"
+    if grep -Fq "not found" <<< "$ldd_output"; then
+        fail "unresolved ELF runtime dependency for ${binary}: ${ldd_output}"
+    fi
+
+    while IFS= read -r lib; do
+        [ -n "$lib" ] || continue
+        [ -e "${ROOTFS_DIR}${lib}" ] || fail "ELF dependency is missing from rootfs for ${binary}: ${lib}"
+    done < <(printf '%s\n' "$ldd_output" | awk '$2 == "=>" && $3 ~ /^\// {print $3} $1 ~ /^\/lib/ {print $1}')
+}
+
+command -v readelf >/dev/null 2>&1 || fail "readelf is required for ELF runtime validation"
+command -v ldd >/dev/null 2>&1 || fail "ldd is required for ELF runtime validation"
+while IFS= read -r -d '' binary; do
+    validate_elf_runtime "$binary"
+done < <(find "${ROOTFS_DIR}/usr/bin" -type f -print0)
 
 echo "AWEOS rootfs layout validation passed: ${ROOTFS_DIR}"
