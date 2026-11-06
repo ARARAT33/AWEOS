@@ -1042,3 +1042,27 @@ is not counted as a primary boot pass.
 4. Fix the qemu64 boot fault without weakening the baseline CPU test.
 5. Reconcile the fail-closed ISO-verification work (PR #29) into the reviewed
    stack and re-run image construction and boot tests.
+
+
+### Validation update (2026-11-06)
+
+- Updated-head userland workflow #42164070638: **PASS**. The job completed
+  successfully, including the shell/C regressions, Cargo workspace tests,
+  release userland builds, installer no-write integration, and AYUI Xvfb
+  smoke test.
+- Updated-head package-safety workflow #42164070651: **PASS**.
+- Updated-head full image/boot workflow #42164070703: the shell/C/rootfs/
+  session/QEMU-runner regression step **PASS**, the pre-build /linux
+  read-only verification **PASS**, and the Rust workspace test **PASS**.
+- The full image workflow was still in the Build AWEOS images step at the
+  time of this log update. Therefore no result is claimed yet for the new
+  real-QEMU instruction trace, BIOS/UEFI/direct-kernel boot, post-build
+  /linux check, or release artifact verification.
+- The local shell regex sanity check also passed: the Bash expression
+  accepts 0x3c00000..0x3d00000 and rejects the previous hyphen-separated
+  form. This is supplemental; the GitHub Actions regression is the
+  authoritative repository test.
+- Run links:
+  - https://github.com/ARARAT33/AWEOS/actions/runs/42164070638
+  - https://github.com/ARARAT33/AWEOS/actions/runs/42164070651
+  - https://github.com/ARARAT33/AWEOS/actions/runs/42164070703
