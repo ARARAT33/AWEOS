@@ -1142,3 +1142,23 @@ is not counted as a primary boot pass.
    baseline CPU test, then re-run BIOS/UEFI/direct-kernel validation.
 4. Reconcile the fail-closed ISO-verification work (PR #29) into the reviewed
    stack and re-run image construction on the combined head.
+
+### Local replay defect found and fixed (2026-11-06, same run)
+
+- Before trusting CI, the first extractor version was replayed locally against
+  the two real QEMU `-d int` address forms. The faulting-IP parsing only
+  matched `0x`-prefixed values, but the actual QEMU x86_64 int log uses
+  selector-form addresses (`IP=0008:0000000003cd63c7 pc=0000000003cd63c7`)
+  without any `0x`. The summary would have reported "Could not parse a
+  faulting instruction pointer" and the pushed regression would have been a
+  false pass, because its fixture used the same selector form.
+- The extractor now accepts both forms, prefers the original `v=06` event as
+  the fault to explain (falling back to the last recorded fault event), and
+  reports the disassembly for both addresses when they differ.
+- The regression gained a second fixture for the `RIP=0x...` form; the
+  output-bound assertion accounts for the fifth fixture. All fixture paths
+  were replayed locally (selector form, 0x form, fault-free fallback, empty,
+  missing, no-args usage error, and bounded total output) before the fix was
+  pushed as commit `047166f`.
+- The CI runs started on the first head `429b54f` will fail at this
+  regression by design; the corrected head `047166f` re-runs them.
