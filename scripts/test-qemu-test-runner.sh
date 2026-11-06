@@ -62,6 +62,14 @@ while (($#)); do
     esac
 done
 
+# Mirror QEMU's documented -dfilter address-range grammar for the range form
+# used by this test (start..end). This catches malformed diagnostic arguments
+# before the mock can accidentally report a false-positive boot.
+if [[ -n "$dfilter" && ! "$dfilter" =~ ^0x[[:xdigit:]]+\.\.0x[[:xdigit:]]+$ ]]; then
+    echo "qemu-system-x86_64: -dfilter $dfilter: Invalid range" >&2
+    exit 1
+fi
+
 # Record the CPU model in the exact debug file passed through QEMU's -D option.
 # This verifies that a later diagnostic retry cannot overwrite primary logs.
 if [[ -n "$debug_log" ]]; then
@@ -210,12 +218,26 @@ if [ "$rc" -eq 0 ]; then
 fi
 grep -q 'OVMF firmware not found' "$tmp_root/missing-firmware-output.log"
 
+# Reject the malformed hyphen-separated range that QEMU itself rejects.
+set +e
+PATH="$mock_bin:$PATH" \
+AWEOS_QEMU_DFILTER=0x3c00000-0x3d00000 \
+    bash "$repo_root/scripts/run-qemu-tests.sh" "$build_dir" bios \
+    > "$tmp_root/invalid-dfilter-output.log" 2>&1
+rc=$?
+set -e
+if [ "$rc" -eq 0 ]; then
+    echo "ERROR: runner mock accepted QEMU's invalid hyphen-separated -dfilter range." >&2
+    exit 1
+fi
+grep -q -- "-dfilter 0x3c00000-0x3d00000: Invalid range" "$tmp_root/invalid-dfilter-output.log"
+
 # A diagnostic instruction-trace retry with the same CPU model must write to
 # its own tagged logs and must not overwrite the primary or max-CPU logs.
 PATH="$mock_bin:$PATH" \
 AWEOS_UEFI_FIRMWARE="$firmware" \
 AWEOS_QEMU_LOG_SUFFIX=instrtrace \
-AWEOS_QEMU_DFILTER=0x3c00000-0x3d00000 \
+AWEOS_QEMU_DFILTER=0x3c00000..0x3d00000 \
 MOCK_QEMU_MODE=success \
     bash "$repo_root/scripts/run-qemu-tests.sh" "$build_dir" all \
     > "$tmp_root/trace-output.log" 2>&1
@@ -223,7 +245,7 @@ for mode in bios uefi kernel; do
     test -s "$build_dir/qemu-$mode-instrtrace.log"
     test -s "$build_dir/qemu-$mode-instrtrace-debug.log"
     grep -q "^mock cpu=qemu64$" "$build_dir/qemu-$mode-instrtrace-debug.log"
-    grep -q "^mock dfilter=0x3c00000-0x3d00000$" "$build_dir/qemu-$mode-instrtrace-debug.log"
+    grep -q "^mock dfilter=0x3c00000\.\.0x3d00000$" "$build_dir/qemu-$mode-instrtrace-debug.log"
 done
 for mode in bios uefi kernel; do
     grep -q "^mock cpu=max$" "$build_dir/qemu-$mode-max-debug.log"
