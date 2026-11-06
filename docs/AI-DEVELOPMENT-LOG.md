@@ -402,8 +402,8 @@
   now prints the name of each script before running it and emits a GitHub
   Actions `::error::` annotation naming the exact script that failed. The
   test list, order, and semantics are unchanged.
-- No changes to `/linux`; no disk, partition, installer, updater, or
-  user-data operations.
+- No changes to `/linux`; no disk, partition, installer, updater, or user-data
+  operations.
 
 ### Validation status
 
@@ -428,8 +428,8 @@
 - The underlying `make test-shell` failure observed on PR #38 head
   `d8875b4` remains undiagnosed until a run of the corrected attribution
   completes and either passes or names the failing script.
-- No changes to `/linux`; no disk, partition, installer, updater, or
-  user-data operations.
+- No changes to `/linux`; no disk, partition, installer, updater, or user-data
+  operations.
 
 ## 2026-11-04 — Move test-shell execution into scripts/run-test-shell.sh
 
@@ -449,8 +449,8 @@
 - The underlying `make test-shell` failure observed on PR #38 head
   `d8875b4` remains undiagnosed until a run of this corrected head
   completes and either passes or names the failing script.
-- No changes to `/linux`; no disk, partition, installer, updater, or
-  user-data operations.
+- No changes to `/linux`; no disk, partition, installer, updater, or user-data
+  operations.
 
 ## 2026-11-04 — Trace-attributed awepkg rollback test fix and commit-temp correction
 
@@ -505,8 +505,8 @@ fix is considered validated; all previous heads failed as described above.
   run with direct git access should restore 100755 (for example
   `git update-index --chmod=+x scripts/awepkg.sh`) for developer
   convenience. The shebang and all functional behavior are unchanged.
-- No changes to `/linux`; no disk, partition, installer, updater, or
-  user-data operations.
+- No changes to `/linux`; no disk, partition, installer, updater, or user-data
+  operations.
 
 ## 2026-11-04 — Actual validation results: test-shell green on the package stack
 
@@ -526,8 +526,8 @@ fix is considered validated; all previous heads failed as described above.
   the default `qemu64` BIOS path triple-faults before the rootfs hand-off
   while the diagnostic `max` CPU model boots. That failure is unrelated to
   this branch and is tracked as the top boot priority.
-- No changes to `/linux`; no disk, partition, installer, updater, or
-  user-data operations.
+- No changes to `/linux`; no disk, partition, installer, updater, or user-data
+  operations.
 
 ### Next priorities
 
@@ -800,3 +800,269 @@ and its duplicate
 both completed with failure because the primary qemu64 BIOS/UEFI/direct-kernel
 boot step failed. The max-CPU retry completed and uploaded diagnostics, but
 is not counted as a primary boot pass.
+
+
+## 2026-11-05 — Targeted qemu64 instruction trace for the triple-fault diagnosis
+
+### Inspection and finding
+
+- Re-inspected the PR #41 head `0f2e36b` CI state before editing: the
+  userland workflow is green, while the full build-and-boot workflow still
+  fails because the primary `qemu64` BIOS and direct-kernel boots fault before
+  the rootfs hand-off.
+- The preserved PR #40 diagnostics show `#UD` at `RIP=0x3cd63c7` followed by
+  `#GP`, a double fault, and a triple fault on `qemu64`, while the `max` CPU
+  model boots. The debug flags do not include `in_asm`, so the instruction
+  bytes at the failing RIP were never captured, and the `max` retry cannot
+  substitute because it follows a different CPU feature model.
+- The CPU-suffixed log naming alone would make a second `qemu64` run overwrite
+  the primary logs.
+
+### Implemented on a new stacked branch
+
+- `scripts/run-qemu-tests.sh` now supports an optional
+  `AWEOS_QEMU_LOG_SUFFIX` that appends a sanitized tag to every serial and
+  debug log name, so diagnostic retries with the same CPU model write to
+  distinct logs (for example `qemu-bios-instrtrace.log`) and cannot overwrite
+  the primary run's or any other retry's artifacts.
+- The runner now supports an optional `AWEOS_QEMU_DFILTER` that passes QEMU
+  `-dfilter` guest address ranges, so `in_asm` traces can target only the
+  faulting region instead of logging every translated block.
+- The boot workflow gained a new diagnostic step that, after a primary
+  `qemu64` failure and before the `max` retry, re-runs all boot modes with
+  `qemu64`, `in_asm` enabled, log tag `instrtrace`, and the address window
+  `0x3c00000-0x3d00000` around the previously observed faulting RIP
+  `0x3cd63c7`. It is skipped when the guest reached its recovery console,
+  because that indicates a userspace/desktop failure rather than an early
+  CPU fault.
+- The primary `qemu64` boot check remains mandatory and unchanged; the trace
+  retry and the `max` retry are diagnostics only and are never counted as a
+  primary boot pass.
+- The mock QEMU regression now records the `-dfilter` argument into the debug
+  log and adds a full pass asserting that a tagged `instrtrace` run produces
+  distinct per-mode logs containing the CPU model and the filter, while the
+  earlier `max` logs remain intact.
+- The shell edits were replayed locally for syntax and structure; full
+  execution of the suite requires GitHub Actions because the development
+  sandbox shell lacks `trap`, `timeout`, and `mktemp`.
+- No changes to `/linux`, installer/updater behavior, disks, partitions, or
+  user data.
+
+### Files changed
+
+- `scripts/run-qemu-tests.sh`
+- `scripts/test-qemu-test-runner.sh`
+- `.github/workflows/build-aweos-x86_64.yml`
+- `docs/AI-DEVELOPMENT-LOG.md`
+
+### Validation status
+
+- The new regression is wired into `make test-shell` through the existing
+  QEMU-runner test. Fresh userland and full image/boot runs on this branch
+  are required before the change is considered validated; the PR #41 results
+  do not validate these edits.
+- The trace itself does not fix the qemu64 fault. Its purpose is to capture
+  the exact faulting instruction bytes and exception sequence on the failing
+  CPU model so the next run can map the RIP to the bootloader/kernel image
+  and fix the compatibility fault itself.
+- If the pushed `scripts/run-qemu-tests.sh` blob loses its executable mode
+  through the API transport (a known past defect), the shell suite's mode
+  assertion will fail the userland run; that must be fixed with a mode-only
+  commit before CI results are trusted.
+
+### Next priorities
+
+1. Inspect the fresh userland run and, when the primary qemu64 boot fails,
+   the qemu64 `instrtrace` diagnostics artifact.
+2. Map the faulting RIP to the exact image using `System.map` / `vmlinux`
+   disassembly and fix the underlying qemu64 compatibility fault without
+   weakening the baseline CPU test.
+3. Re-run BIOS/UEFI/direct-kernel boot validation on the fixed head.
+4. Reconcile PR #29 (fail-closed ISO verification) into the stack and re-run
+   image construction on the combined head.
+
+
+## 2026-11-05 — QEMU runner file-mode regression repeat and mode-independent fix
+
+### Evidence
+
+- The first CI runs on commit `5f503b1` (userland run
+  [#42046350969](https://github.com/ARARAT33/AWEOS/actions/runs/42046350969),
+  PR-triggered duplicates, and both full image/boot workflows) failed within
+  about a minute.
+- The userland annotation names the exact cause: `make test-shell` failed at
+  `scripts/test-qemu-test-runner.sh` on the executable-mode assertion, because
+  the available API push transport again committed
+  `scripts/run-qemu-tests.sh` as mode `100644`, exactly the documented
+  transport defect from 2026-11-04/05. No other test failure is claimed or
+  implied by these runs; they stopped before exercising any new trace logic.
+
+### Implemented on the same branch
+
+- `make test-qemu` and both QEMU diagnostic retry steps in the boot workflow
+  now invoke the runner through `bash ./scripts/run-qemu-tests.sh`, so no CI
+  path depends on the checked-out executable mode. This mirrors the
+  `awepkg.sh` precedent from the 2026-11-04 mode regression.
+- The runner regression now requires the bash interpreter line
+  (`#!/usr/bin/env bash`) instead of the executable bit. The interpreter
+  contract is what correctness actually depends on, because every CI path
+  calls the runner through bash.
+- A future run with direct git access may still restore mode `100755` on
+  `scripts/run-qemu-tests.sh` (and `scripts/awepkg.sh`) for developer
+  convenience; CI no longer requires it.
+- No changes to `/linux`; no disk, partition, installer, updater, or
+  user-data operations.
+
+### Files changed
+
+- `Makefile`
+- `scripts/test-qemu-test-runner.sh`
+- `.github/workflows/build-aweos-x86_64.yml`
+- `docs/AI-DEVELOPMENT-LOG.md`
+
+### Validation status
+
+- Fresh userland and full image/boot runs on this corrected head are required;
+  the failed runs on `5f503b1` did not exercise the new tagged-trace logic and
+  prove nothing about it.
+
+### Missing-firmware regression in the new trace test (2026-11-05)
+
+- The corrected head `5b57906` passed the mode check and executed the full
+  QEMU-runner suite, but userland runs
+  [#42046994236](https://github.com/ARARAT33/AWEOS/actions/runs/42046994236)
+  and [#42046981706](https://github.com/ARARAT33/AWEOS/actions/runs/42046981706)
+  still failed inside the new `instrtrace` pass.
+- Trace-attributed annotation shows the suite reached the new block and then
+  exited during its runner invocation. Root cause: the new test invocation did
+  not export `AWEOS_UEFI_FIRMWARE` like the other passes, so the runner looked
+  for real OVMF firmware on the userland runner, found none, and correctly
+  failed the UEFI boot test.
+- Fix: the `instrtrace` pass now passes the mock firmware explicitly via
+  `AWEOS_UEFI_FIRMWARE`, matching every other pass in the suite.
+
+
+### Actual validation results on the final head (2026-11-05)
+
+- Final head: `6d12b44c3524e2d7c2477286ba27d07bbcb30b4c` (branch
+  `boot/qemu64-instruction-trace-20261105`, PR #42).
+- Userland runs [#42047481992](https://github.com/ARARAT33/AWEOS/actions/runs/42047481992)
+  and [#42047499037](https://github.com/ARARAT33/AWEOS/actions/runs/42047499037):
+  **PASS** — the full shell/C suite including the new `instrtrace` regression,
+  Rust workspace tests, release binaries, installer no-write test, and the
+  Xvfb AYUI smoke test.
+- Package-safety run [#42047499168](https://github.com/ARARAT33/AWEOS/actions/runs/42047499168):
+  **PASS**.
+- Full image/boot runs [#42047499118](https://github.com/ARARAT33/AWEOS/actions/runs/42047499118)
+  and its duplicate: **FAILURE**, at the pre-existing primary `qemu64` boot
+  blocker (the default qemu64 BIOS/direct-kernel boots still fault before the
+  rootfs hand-off). The run reached the QEMU stage, ran the diagnostic retries,
+  and uploaded the `AWEOS-QEMU-diagnostics` artifact (106 MB), which should
+  now contain the tagged `qemu-bios/uefi/kernel-instrtrace` logs with the
+  `-dfilter 0x3c00000-0x3d00000` instruction trace. This failure is the known
+  blocker, not a regression from this change.
+- The artifact contents were not yet inspected from this environment; that is
+  the next run's first priority, together with mapping the captured faulting
+  instruction to the bootloader/kernel image.
+
+### Next priorities
+
+1. Download and inspect the `AWEOS-QEMU-diagnostics` artifact from run
+   #42047499118; read the qemu64 `instrtrace` logs around the `#UD` at
+   `RIP=0x3cd63c7` and map the faulting instruction to the exact image.
+2. Fix the underlying qemu64 compatibility fault without weakening the
+   baseline CPU test, then re-run the full boot validation.
+3. Reconcile PR #29 (fail-closed ISO verification) into the stack and re-run
+   image construction on the combined head.
+4. Merge the validated PR chain toward master only after the boot blocker is
+   diagnosed/fixed or the maintainer makes an explicit merge decision.
+
+
+
+
+
+## 2026-11-06 — Correct QEMU instruction-trace filter syntax
+
+### Inspection and root cause
+
+- Downloaded and inspected the actual AWEOS-QEMU-diagnostics artifacts from
+  full-build runs #42047499118 and #42051106098 on PR #42.
+- The primary qemu64 BIOS and direct-kernel debug logs still show #UD at
+  RIP=0x3cd63c7, followed by #GP with error code 0x0032, then a double fault
+  and triple fault.
+- The new tagged instruction-trace logs did not contain disassembly. Each of
+  qemu-bios-instrtrace.log, qemu-uefi-instrtrace.log, and
+  qemu-kernel-instrtrace.log contained only:
+  qemu-system-x86_64: -dfilter 0x3c00000-0x3d00000: Invalid range.
+- Root cause: QEMU's documented -dfilter grammar accepts start+size,
+  start-size, or start..end; it does not accept a hyphen-separated
+  start/end pair. The previous mock QEMU test recorded the argument without
+  validating the syntax, so it produced a false-positive regression result
+  even though real QEMU rejected the trace invocation.
+- Reference: https://www.qemu.org/docs/master/system/qemu-manpage.html
+
+### Corrective change on PR #42 branch
+
+- Changed the targeted address window to 0x3c00000..0x3d00000
+  (documented start..end form).
+- Hardened the mock QEMU in scripts/test-qemu-test-runner.sh to reject
+  malformed range strings for the range form used by this diagnostic.
+- Added a negative regression proving the old hyphen-separated form fails,
+  followed by the positive tagged-trace regression using the corrected form.
+- The trace retry remains diagnostic only; it cannot turn a failed primary
+  qemu64 boot into a pass.
+- No changes to /linux, installer/updater behavior, disks, partitions,
+  or user data.
+
+### Files changed
+
+- .github/workflows/build-aweos-x86_64.yml
+- scripts/test-qemu-test-runner.sh
+- docs/AI-DEVELOPMENT-LOG.md
+
+### Validation status
+
+- The prior CI runs on PR #42 passed userland, package-safety, image assembly,
+  and the QEMU runner mock suite, but the full boot job failed at the primary
+  qemu64 BIOS/direct-kernel tests.
+- Artifact inspection confirmed the previous trace retry was invalid and
+  therefore did not capture the faulting instruction. The corrected mock
+  regression has been added but has not yet run in GitHub Actions.
+- A fresh userland and full image/boot workflow is required. Only a non-empty
+  in_asm trace from real QEMU will count as evidence that the diagnostic
+  filter is fixed; the qemu64 boot issue itself remains unresolved.
+
+### Next priorities
+
+1. Run the updated PR #42 userland and full image/boot workflows.
+2. Inspect the new tagged instruction-trace logs and verify they contain
+   assembly around 0x3cd63c7.
+3. Map the captured instruction address against the exact boot image and
+   vmlinux/decompressor symbols before changing kernel configuration.
+4. Fix the qemu64 boot fault without weakening the baseline CPU test.
+5. Reconcile the fail-closed ISO-verification work (PR #29) into the reviewed
+   stack and re-run image construction and boot tests.
+
+
+### Validation update (2026-11-06)
+
+- Updated-head userland workflow #42164070638: **PASS**. The job completed
+  successfully, including the shell/C regressions, Cargo workspace tests,
+  release userland builds, installer no-write integration, and AYUI Xvfb
+  smoke test.
+- Updated-head package-safety workflow #42164070651: **PASS**.
+- Updated-head full image/boot workflow #42164070703: the shell/C/rootfs/
+  session/QEMU-runner regression step **PASS**, the pre-build /linux
+  read-only verification **PASS**, and the Rust workspace test **PASS**.
+- The full image workflow was still in the Build AWEOS images step at the
+  time of this log update. Therefore no result is claimed yet for the new
+  real-QEMU instruction trace, BIOS/UEFI/direct-kernel boot, post-build
+  /linux check, or release artifact verification.
+- The local shell regex sanity check also passed: the Bash expression
+  accepts 0x3c00000..0x3d00000 and rejects the previous hyphen-separated
+  form. This is supplemental; the GitHub Actions regression is the
+  authoritative repository test.
+- Run links:
+  - https://github.com/ARARAT33/AWEOS/actions/runs/42164070638
+  - https://github.com/ARARAT33/AWEOS/actions/runs/42164070651
+  - https://github.com/ARARAT33/AWEOS/actions/runs/42164070703

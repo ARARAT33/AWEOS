@@ -5,8 +5,12 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-if [ ! -x "$repo_root/scripts/run-qemu-tests.sh" ]; then
-    echo "ERROR: scripts/run-qemu-tests.sh must retain executable mode (100755)." >&2
+# The available API push transport commits blobs as mode 100644 and cannot
+# restore 100755, so the runner is invoked through bash everywhere in CI and
+# correctness must not depend on the checked-out mode. Still require the bash
+# interpreter line so the runner cannot silently become a non-bash shell script.
+if [ "$(head -n 1 "$repo_root/scripts/run-qemu-tests.sh")" != "#!/usr/bin/env bash" ]; then
+    echo "ERROR: scripts/run-qemu-tests.sh must start with the bash interpreter line; every CI path invokes it through bash." >&2
     exit 1
 fi
 tmp_root="$(mktemp -d)"
@@ -27,12 +31,17 @@ set -euo pipefail
 
 debug_log=""
 append=""
+dfilter=""
 is_uefi=0
 is_kernel=0
 while (($#)); do
     case "$1" in
         -D)
             debug_log="${2:-}"
+            shift 2
+            ;;
+        -dfilter)
+            dfilter="${2:-}"
             shift 2
             ;;
         -bios)
@@ -53,10 +62,21 @@ while (($#)); do
     esac
 done
 
+# Mirror QEMU's documented -dfilter address-range grammar for the range form
+# used by this test (start..end). This catches malformed diagnostic arguments
+# before the mock can accidentally report a false-positive boot.
+if [[ -n "$dfilter" && ! "$dfilter" =~ ^0x[[:xdigit:]]+\.\.0x[[:xdigit:]]+$ ]]; then
+    echo "qemu-system-x86_64: -dfilter $dfilter: Invalid range" >&2
+    exit 1
+fi
+
 # Record the CPU model in the exact debug file passed through QEMU's -D option.
 # This verifies that a later diagnostic retry cannot overwrite primary logs.
 if [[ -n "$debug_log" ]]; then
     printf 'mock cpu=%s\n' "${AWEOS_QEMU_CPU:-qemu64}" > "$debug_log"
+    if [[ -n "$dfilter" ]]; then
+        printf 'mock dfilter=%s\n' "$dfilter" >> "$debug_log"
+    fi
 fi
 
 if [[ "${MOCK_QEMU_MODE:-success}" == "desktop-fails" ]]; then
@@ -198,4 +218,40 @@ if [ "$rc" -eq 0 ]; then
 fi
 grep -q 'OVMF firmware not found' "$tmp_root/missing-firmware-output.log"
 
-echo "PASS: QEMU runner requires first-frame AYUI for BIOS/UEFI, an explicit headless-console hand-off for direct kernel, aggregates failures, and requires UEFI firmware."
+# Reject the malformed hyphen-separated range that QEMU itself rejects.
+set +e
+PATH="$mock_bin:$PATH" \
+AWEOS_QEMU_DFILTER=0x3c00000-0x3d00000 \
+    bash "$repo_root/scripts/run-qemu-tests.sh" "$build_dir" bios \
+    > "$tmp_root/invalid-dfilter-output.log" 2>&1
+rc=$?
+set -e
+if [ "$rc" -eq 0 ]; then
+    echo "ERROR: runner mock accepted QEMU's invalid hyphen-separated -dfilter range." >&2
+    exit 1
+fi
+grep -q -- "-dfilter 0x3c00000-0x3d00000: Invalid range" "$tmp_root/invalid-dfilter-output.log"
+
+# A diagnostic instruction-trace retry with the same CPU model must write to
+# its own tagged logs and must not overwrite the primary or max-CPU logs.
+PATH="$mock_bin:$PATH" \
+AWEOS_UEFI_FIRMWARE="$firmware" \
+AWEOS_QEMU_LOG_SUFFIX=instrtrace \
+AWEOS_QEMU_DFILTER=0x3c00000..0x3d00000 \
+MOCK_QEMU_MODE=success \
+    bash "$repo_root/scripts/run-qemu-tests.sh" "$build_dir" all \
+    > "$tmp_root/trace-output.log" 2>&1
+for mode in bios uefi kernel; do
+    test -s "$build_dir/qemu-$mode-instrtrace.log"
+    test -s "$build_dir/qemu-$mode-instrtrace-debug.log"
+    grep -q "^mock cpu=qemu64$" "$build_dir/qemu-$mode-instrtrace-debug.log"
+    grep -q "^mock dfilter=0x3c00000\.\.0x3d00000$" "$build_dir/qemu-$mode-instrtrace-debug.log"
+done
+for mode in bios uefi kernel; do
+    grep -q "^mock cpu=max$" "$build_dir/qemu-$mode-max-debug.log"
+done
+grep -q "SUCCESS: AWEOS BIOS boot" "$tmp_root/trace-output.log"
+grep -q "SUCCESS: AWEOS UEFI boot" "$tmp_root/trace-output.log"
+grep -q "SUCCESS: AWEOS direct kernel boot" "$tmp_root/trace-output.log"
+
+echo "PASS: QEMU runner requires first-frame AYUI for BIOS/UEFI, an explicit headless-console hand-off for direct kernel, aggregates failures, requires UEFI firmware, and keeps diagnostic retries in separate tagged logs."

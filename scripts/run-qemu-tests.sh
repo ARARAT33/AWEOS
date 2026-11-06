@@ -16,6 +16,21 @@ if [ "${QEMU_CPU_MODEL}" = "qemu64" ]; then
 else
     CPU_SUFFIX="-${QEMU_CPU_MODEL//[^A-Za-z0-9_-]/_}"
 fi
+# Optional diagnostic tag so retries with the same CPU model (for example a
+# targeted instruction trace) write to distinct logs and cannot overwrite the
+# primary run's or any other retry's logs.
+QEMU_LOG_TAG="${AWEOS_QEMU_LOG_SUFFIX:-}"
+if [ -n "${QEMU_LOG_TAG}" ]; then
+    QEMU_LOG_TAG="-${QEMU_LOG_TAG//[^A-Za-z0-9_-]/_}"
+fi
+CPU_SUFFIX="${CPU_SUFFIX}${QEMU_LOG_TAG}"
+# Optional QEMU -dfilter guest address ranges so in_asm traces can target only
+# the faulting region instead of logging every translated block.
+if [ -n "${AWEOS_QEMU_DFILTER:-}" ]; then
+    DFILTER_ARGS=(-dfilter "${AWEOS_QEMU_DFILTER}")
+else
+    DFILTER_ARGS=()
+fi
 BIOS_LOG="${BUILD_DIR}/qemu-bios${CPU_SUFFIX}.log"
 UEFI_LOG="${BUILD_DIR}/qemu-uefi${CPU_SUFFIX}.log"
 KERNEL_LOG="${BUILD_DIR}/qemu-kernel${CPU_SUFFIX}.log"
@@ -43,6 +58,13 @@ mkdir -p -- "${BUILD_DIR}"
 echo "=========================================="
 echo "AWEOS QEMU boot verification (CPU model: ${QEMU_CPU_MODEL})"
 echo "=========================================="
+
+if [ -n "${AWEOS_QEMU_DFILTER:-}" ]; then
+    echo "Debug address filter: ${AWEOS_QEMU_DFILTER}"
+fi
+if [ -n "${AWEOS_QEMU_LOG_SUFFIX:-}" ]; then
+    echo "Diagnostic log tag: ${AWEOS_QEMU_LOG_SUFFIX}"
+fi
 
 failures=0
 
@@ -130,6 +152,7 @@ if [ "${TARGET_MODE}" = "all" ] || [ "${TARGET_MODE}" = "bios" ]; then
         -monitor none \
         -no-reboot \
         -d "${QEMU_DEBUG_FLAGS}" \
+        "${DFILTER_ARGS[@]}" \
         -D "${BUILD_DIR}/qemu-bios${CPU_SUFFIX}-debug.log"; then
         failures=$((failures + 1))
     fi
@@ -163,6 +186,7 @@ if [ "${TARGET_MODE}" = "all" ] || [ "${TARGET_MODE}" = "uefi" ]; then
             -monitor none \
             -no-reboot \
             -d "${QEMU_DEBUG_FLAGS}" \
+            "${DFILTER_ARGS[@]}" \
             -D "${BUILD_DIR}/qemu-uefi${CPU_SUFFIX}-debug.log"; then
             failures=$((failures + 1))
         fi
@@ -190,6 +214,7 @@ if [ "${TARGET_MODE}" = "all" ] || [ "${TARGET_MODE}" = "kernel" ]; then
         -monitor none \
         -no-reboot \
         -d "${QEMU_DEBUG_FLAGS}" \
+        "${DFILTER_ARGS[@]}" \
         -D "${BUILD_DIR}/qemu-kernel${CPU_SUFFIX}-debug.log"; then
         failures=$((failures + 1))
     fi

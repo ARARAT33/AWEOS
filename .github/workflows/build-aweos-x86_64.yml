@@ -99,6 +99,24 @@ jobs:
           AWEOS_QEMU_CPU: qemu64
         run: make test-qemu
 
+      - name: Boot diagnostic retry with qemu64 targeted instruction trace
+        if: ${{ failure() && steps.qemu_boot.outcome == 'failure' }}
+        continue-on-error: true
+        env:
+          AWEOS_QEMU_CPU: qemu64
+          AWEOS_QEMU_LOG_SUFFIX: instrtrace
+          AWEOS_QEMU_DEBUG_FLAGS: in_asm,int,guest_errors,cpu_reset
+          # QEMU -dfilter ranges use start..end syntax.
+          AWEOS_QEMU_DFILTER: 0x3c00000..0x3d00000
+        run: |
+          for log in build/qemu-*.log; do
+            if [ -f "$log" ] && grep -q "AWEOS RECOVERY SHELL READY" "$log"; then
+              echo "Skipping qemu64 instruction-trace retry: the guest reached its recovery console; this is a userspace/desktop failure, not an early CPU fault."
+              exit 0
+            fi
+          done
+          bash ./scripts/run-qemu-tests.sh build all
+
       - name: Boot diagnostic retry with QEMU max CPU and instruction trace
         if: ${{ failure() && steps.qemu_boot.outcome == 'failure' }}
         continue-on-error: true
@@ -112,7 +130,7 @@ jobs:
               exit 0
             fi
           done
-          ./scripts/run-qemu-tests.sh build all
+          bash ./scripts/run-qemu-tests.sh build all
 
       - name: Upload QEMU and kernel diagnostics on failure
         if: failure()
