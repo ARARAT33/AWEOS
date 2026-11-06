@@ -27,6 +27,7 @@ for test_script in \
     test-ayui-framebuffer-format.sh \
     test-aweos-session-fallback.sh \
     test-qemu-test-runner.sh \
+    test-qemu-instrtrace-extract.sh \
     test-initramfs-root-discovery.sh \
     test-awepkg.sh \
     test-aosin-fail-closed.sh; do

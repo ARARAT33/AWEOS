@@ -117,6 +117,48 @@ jobs:
           done
           bash ./scripts/run-qemu-tests.sh build all
 
+      - name: Summarize the qemu64 faulting instruction from the tagged trace
+        if: ${{ failure() && steps.qemu_boot.outcome == 'failure' }}
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          summary="build/qemu64-instrtrace-summary.txt"
+          mkdir -p build
+          : > "$summary"
+          found=0
+          for log in build/qemu-*-instrtrace-debug.log; do
+            if [ -f "$log" ]; then
+              found=1
+            fi
+          done
+          if [ "$found" -eq 0 ]; then
+            echo "No tagged qemu64 instruction-trace debug logs were produced (either the trace retry was skipped because the guest reached its recovery console, or the retry did not run)."
+            echo "No tagged qemu64 instruction-trace debug logs were produced." >> "$summary"
+          else
+            for log in build/qemu-*-instrtrace-debug.log; do
+              {
+                echo
+                bash ./scripts/extract-qemu-instrtrace.sh "$log"
+              } | tee -a "$summary"
+            done
+          fi
+          if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+            cat "$summary" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          excerpt="$(grep -m1 -E 'v=0[68d]|0x[0-9a-f]+: ' "$summary" | cut -c1-700 || true)"
+          if [ -n "${excerpt:-}" ]; then
+            echo "::error::qemu64 instruction-trace summary: ${excerpt}"
+          fi
+
+      - name: Upload qemu64 instruction-trace summary
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AWEOS-qemu64-instrtrace-summary
+          path: build/qemu64-instrtrace-summary.txt
+          if-no-files-found: ignore
+          retention-days: 30
+
       - name: Boot diagnostic retry with QEMU max CPU and instruction trace
         if: ${{ failure() && steps.qemu_boot.outcome == 'failure' }}
         continue-on-error: true
