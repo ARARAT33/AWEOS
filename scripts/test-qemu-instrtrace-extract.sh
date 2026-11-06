@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Regression for scripts/extract-qemu-instrtrace.sh.
-# Verifies fault-event extraction, faulting-address disassembly lookup,
-# bounded output, and missing/empty/fault-free log handling. Uses only
-# fabricated QEMU-style debug logs in a temporary directory.
+# Verifies fault-event extraction, faulting-address disassembly lookup for
+# both QEMU -d int address forms (selector form and 0x form), bounded
+# output, and missing/empty/fault-free log handling. Uses only fabricated
+# QEMU-style debug logs in a temporary directory.
 set -uo pipefail
 
 here="$(cd -- "$(dirname -- "$0")" && pwd -P)"
@@ -10,7 +11,7 @@ extractor="$here/extract-qemu-instrtrace.sh"
 workdir="$(mktemp -d "${TMPDIR:-/tmp}/aweos-instrtrace-test.XXXXXX")"
 trap 'rm -rf -- "$workdir"' EXIT
 
-# --- Fixture 1: qemu64-style -d int,in_asm log with a #UD fault. ---
+# --- Fixture 1: -d int selector form (IP=0008:... pc=...) with a #UD fault. ---
 fault_log="$workdir/qemu-bios-instrtrace-debug.log"
 {
     echo "TRACE: Executing 0008:0000000003cd6300"
@@ -25,19 +26,28 @@ fault_log="$workdir/qemu-bios-instrtrace-debug.log"
     echo "     0: v=08 e=0000 i=1"
 } >"$fault_log"
 
-# --- Fixture 2: fault-free log (fallback tail path). ---
+# --- Fixture 2: -d int 0x form (RIP=0x...) with a #UD fault. ---
+fault0x_log="$workdir/qemu-kernel-instrtrace-debug.log"
+{
+    echo "0x0000000003cd63c7:  0f 0b                    ud2"
+    echo "     0: v=06 e=0000 i=1 cpl=0 RIP=0x3cd63c7"
+    echo "     0: v=08 e=0000 i=1"
+} >"$fault0x_log"
+
+# --- Fixture 3: fault-free log (fallback tail path). ---
 clean_log="$workdir/qemu-uefi-instrtrace-debug.log"
 for i in $(seq 1 100); do
     echo "clean line $i"
 done
 echo "AWEOS LAST TRACE LINE" >>"$clean_log"
 
-# --- Fixture 3: empty log. ---
+# --- Fixture 4: empty log. ---
 : >"$workdir/qemu-empty-instrtrace-debug.log"
 
 summary="$workdir/summary.txt"
 if ! bash "$extractor" \
         "$fault_log" \
+        "$fault0x_log" \
         "$clean_log" \
         "$workdir/qemu-empty-instrtrace-debug.log" \
         "$workdir/qemu-missing-instrtrace-debug.log" \
@@ -57,19 +67,24 @@ check() {
 
 check fixture1 "qemu-bios-instrtrace-debug.log"
 check fixture1 "v=06 e=0000 i=1 cpl=0 IP=0008:0000000003cd63c7"
+check fixture1 "Guest instructions around faulting address 0x0000000003cd63c7:"
 check fixture1 "0x0000000003cd63c7:  0f 0b                    ud2"
 check fixture1 "check_exception"
-check fixture2 "qemu-uefi-instrtrace-debug.log"
-check fixture2 "No CPU fault events"
-check fixture2 "AWEOS LAST TRACE LINE"
-check fixture3 "qemu-empty-instrtrace-debug.log"
-check fixture3 "EMPTY: debug log has no content."
-check fixture4 "qemu-missing-instrtrace-debug.log"
-check fixture4 "MISSING: no such debug log."
+check fixture2 "qemu-kernel-instrtrace-debug.log"
+check fixture2 "v=06 e=0000 i=1 cpl=0 RIP=0x3cd63c7"
+check fixture2 "Guest instructions around faulting address 0x0000000003cd63c7:"
+check fixture2 "0x0000000003cd63c7:  0f 0b                    ud2"
+check fixture3 "qemu-uefi-instrtrace-debug.log"
+check fixture3 "No CPU fault events"
+check fixture3 "AWEOS LAST TRACE LINE"
+check fixture4 "qemu-empty-instrtrace-debug.log"
+check fixture4 "EMPTY: debug log has no content."
+check fixture5 "qemu-missing-instrtrace-debug.log"
+check fixture5 "MISSING: no such debug log."
 
 line_count="$(wc -l <"$summary")"
-if [ "$line_count" -gt 320 ]; then
-    echo "FAIL: summary output is unbounded (${line_count} lines; expected at most 320)." >&2
+if [ "$line_count" -gt 400 ]; then
+    echo "FAIL: summary output is unbounded (${line_count} lines; expected at most 400)." >&2
     fail=1
 fi
 
