@@ -106,7 +106,8 @@ jobs:
           AWEOS_QEMU_CPU: qemu64
           AWEOS_QEMU_LOG_SUFFIX: instrtrace
           AWEOS_QEMU_DEBUG_FLAGS: in_asm,int,guest_errors,cpu_reset
-          AWEOS_QEMU_DFILTER: 0x3c00000-0x3d00000
+          # QEMU -dfilter ranges use start..end syntax.
+          AWEOS_QEMU_DFILTER: 0x3c00000..0x3d00000
         run: |
           for log in build/qemu-*.log; do
             if [ -f "$log" ] && grep -q "AWEOS RECOVERY SHELL READY" "$log"; then
