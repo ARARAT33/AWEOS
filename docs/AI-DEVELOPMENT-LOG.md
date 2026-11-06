@@ -979,3 +979,66 @@ is not counted as a primary boot pass.
 
 
 
+
+
+## 2026-11-06 — Correct QEMU instruction-trace filter syntax
+
+### Inspection and root cause
+
+- Downloaded and inspected the actual AWEOS-QEMU-diagnostics artifacts from
+  full-build runs #42047499118 and #42051106098 on PR #42.
+- The primary qemu64 BIOS and direct-kernel debug logs still show #UD at
+  RIP=0x3cd63c7, followed by #GP with error code 0x0032, then a double fault
+  and triple fault.
+- The new tagged instruction-trace logs did not contain disassembly. Each of
+  qemu-bios-instrtrace.log, qemu-uefi-instrtrace.log, and
+  qemu-kernel-instrtrace.log contained only:
+  qemu-system-x86_64: -dfilter 0x3c00000-0x3d00000: Invalid range.
+- Root cause: QEMU's documented -dfilter grammar accepts start+size,
+  start-size, or start..end; it does not accept a hyphen-separated
+  start/end pair. The previous mock QEMU test recorded the argument without
+  validating the syntax, so it produced a false-positive regression result
+  even though real QEMU rejected the trace invocation.
+- Reference: https://www.qemu.org/docs/master/system/qemu-manpage.html
+
+### Corrective change on PR #42 branch
+
+- Changed the targeted address window to 0x3c00000..0x3d00000
+  (documented start..end form).
+- Hardened the mock QEMU in scripts/test-qemu-test-runner.sh to reject
+  malformed range strings for the range form used by this diagnostic.
+- Added a negative regression proving the old hyphen-separated form fails,
+  followed by the positive tagged-trace regression using the corrected form.
+- The trace retry remains diagnostic only; it cannot turn a failed primary
+  qemu64 boot into a pass.
+- No changes to /linux, installer/updater behavior, disks, partitions,
+  or user data.
+
+### Files changed
+
+- .github/workflows/build-aweos-x86_64.yml
+- scripts/test-qemu-test-runner.sh
+- docs/AI-DEVELOPMENT-LOG.md
+
+### Validation status
+
+- The prior CI runs on PR #42 passed userland, package-safety, image assembly,
+  and the QEMU runner mock suite, but the full boot job failed at the primary
+  qemu64 BIOS/direct-kernel tests.
+- Artifact inspection confirmed the previous trace retry was invalid and
+  therefore did not capture the faulting instruction. The corrected mock
+  regression has been added but has not yet run in GitHub Actions.
+- A fresh userland and full image/boot workflow is required. Only a non-empty
+  in_asm trace from real QEMU will count as evidence that the diagnostic
+  filter is fixed; the qemu64 boot issue itself remains unresolved.
+
+### Next priorities
+
+1. Run the updated PR #42 userland and full image/boot workflows.
+2. Inspect the new tagged instruction-trace logs and verify they contain
+   assembly around 0x3cd63c7.
+3. Map the captured instruction address against the exact boot image and
+   vmlinux/decompressor symbols before changing kernel configuration.
+4. Fix the qemu64 boot fault without weakening the baseline CPU test.
+5. Reconcile the fail-closed ISO-verification work (PR #29) into the reviewed
+   stack and re-run image construction and boot tests.
