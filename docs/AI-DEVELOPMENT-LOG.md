@@ -1387,3 +1387,60 @@ Next:
 - Userland workflow run `42345079144` (#425): shell/C transaction safety tests, repository-boundary verification, Cargo metadata validation, and Rust workspace tests completed successfully. The Rust userland binary build was still running at the time of this update.
 - Full x86_64 build workflow run `42345079128` (#482): Limine host utility build, shell/C/rootfs/session/QEMU-runner regressions, and the pre-build `/linux` read-only verification completed successfully. The Rust workspace test step was still running; image build and BIOS/UEFI/direct-kernel boot tests had not started.
 - Therefore the new ISA regression and updated rootfs fixture are confirmed passing in GitHub Actions, but the pinned BusyBox source build and the rebuilt-image boot result remain pending. No boot-fix claim is made.
+
+### CI follow-up: image build failed on the baseline BusyBox branch — 2026-11-07
+
+- On branch `boot/busybox-x86-64-baseline-20261107` (PR #46):
+  - "Validate AWEOS Userland" run 42345461611: **PASS**.
+  - "Validate AWEOS Package Security" run 42345461617: **PASS**.
+  - "AWEOS x86_64 Build, Image and Boot Tests" run 42345461570:
+    **FAILURE**. The `build-and-boot-test` job passed checkout, dependency
+    install, Limine host build, `make test-shell`, `/linux` read-only
+    verification, and `cargo test --workspace`, then failed at the
+    "Build AWEOS images" (`make image`) step with exit code 2 after
+    16m29s.
+- The only failure annotation is the generic "Process completed with exit
+  code 2". The raw job log requires an authenticated session this environment
+  does not have, and no `AWEOS-QEMU-diagnostics` artifact was uploaded
+  because the failure happened before the QEMU steps.
+- Therefore the exact failing target inside `make image` (busybox, kernel,
+  rootfs, initramfs, finalize-rootfs, iso, or disk-image) is currently
+  unknown. No root cause is claimed.
+
+#### Implemented on branch `boot/busybox-build-failure-diagnostics-20261107`
+
+- The "Build AWEOS images" step now tees the full `make image` output to
+  `image-build.log` through `set -o pipefail`, preserving the real exit code.
+- A new failure-conditioned step extracts the first make/script errors and
+  the last 100 log lines into `build/image-build-failure-summary.txt`,
+  appends them to the GitHub step summary, and emits a `::error::`
+  annotation with the first error line so the failing target is visible
+  from the run page without an artifact download.
+- A new failure-conditioned step uploads `image-build.log` as the
+  `AWEOS-image-build-log` artifact (30-day retention).
+- No build recipe, boot logic, `/linux` handling, or packaged content
+  changed. This mirrors the established qemu64-instrtrace-summary pattern.
+
+#### Files changed
+
+- `.github/workflows/build-aweos-x86_64.yml`
+- `docs/AI-DEVELOPMENT-LOG.md`
+
+#### Validation
+
+- Workflow steps cannot be exercised by `make test-shell`; correctness
+  depends on this branch's own Actions run. Success criteria: a failing
+  `make image` must produce an annotation and step summary naming the
+  actual failing target and error line; a passing build must behave
+  unchanged.
+
+#### Next priorities
+
+1. Read the published `image-build.log` excerpt from this branch's run and
+   identify the real `make image` failure.
+2. Prime suspects once the log is available: the pinned BusyBox 1.38.0
+   musl-gcc static build, or the new all-/usr/bin ELF qemu64 baseline ISA
+   scan in `scripts/validate-rootfs-layout.sh` rejecting a packaged
+   userland binary. Neither is confirmed.
+3. Until the BusyBox baseline build passes and qemu64 BIOS/UEFI boots are
+   proven, PRs #44/#45/#46 remain unmerged and no boot fix is claimed.
