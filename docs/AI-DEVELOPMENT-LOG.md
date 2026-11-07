@@ -1300,3 +1300,92 @@ is not counted as a primary boot pass.
   literal-safe replacement and verified the stored line now contains
   `$$(nproc)`, so GNU Make passes the job-count command substitution to the
   shell rather than expanding an undefined Make variable.
+
+
+## 2026-11-07 — Remove implicit target selection from the C installer
+
+### Inspection
+
+- Re-read the current stacked PR #44 head, the C installer state/API, storage
+  discovery, the transaction state machine, the existing fail-closed C test,
+  and the README safety invariants before editing.
+- Found a concrete mismatch: README.md promises that no target disk is
+  selected automatically, but aweos_installer_init() still initialized
+  selected_disk_idx to zero whenever discovery found a disk. The transaction
+  backend currently stops before staging or disk writes, but that default
+  would silently become dangerous if the backend were later enabled.
+
+### Changes
+
+- Initialize both selected disk and selected partition indices to -1.
+- Add aweos_installer_select_target() as the explicit target-selection API.
+  It validates observed disk/partition indexes and device paths before
+  changing state. Dual-boot requires a valid selected partition; full-disk
+  replacement requires a selected disk and no partition selection.
+- Make aweos_installer_run_cli() revalidate the selected target, mode, and
+  firmware mode before transaction initialization. A missing or invalid
+  target is rejected before a transaction can begin.
+- Keep destructive replacement separately gated by
+  user_confirmed_destructive; selecting a disk never sets that flag.
+- Extend the existing C transaction safety regression to cover the default
+  unselected state, rejected/out-of-range selections, explicit dual-boot
+  selection, full-disk selection without partition, and the destructive
+  confirmation gate. The test uses stubs and never accesses real block devices.
+
+### Files changed
+
+- src/installer/installer.c
+- src/installer/installer.h
+- scripts/test-transaction-fail-closed.sh
+- docs/AI-DEVELOPMENT-LOG.md
+
+### Validation status
+
+- Source-level anchor checks passed while preparing the patch.
+- The updated regression is part of make test-shell through the existing
+  scripts/run-test-shell.sh list; fresh GitHub Actions execution is
+  required before this change is considered validated.
+- No changes under /linux; no disk, partition, filesystem, bootloader, or
+  user-data operations were performed. All new installer checks are exercised
+  against in-memory fixtures and transaction stubs.
+
+### Next priorities
+
+1. Inspect the new PR's actual userland CI result and C regression output.
+2. Keep the installer transaction backend fail-closed until a real staging,
+   backup verification, rollback, and bootloader deployment path is tested.
+3. Finish the current PR #44 compressed-kernel ISA scan and qemu64 BIOS/UEFI
+   boot validation before reconciling the boot-fix stack.
+4. Audit the Rust GUI installer and C CLI for any remaining automatic target
+   defaults or paths that can bypass explicit user confirmation.
+
+### CI follow-up — 2026-11-07
+
+- The first PR #45 userland and full-build shell runs (#42342147428 and
+  #42342147485) reached the new installer regression and failed its full-disk
+  confirmation assertion. The transaction state machine correctly returned
+  AWEOS_ERR_PERMISSION, but aweos_installer_run_cli() collapsed every
+  transaction-stage error into AWEOS_ERR_TRANSACTION, hiding the policy
+  denial from callers.
+- Updated the C installer to propagate the exact error code from each
+  transaction stage. This preserves the destructive-confirmation denial as
+  AWEOS_ERR_PERMISSION and retains AWEOS_ERR_TRANSACTION for the currently
+  unsupported staging backend. No transaction stage was enabled or bypassed.
+- The first CI result is recorded as a real test failure, not a pass. Fresh
+  userland, core-preservation, and full image/boot checks are required on the
+  corrected commit.
+
+### Final-head validation snapshot — 2026-11-07
+
+- Final PR #45 head at the time of this entry: 96ca0494d81886685b038225ebcc816007b541f0.
+- Userland workflow #42342456511: **PASS**. Inspected the completed job logs. The shell/C regression driver ran through test-transaction-fail-closed.sh (including the new explicit-target cases), continued through the remaining shell regressions, and completed successfully. The same job passed /linux integrity, Cargo metadata, the Rust workspace tests, all release userland binary checks, the Rust installer no-write test, and the AYUI Winit/Xvfb first-frame smoke test.
+- Core data-preservation workflow #42342456671: **PASS**. Archive safety regression, updater BIOS/UEFI and preservation-failure tests, real sysfs boot-mode detection, and /linux read-only verification all completed successfully.
+- Full image/boot workflow #42342456616: **IN PROGRESS** at the AWEOS image-build step. No full image or boot result is claimed for PR #45 yet.
+- On the parent PR #44 head, full image construction completed successfully and the post-build /linux integrity check passed in run #42341230731. The primary qemu64 BIOS/UEFI/direct-kernel boot step failed; the tagged qemu64 instruction-trace retry is still running. The kernel baseline ISA checker is part of the successful image-build target, but this does not prove boot compatibility.
+- The first PR #45 test attempt exposed the transaction error-code propagation mismatch described above. The final-head userland run is green after the correction. Earlier intermediate-head failures are not counted as final-head validation.
+
+Run links:
+- https://github.com/ARARAT33/AWEOS/actions/runs/42342456511
+- https://github.com/ARARAT33/AWEOS/actions/runs/42342456671
+- https://github.com/ARARAT33/AWEOS/actions/runs/42342456616
+- https://github.com/ARARAT33/AWEOS/actions/runs/42341230731
