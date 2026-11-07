@@ -1291,3 +1291,12 @@ is not counted as a primary boot pass.
 - The earlier shell-suite failure from the stale QEMU mock assertion has also
   been corrected in commit `9da2867`; the next workflow run is the first
   valid full validation of these changes.
+
+
+### Stored Makefile verification — 2026-11-07
+
+- A follow-up read-back found that the previous replacement-string operation
+  had collapsed the required doubled dollar sign. Rewrote the recipe using a
+  literal-safe replacement and verified the stored line now contains
+  `$$(nproc)`, so GNU Make passes the job-count command substitution to the
+  shell rather than expanding an undefined Make variable.
