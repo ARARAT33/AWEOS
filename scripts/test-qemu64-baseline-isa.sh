@@ -28,6 +28,15 @@ aweos_avx_fixture:
     ret
 ASM
 
+cat >"$workdir/bmi1.S" <<'ASM'
+.text
+.globl aweos_bmi1_fixture
+aweos_bmi1_fixture:
+    # TZCNT rax, rbx (BMI1).
+    .byte 0xf3, 0x48, 0x0f, 0xbc, 0xc3
+    ret
+ASM
+
 cat >"$workdir/bmi2.S" <<'ASM'
 .text
 .globl aweos_bmi2_fixture
@@ -39,6 +48,7 @@ ASM
 
 cc -c "$workdir/safe.S" -o "$workdir/safe.o"
 cc -c "$workdir/avx.S" -o "$workdir/avx.o"
+cc -c "$workdir/bmi1.S" -o "$workdir/bmi1.o"
 cc -c "$workdir/bmi2.S" -o "$workdir/bmi2.o"
 
 bash "$checker" "$workdir/safe.o"
@@ -49,10 +59,16 @@ if bash "$checker" "$workdir/avx.o" >"$workdir/avx.out" 2>&1; then
 fi
 grep -Eqi 'vmovdqa|avx' "$workdir/avx.out"
 
+if bash "$checker" "$workdir/bmi1.o" >"$workdir/bmi1.out" 2>&1; then
+    echo "ERROR: qemu64 ISA checker accepted TZCNT/BMI1." >&2
+    exit 1
+fi
+grep -Eqi 'tzcnt|bmi' "$workdir/bmi1.out"
+
 if bash "$checker" "$workdir/bmi2.o" >"$workdir/bmi2.out" 2>&1; then
     echo "ERROR: qemu64 ISA checker accepted SHRX/BMI2." >&2
     exit 1
 fi
 grep -Eqi 'shrx|bmi' "$workdir/bmi2.out"
 
-echo "PASS: qemu64 ISA checker accepts baseline code and rejects AVX and BMI2."
+echo "PASS: qemu64 ISA checker accepts baseline code and rejects AVX, BMI1, and BMI2."
