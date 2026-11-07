@@ -13,6 +13,9 @@ ROOTFS_IMG := $(BUILD_DIR)/rootfs.img
 ROOTFS_DIR := $(BUILD_DIR)/rootfs
 INITRAMFS := $(BUILD_DIR)/aweos-initramfs.cpio.gz
 LIMINE_TOOL ?= $(shell command -v limine 2>/dev/null || true)
+# The compressed-kernel Makefile resets KBUILD_CFLAGS and can otherwise
+# inherit a host compiler default ISA. Keep boot code on the x86_64 baseline.
+AWEOS_KERNEL_CPU_FLAGS ?= -march=x86-64 -mtune=generic -mno-bmi -mno-bmi2
 
 RUST_BINS := aweui aweui-installer aweui-settings aweui-control-center aweui-file-manager \
              aweui-terminal aweui-system-monitor aweui-diagnostics aweui-text-editor \
@@ -46,8 +49,10 @@ kernel: verify-linux
 	@source "$(REPO_ROOT)/scripts/lib/build-safety.sh"; aweos_prepare_build_dir "$(BUILD_DIR)" "$(REPO_ROOT)" >/dev/null
 	@mkdir -p "$(KERNEL_BUILD_DIR)"
 	@./scripts/config-kernel.sh $(KERNEL_SRC) $(KERNEL_BUILD_DIR)
-	@$(MAKE) -C $(KERNEL_SRC) O=$(KERNEL_BUILD_DIR) -j"$$(nproc)" bzImage
+	@$(MAKE) -C $(KERNEL_SRC) O=$(KERNEL_BUILD_DIR) CC="$(CC) $(AWEOS_KERNEL_CPU_FLAGS)" -j"$$(nproc)" bzImage
 	@test -s $(KERNEL_BUILD_DIR)/arch/x86/boot/bzImage
+	@test -s $(KERNEL_BUILD_DIR)/arch/x86/boot/compressed/vmlinux
+	@bash ./scripts/check-kernel-baseline-isa.sh $(KERNEL_BUILD_DIR)/arch/x86/boot/compressed/vmlinux
 
 rootfs: rust-build
 	@AWEOS_DESKTOP=$(AWEOS_DESKTOP) ./scripts/build-rootfs.sh $(BUILD_DIR)
