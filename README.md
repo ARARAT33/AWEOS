@@ -4,9 +4,13 @@ AWEOS is an x86_64 Linux-based operating-system project with its own boot
 integration, root filesystem, initramfs, Rust-based AYUI desktop work, system
 utilities, package-management experiments, and C installer/updater components.
 
-> **Development status — 2026-11-05: not production-ready.** The repository has
+> **Development status — 2026-11-07: not production-ready.** The repository has
 > working component tests and an image-build pipeline, but full BIOS/UEFI
-> end-to-end boot and real-hardware validation are not yet established. Do not
+> end-to-end boot and real-hardware validation are not yet established. The
+> latest qemu64 trace identifies an AVX instruction in the host-provided BusyBox
+> binary as a userspace invalid-opcode fault after the kernel starts. Draft PR
+> #46 replaces that host binary with a pinned static x86-64 baseline build and
+> adds ELF ISA checks; the rebuilt image and boot reruns are still pending. Do not
 > use the installer/updater to modify a disk containing valuable data. Both
 > the C transaction path and the Rust GUI installer now fail closed: the
 > previous Rust flow automatically selected the first disk and repartitioned
@@ -21,7 +25,12 @@ utilities, package-management experiments, and C installer/updater components.
   read-only. Kernel configuration and build output are kept out of tree under
   `build/linux-x86_64/`. Limine is used for BIOS/UEFI hybrid ISO assembly.
 - **Initramfs and root filesystem:** the image pipeline builds an ext4 root
-  image and a BusyBox initramfs. The initramfs validates AWEOS identity before
+  image and a BusyBox initramfs. BusyBox is built from a SHA-256-pinned upstream
+  source archive with static musl linking and explicit x86-64 baseline flags;
+  the build does not copy an ISA-optimized BusyBox from the host runner. Rootfs
+  validation disassembles packaged ELF binaries and rejects detected AVX/AVX2/
+  AVX-512, BMI, and other post-baseline instructions. The initramfs validates
+  AWEOS identity before
   switching root. It probes ext4 with `ro,noload`; live sessions use a tmpfs
   overlay. Persistent root writes require the explicit
   `aweos.root-rw=1` boot parameter after identity verification.
@@ -53,8 +62,8 @@ utilities, package-management experiments, and C installer/updater components.
   sandboxing, and a full repository lifecycle remain unimplemented. See
   [package security status](docs/PACKAGE-SECURITY.md).
 - **CI:** shell/C regression tests, Rust workspace tests, userland release
-  builds, ISO assembly tests, QEMU runner tests, and the `/linux` integrity
-  check run through GitHub Actions.
+  builds, ISO assembly tests, QEMU runner tests, compressed-kernel and userland
+  ISA checks, and the `/linux` integrity check run through GitHub Actions.
 
 ## Boot and root-mount policy
 
@@ -92,8 +101,9 @@ The main Make targets currently defined in the repository are:
 
 The full image and QEMU targets require the host dependencies installed by
 [the x86_64 GitHub Actions workflow](.github/workflows/build-aweos-x86_64.yml),
-including a Limine host utility, QEMU, OVMF, xorriso, BusyBox, cpio, and ext4
-tools.
+including a Limine host utility, QEMU, OVMF, xorriso, the musl toolchain
+(`musl-tools`/`musl-gcc`), cpio, and ext4 tools. The build downloads and verifies
+its pinned BusyBox source archive; a host BusyBox executable is not required.
 
 ## Architecture
 
