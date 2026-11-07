@@ -22,7 +22,7 @@ cat > "${rootfs}/bin/busybox.c" <<'BUSYBOX_C'
 #include <string.h>
 int main(int argc, char **argv) {
     if (argc == 2 && strcmp(argv[1], "--list") == 0) {
-        puts("tar\\nsha256sum\\nfind\\nsort\\nawk\\ngrep\\nsed\\nwc\\ntr\\nmktemp\\ncp\\nchmod\\nln\\nmkdir\\nrm\\nrmdir\\ncat\\nmv");
+        puts("tar\nsha256sum\nfind\nsort\nawk\ngrep\nsed\nwc\ntr\nmktemp\ncp\nchmod\nln\nmkdir\nrm\nrmdir\ncat\nmv");
         return 0;
     }
     return 1;
@@ -41,7 +41,7 @@ cat > "${tmp_root}/main.c" <<'C_SOURCE'
 #include <stdio.h>
 int main(void) { puts("AWEOS runtime probe"); return 0; }
 C_SOURCE
-cc -O2 -march=x86-64 -mtune=generic -mno-avx -mno-avx2 -mno-bmi -mno-bmi2 \\
+cc -O2 -march=x86-64 -mtune=generic -mno-avx -mno-avx2 -mno-bmi -mno-bmi2 \
     -o "${rootfs}/usr/bin/aweui" "${tmp_root}/main.c"
 
 interpreter="$(readelf -l "${rootfs}/usr/bin/aweui" | sed -n 's/.*Requesting program interpreter: \(.*\)]/\1/p' | head -n 1)"
