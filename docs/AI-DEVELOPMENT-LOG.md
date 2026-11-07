@@ -1346,3 +1346,44 @@ Next:
   comma-separated filter handling or the guest.
 - A fresh userland run on the corrected head is required; no pass is claimed
   for the failed run.
+
+
+### QEMU userland invalid-opcode root cause — 2026-11-07
+
+#### Evidence from the real boot artifact
+
+- Inspected diagnostics artifact `AWEOS-QEMU-diagnostics-run-42341230731.zip` from the actual BIOS/UEFI QEMU run, not only its summary.
+- The BIOS kernel log reports: `traps: init[1] trap invalid opcode ip:56df50 ... in busybox`, followed by `Kernel panic - not syncing: Attempted to kill init!`.
+- The faulting bytes are `c5 f9 6f 05 98 ff 05 00`. Disassembly of the exact BusyBox binary extracted from the initramfs identifies the instruction at `0x56df50` as `vmovdqa xmm0, XMMWORD PTR [rip+0x5ff98]` (VEX/AVX).
+- The extracted ELF's package metadata identifies Ubuntu BusyBox `1:1.37.0-7ubuntu1` with `architectureVariant=amd64v3`. The host package was optimized for a newer CPU than QEMU's `qemu64` model. The kernel was able to start `/init`; PID 1 then faulted in BusyBox.
+- This is a distinct userspace fault from the earlier compressed-kernel BMI2 finding. The prior kernel ISA guard remains necessary; this evidence does not establish that all BIOS/UEFI boot paths now pass.
+
+#### Changes on branch `boot/busybox-x86-64-baseline-20261107`
+
+- Added `scripts/build-busybox-baseline.sh`: downloads pinned BusyBox 1.38.0 source, verifies SHA-256 `34f9ea6ff8636f2c9241153b9114eefa9e65674a45318ae1ef95bb5f31c53bb2`, and builds a static binary with musl and explicit x86-64 baseline flags. It publishes to the build directory only after the binary, applets, static-linking property, and ISA scan pass.
+- Added `scripts/check-qemu64-baseline-isa.sh` and `scripts/test-qemu64-baseline-isa.sh`. The checker rejects VEX/EVEX instructions (including AVX/AVX2/AVX-512) and a list of common post-baseline extensions; the regression uses explicit AVX and BMI2 byte fixtures.
+- Made the baseline BusyBox a Makefile dependency and use the same binary for both rootfs and initramfs. The build no longer copies the host runner's potentially amd64v3 BusyBox.
+- Rootfs validation now scans every packaged ELF under `/usr/bin` and the BusyBox binary. AYUI's framebuffer fallback and its test fixture are compiled with explicit x86-64 baseline flags.
+- Added `musl-tools` to the full-build workflow and removed the host `busybox-static` dependency.
+
+#### Validation performed in this run
+
+- Local ISA regression fixture: PASS (baseline object accepted; explicit AVX and BMI2 objects rejected).
+- The actual BusyBox extracted from the failed QEMU artifact is rejected by the new checker; its AVX instructions are reported. This independently confirms the diagnosis.
+- Full repository `make test-shell`, BusyBox source build, ISO build, and BIOS/UEFI QEMU reruns have not yet been run on this branch. Fresh GitHub Actions results are required before treating this fix as validated.
+
+#### Remaining blockers / next steps
+
+1. Run userland regression CI and the complete x86_64 image/boot workflow on this branch.
+2. Inspect the build log to confirm the pinned BusyBox builds statically with the required applets and passes the ISA scan.
+3. Confirm the rebuilt image reaches the verified rootfs hand-off in BIOS, UEFI, and direct-kernel qemu64 modes.
+4. If another #UD occurs, map its exact instruction to the responsible ELF; do not widen the CPU model or label the boot as fixed without evidence.
+5. Keep PRs stacked and unmerged until the base-chain review and all required checks pass. Preserve `/linux` read-only verification and the no-implicit-destructive-install invariant.
+
+
+### CI follow-up for baseline BusyBox branch — 2026-11-07
+
+- Package Security workflow run `42345079130` (#51): PASS.
+- Userland workflow run `42345079144` (#425): shell/C transaction safety tests, repository-boundary verification, Cargo metadata validation, and Rust workspace tests completed successfully. The Rust userland binary build was still running at the time of this update.
+- Full x86_64 build workflow run `42345079128` (#482): Limine host utility build, shell/C/rootfs/session/QEMU-runner regressions, and the pre-build `/linux` read-only verification completed successfully. The Rust workspace test step was still running; image build and BIOS/UEFI/direct-kernel boot tests had not started.
+- Therefore the new ISA regression and updated rootfs fixture are confirmed passing in GitHub Actions, but the pinned BusyBox source build and the rebuilt-image boot result remain pending. No boot-fix claim is made.

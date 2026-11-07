@@ -17,14 +17,20 @@ printf 'NAME=AWEOS\n' > "${rootfs}/etc/os-release"
 printf 'AUTOLOGIN=true\n' > "${rootfs}/etc/aweos/config"
 printf '[desktop]\ntheme = "test"\n' > "${rootfs}/etc/aweui/config.toml"
 printf '#!/bin/sh\nexec /usr/bin/aweos-session /usr/bin/aweui /bin/busybox /usr/bin/aweos-ayui-fb\n' > "${rootfs}/sbin/init"
-cat > "${rootfs}/bin/busybox" <<'BUSYBOX'
-#!/bin/sh
-if [ "${1:-}" = "--list" ]; then
-    printf '%s\n' tar sha256sum find sort awk grep sed wc tr mktemp cp chmod ln mkdir rm rmdir cat mv
-    exit 0
-fi
-exit 1
-BUSYBOX
+cat > "${rootfs}/bin/busybox.c" <<'BUSYBOX_C'
+#include <stdio.h>
+#include <string.h>
+int main(int argc, char **argv) {
+    if (argc == 2 && strcmp(argv[1], "--list") == 0) {
+        puts("tar\nsha256sum\nfind\nsort\nawk\ngrep\nsed\nwc\ntr\nmktemp\ncp\nchmod\nln\nmkdir\nrm\nrmdir\ncat\nmv");
+        return 0;
+    }
+    return 1;
+}
+BUSYBOX_C
+cc -O2 -march=x86-64 -mtune=generic -mno-avx -mno-avx2 -mno-bmi -mno-bmi2 \
+    -o "${rootfs}/bin/busybox" "${rootfs}/bin/busybox.c"
+rm -f "${rootfs}/bin/busybox.c"
 printf '#!/bin/sh\nexit 0\n' > "${rootfs}/usr/bin/awepkg"
 printf '#!/bin/sh\nexit 0\n' > "${rootfs}/usr/bin/aweos-session"
 printf '#!/bin/sh\nexit 0\n' > "${rootfs}/usr/bin/aweos-ayui-fb"
@@ -35,7 +41,8 @@ cat > "${tmp_root}/main.c" <<'C_SOURCE'
 #include <stdio.h>
 int main(void) { puts("AWEOS runtime probe"); return 0; }
 C_SOURCE
-cc -o "${rootfs}/usr/bin/aweui" "${tmp_root}/main.c"
+cc -O2 -march=x86-64 -mtune=generic -mno-avx -mno-avx2 -mno-bmi -mno-bmi2 \
+    -o "${rootfs}/usr/bin/aweui" "${tmp_root}/main.c"
 
 interpreter="$(readelf -l "${rootfs}/usr/bin/aweui" | sed -n 's/.*Requesting program interpreter: \(.*\)]/\1/p' | head -n 1)"
 test -n "$interpreter"

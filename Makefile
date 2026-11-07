@@ -22,7 +22,7 @@ RUST_BINS := aweui aweui-installer aweui-settings aweui-control-center aweui-fil
              aweui-calculator aweui-firstboot-setup aweui-user-app-template
 SHELL_SCRIPTS := $(shell find scripts -maxdepth 1 -type f -name '*.sh' -print | sort)
 
-.PHONY: all build verify-linux verify-linux-readonly rust-build userland kernel rootfs \
+.PHONY: all build verify-linux verify-linux-readonly rust-build userland busybox kernel rootfs \
         initramfs finalize-rootfs iso disk-image image check test test-rust test-shell test-qemu \
         validate-rootfs verify-artifacts clean
 
@@ -45,6 +45,9 @@ rust-build:
 
 userland: rust-build
 
+busybox: verify-linux
+	@bash ./scripts/build-busybox-baseline.sh "$(BUILD_DIR)"
+
 kernel: verify-linux
 	@source "$(REPO_ROOT)/scripts/lib/build-safety.sh"; aweos_prepare_build_dir "$(BUILD_DIR)" "$(REPO_ROOT)" >/dev/null
 	@mkdir -p "$(KERNEL_BUILD_DIR)"
@@ -54,14 +57,14 @@ kernel: verify-linux
 	@test -s $(KERNEL_BUILD_DIR)/arch/x86/boot/compressed/vmlinux
 	@bash ./scripts/check-kernel-baseline-isa.sh $(KERNEL_BUILD_DIR)/arch/x86/boot/compressed/vmlinux
 
-rootfs: rust-build
+rootfs: rust-build busybox
 	@AWEOS_DESKTOP=$(AWEOS_DESKTOP) ./scripts/build-rootfs.sh $(BUILD_DIR)
 	@AWEOS_DESKTOP=$(AWEOS_DESKTOP) bash ./scripts/validate-rootfs-layout.sh $(BUILD_DIR)
 
 validate-rootfs:
 	@AWEOS_DESKTOP=$(AWEOS_DESKTOP) bash ./scripts/validate-rootfs-layout.sh $(BUILD_DIR)
 
-initramfs: rootfs
+initramfs: rootfs busybox
 	@./scripts/build-initramfs.sh $(BUILD_DIR)
 
 finalize-rootfs: initramfs

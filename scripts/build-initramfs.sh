@@ -8,6 +8,15 @@ source "$SCRIPT_DIR/lib/build-safety.sh"
 BUILD_DIR="$(aweos_prepare_build_dir "${1:-build}" "$REPO_ROOT")"
 
 OUTPUT_CPIO="$BUILD_DIR/aweos-initramfs.cpio.gz"
+BUSYBOX_BIN="$BUILD_DIR/tools/busybox"
+if [[ ! -x "$BUSYBOX_BIN" ]]; then
+    bash "$SCRIPT_DIR/build-busybox-baseline.sh" "$BUILD_DIR"
+fi
+test -x "$BUSYBOX_BIN" || {
+    echo "ERROR: baseline BusyBox binary is missing: $BUSYBOX_BIN" >&2
+    exit 1
+}
+bash "$SCRIPT_DIR/check-qemu64-baseline-isa.sh" "$BUSYBOX_BIN"
 INIT_SCRIPT="$REPO_ROOT/scripts/aweos-initramfs-init.sh"
 TMP_ROOT="$(mktemp -d "$BUILD_DIR/.aweos-initramfs.XXXXXX")"
 trap 'rm -rf -- "$TMP_ROOT"' EXIT
@@ -20,11 +29,6 @@ test -s "$INIT_SCRIPT" || {
     echo "ERROR: initramfs init script is missing: $INIT_SCRIPT" >&2
     exit 1
 }
-BUSYBOX_BIN="$(command -v busybox || true)"
-if [[ -z "$BUSYBOX_BIN" ]]; then
-    echo "ERROR: busybox binary not found!" >&2
-    exit 1
-fi
 command -v cpio >/dev/null 2>&1 || {
     echo "ERROR: cpio is required to build the initramfs." >&2
     exit 1

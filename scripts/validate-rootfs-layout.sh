@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 BUILD_DIR="${1:-build}"
 ROOTFS_DIR="${BUILD_DIR}/rootfs"
 
@@ -32,6 +33,7 @@ done
 
 [ -x "${ROOTFS_DIR}/sbin/init" ] || fail "/sbin/init is not executable"
 [ -x "${ROOTFS_DIR}/bin/busybox" ] || fail "/bin/busybox is not executable"
+bash "$SCRIPT_DIR/check-qemu64-baseline-isa.sh" "${ROOTFS_DIR}/bin/busybox"
 [ -x "${ROOTFS_DIR}/usr/bin/aweos-session" ] || fail "/usr/bin/aweos-session is not executable"
 [ -x "${ROOTFS_DIR}/usr/bin/awepkg" ] || fail "/usr/bin/awepkg is not executable"
 
@@ -66,6 +68,7 @@ validate_elf_runtime() {
     local interpreter loader ldd_output lib
 
     readelf -h "$binary" >/dev/null 2>&1 || return 0
+    bash "$SCRIPT_DIR/check-qemu64-baseline-isa.sh" "$binary"
     interpreter="$(readelf -l "$binary" 2>/dev/null | sed -n 's/.*Requesting program interpreter: \(.*\)]/\1/p' | head -n 1)"
     [ -n "$interpreter" ] || return 0
 
