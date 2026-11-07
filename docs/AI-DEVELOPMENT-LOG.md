@@ -1374,3 +1374,18 @@ is not counted as a primary boot pass.
 - The first CI result is recorded as a real test failure, not a pass. Fresh
   userland, core-preservation, and full image/boot checks are required on the
   corrected commit.
+
+### Final-head validation snapshot — 2026-11-07
+
+- Final PR #45 head at the time of this entry: 96ca0494d81886685b038225ebcc816007b541f0.
+- Userland workflow #42342456511: **PASS**. Inspected the completed job logs. The shell/C regression driver ran through test-transaction-fail-closed.sh (including the new explicit-target cases), continued through the remaining shell regressions, and completed successfully. The same job passed /linux integrity, Cargo metadata, the Rust workspace tests, all release userland binary checks, the Rust installer no-write test, and the AYUI Winit/Xvfb first-frame smoke test.
+- Core data-preservation workflow #42342456671: **PASS**. Archive safety regression, updater BIOS/UEFI and preservation-failure tests, real sysfs boot-mode detection, and /linux read-only verification all completed successfully.
+- Full image/boot workflow #42342456616: **IN PROGRESS** at the AWEOS image-build step. No full image or boot result is claimed for PR #45 yet.
+- On the parent PR #44 head, full image construction completed successfully and the post-build /linux integrity check passed in run #42341230731. The primary qemu64 BIOS/UEFI/direct-kernel boot step failed; the tagged qemu64 instruction-trace retry is still running. The kernel baseline ISA checker is part of the successful image-build target, but this does not prove boot compatibility.
+- The first PR #45 test attempt exposed the transaction error-code propagation mismatch described above. The final-head userland run is green after the correction. Earlier intermediate-head failures are not counted as final-head validation.
+
+Run links:
+- https://github.com/ARARAT33/AWEOS/actions/runs/42342456511
+- https://github.com/ARARAT33/AWEOS/actions/runs/42342456671
+- https://github.com/ARARAT33/AWEOS/actions/runs/42342456616
+- https://github.com/ARARAT33/AWEOS/actions/runs/42341230731
