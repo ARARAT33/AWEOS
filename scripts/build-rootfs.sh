@@ -15,6 +15,12 @@ BUILD_DIR="$(aweos_prepare_build_dir "${1:-build}" "$REPO_ROOT")"
 ROOTFS_DIR="${BUILD_DIR}/rootfs"
 ROOTFS_IMG="${BUILD_DIR}/rootfs.img"
 IMG_SIZE_MB="${2:-512}"
+BUSYBOX_BIN="${BUILD_DIR}/tools/busybox"
+if [ ! -x "${BUSYBOX_BIN}" ]; then
+    bash "${SCRIPT_DIR}/build-busybox-baseline.sh" "${BUILD_DIR}"
+fi
+test -x "${BUSYBOX_BIN}" || { echo "ERROR: baseline BusyBox binary is missing: ${BUSYBOX_BIN}" >&2; exit 1; }
+bash "${SCRIPT_DIR}/check-qemu64-baseline-isa.sh" "${BUSYBOX_BIN}"
 
 echo "Building AWEOS root filesystem in ${ROOTFS_DIR}..."
 
@@ -23,8 +29,6 @@ mkdir -p "${ROOTFS_DIR}"/{bin,sbin,usr/bin,usr/sbin,usr/lib,usr/share/applicatio
 mkdir -p "${ROOTFS_DIR}/run/user/0"
 chmod 0700 "${ROOTFS_DIR}/run/user/0"
 
-BUSYBOX_BIN="$(command -v busybox || true)"
-test -n "${BUSYBOX_BIN}" || { echo "ERROR: busybox binary not found" >&2; exit 1; }
 cp -L "${BUSYBOX_BIN}" "${ROOTFS_DIR}/bin/busybox"
 chmod 0755 "${ROOTFS_DIR}/bin/busybox"
 
@@ -86,7 +90,8 @@ done
 # Winit is a nested compositor and requires an existing host display. On bare
 # boots without DISPLAY/WAYLAND_DISPLAY, package the real Linux fbdev fallback.
 FB_GUI="${ROOTFS_DIR}/usr/bin/aweos-ayui-fb"
-cc -std=gnu11 -O2 -Wall -Wextra -Werror -Wno-unused-parameter \
+cc -std=gnu11 -O2 -march=x86-64 -mtune=generic -mno-avx -mno-avx2 -mno-bmi -mno-bmi2 \
+    -Wall -Wextra -Werror -Wno-unused-parameter \
     -D_FORTIFY_SOURCE=2 -fstack-protector-strong -fPIE -pie \
     -Wl,-z,relro,-z,now \
     -I"${REPO_ROOT}/src/gui" -I"${REPO_ROOT}/src/apps" \
