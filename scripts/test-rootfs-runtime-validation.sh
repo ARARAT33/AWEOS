@@ -41,7 +41,8 @@ cat > "${tmp_root}/main.c" <<'C_SOURCE'
 #include <stdio.h>
 int main(void) { puts("AWEOS runtime probe"); return 0; }
 C_SOURCE
-cc -o "${rootfs}/usr/bin/aweui" "${tmp_root}/main.c"
+cc -O2 -march=x86-64 -mtune=generic -mno-avx -mno-avx2 -mno-bmi -mno-bmi2 \\
+    -o "${rootfs}/usr/bin/aweui" "${tmp_root}/main.c"
 
 interpreter="$(readelf -l "${rootfs}/usr/bin/aweui" | sed -n 's/.*Requesting program interpreter: \(.*\)]/\1/p' | head -n 1)"
 test -n "$interpreter"
