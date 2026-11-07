@@ -1300,3 +1300,37 @@ is not counted as a primary boot pass.
   literal-safe replacement and verified the stored line now contains
   `$$(nproc)`, so GNU Make passes the job-count command substitution to the
   shell rather than expanding an undefined Make variable.
+
+### QEMU trace follow-up — userspace #UD identified, 2026-11-07
+
+- Inspected the real 506-byte summary artifact from QEMU run #42341230731
+  (artifact #13562646643), rather than relying on the workflow's green
+  diagnostic-retry step.
+- The primary BIOS/UEFI/direct-kernel boot check failed. The tagged qemu64
+  retry recorded an invalid-opcode exception (#UD, vector 6) at the same
+  address in all three paths: PC/RIP 0x000000000056df50, CPL=3. This is a
+  userspace fault, not the earlier compressed-kernel RIP at 0x3cd63c7.
+- The compressed-kernel x86-64 baseline scan and image build passed, and
+  /linux integrity passed after the build. That does not establish that the
+  userspace binaries are baseline-compatible or that boot succeeds.
+- The first tagged trace did not include instruction bytes because its filter
+  covered 0x3c00000..0x45d0000 and omitted the observed userspace address
+  0x56df50. The summary explicitly reported that no instruction-byte block
+  covered the faulting PC.
+- Updated the diagnostic range to include both 0x500000..0x600000 (the observed
+  userspace fault region) and 0x3c00000..0x45d0000 (the previous compressed
+  kernel region). QEMU's documented comma-separated -dfilter range syntax is
+  used. The mock runner now validates each range in the list, and the trace
+  extractor has a CPL3/0x56df50 regression fixture.
+- The exact faulting instruction is still unknown. Do not attribute this #UD
+  to BMI2 or claim the qemu64 boot issue fixed until the widened trace yields
+  the bytes and the responsible userspace binary is identified.
+
+Next:
+1. Run the updated QEMU trace and inspect the decoded instruction at 0x56df50.
+2. Map the PC to the responsible ELF in the initramfs/rootfs and inspect its
+   build flags and linked libraries.
+3. Fix the actual unsupported instruction or intentional trap, then rerun
+   BIOS, UEFI, and direct-kernel QEMU tests on qemu64.
+4. Preserve the current compressed-kernel ISA regression and /linux read-only
+   checks.

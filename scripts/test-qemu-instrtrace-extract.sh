@@ -57,6 +57,17 @@ echo "AWEOS LAST TRACE LINE" >>"$clean_log"
 # --- Fixture 6: empty log. ---
 : >"$workdir/qemu-empty-instrtrace-debug.log"
 
+# --- Fixture 7: userspace CPL3 fault at the address observed in QEMU CI. ---
+# The bytes are synthetic; this verifies parsing of a low userspace virtual
+# address and selector:offset form after the diagnostic filter is widened.
+userland_log="$workdir/qemu-userland-instrtrace-debug.log"
+{
+    echo "IN:"
+    echo "0x0056df48:"
+    echo "OBJD-T: 90909090909090900f0b"
+    echo "     0: v=06 e=0000 i=0 cpl=3 IP=0033:000000000056df50 pc=000000000056df50"
+} >"$userland_log"
+
 summary="$workdir/summary.txt"
 if ! bash "$extractor" \
         "$fault_log" \
@@ -65,6 +76,7 @@ if ! bash "$extractor" \
         "$decoded_log" \
         "$clean_log" \
         "$workdir/qemu-empty-instrtrace-debug.log" \
+        "$userland_log" \
         "$workdir/qemu-missing-instrtrace-debug.log" \
         >"$summary" 2>&1; then
     echo "FAIL: extractor exited non-zero." >&2
@@ -103,12 +115,17 @@ check fixture5 "No CPU fault events"
 check fixture5 "AWEOS LAST TRACE LINE"
 check fixture6 "qemu-empty-instrtrace-debug.log"
 check fixture6 "EMPTY: debug log has no content."
-check fixture7 "qemu-missing-instrtrace-debug.log"
+check fixture7 "qemu-userland-instrtrace-debug.log"
+check fixture7 "cpl=3 IP=0033:000000000056df50"
+check fixture7 "Guest instructions around faulting address 0x000000000056df50:"
+check fixture7 "Faulting instruction bytes: 0f0b"
+check fixture7 "ud2"
+check fixture8 "qemu-missing-instrtrace-debug.log"
 check fixture7 "MISSING: no such debug log."
 
 line_count="$(wc -l <"$summary")"
-if [ "$line_count" -gt 560 ]; then
-    echo "FAIL: summary output is unbounded (${line_count} lines; expected at most 560)." >&2
+if [ "$line_count" -gt 640 ]; then
+    echo "FAIL: summary output is unbounded (${line_count} lines; expected at most 640)." >&2
     fail=1
 fi
 

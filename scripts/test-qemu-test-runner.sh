@@ -65,9 +65,14 @@ done
 # Mirror QEMU's documented -dfilter address-range grammar for the range form
 # used by this test (start..end). This catches malformed diagnostic arguments
 # before the mock can accidentally report a false-positive boot.
-if [[ -n "$dfilter" && ! "$dfilter" =~ ^0x[[:xdigit:]]+\.\.0x[[:xdigit:]]+$ ]]; then
-    echo "qemu-system-x86_64: -dfilter $dfilter: Invalid range" >&2
-    exit 1
+if [[ -n "$dfilter" ]]; then
+    IFS=',' read -r -a dfilter_ranges <<< "$dfilter"
+    for dfilter_range in "${dfilter_ranges[@]}"; do
+        if [[ ! "$dfilter_range" =~ ^0x[[:xdigit:]]+\.\.0x[[:xdigit:]]+$ ]]; then
+            echo "qemu-system-x86_64: -dfilter $dfilter: Invalid range" >&2
+            exit 1
+        fi
+    done
 fi
 
 # Record the CPU model in the exact debug file passed through QEMU's -D option.
@@ -75,7 +80,7 @@ fi
 if [[ -n "$debug_log" ]]; then
     printf 'mock cpu=%s\n' "${AWEOS_QEMU_CPU:-qemu64}" > "$debug_log"
     if [[ -n "$dfilter" ]]; then
-        printf 'mock dfilter=%s\n' "$dfilter" >> "$debug_log"
+    grep -qF "mock dfilter=0x500000..0x600000,0x3c00000..0x45d0000" "$build_dir/qemu-$mode-instrtrace-debug.log"
     fi
 fi
 
@@ -232,12 +237,26 @@ if [ "$rc" -eq 0 ]; then
 fi
 grep -q -- "-dfilter 0x3c00000-0x3d00000: Invalid range" "$tmp_root/invalid-dfilter-output.log"
 
+# Validate each member of a comma-separated range list independently.
+set +e
+PATH="$mock_bin:$PATH" \
+AWEOS_QEMU_DFILTER=0x500000..0x600000,0x3c00000-0x3d00000 \
+    bash "$repo_root/scripts/run-qemu-tests.sh" "$build_dir" bios \
+    > "$tmp_root/invalid-dfilter-list-output.log" 2>&1
+rc=$?
+set -e
+if [ "$rc" -eq 0 ]; then
+    echo "ERROR: runner mock accepted an invalid member of a comma-separated -dfilter list." >&2
+    exit 1
+fi
+grep -q -- "-dfilter 0x500000..0x600000,0x3c00000-0x3d00000: Invalid range" "$tmp_root/invalid-dfilter-list-output.log"
+
 # A diagnostic instruction-trace retry with the same CPU model must write to
 # its own tagged logs and must not overwrite the primary or max-CPU logs.
 PATH="$mock_bin:$PATH" \
 AWEOS_UEFI_FIRMWARE="$firmware" \
 AWEOS_QEMU_LOG_SUFFIX=instrtrace \
-AWEOS_QEMU_DFILTER=0x3c00000..0x45d0000 \
+AWEOS_QEMU_DFILTER=0x500000..0x600000,0x3c00000..0x45d0000 \
 MOCK_QEMU_MODE=success \
     bash "$repo_root/scripts/run-qemu-tests.sh" "$build_dir" all \
     > "$tmp_root/trace-output.log" 2>&1

@@ -106,8 +106,9 @@ jobs:
           AWEOS_QEMU_CPU: qemu64
           AWEOS_QEMU_LOG_SUFFIX: instrtrace
           AWEOS_QEMU_DEBUG_FLAGS: in_asm,int,guest_errors,cpu_reset
-          # QEMU -dfilter ranges use start..end syntax.
-          AWEOS_QEMU_DFILTER: 0x3c00000..0x45d0000
+          # QEMU -dfilter accepts comma-separated ranges. Capture the
+          # userspace #UD at 0x56df50 and the earlier compressed-kernel region.
+          AWEOS_QEMU_DFILTER: 0x500000..0x600000,0x3c00000..0x45d0000
         run: |
           for log in build/qemu-*.log; do
             if [ -f "$log" ] && grep -q "AWEOS RECOVERY SHELL READY" "$log"; then
