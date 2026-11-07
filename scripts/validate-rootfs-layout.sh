@@ -33,6 +33,7 @@ done
 
 [ -x "${ROOTFS_DIR}/sbin/init" ] || fail "/sbin/init is not executable"
 [ -x "${ROOTFS_DIR}/bin/busybox" ] || fail "/bin/busybox is not executable"
+bash "$SCRIPT_DIR/check-qemu64-baseline-isa.sh" "${ROOTFS_DIR}/bin/busybox"
 [ -x "${ROOTFS_DIR}/usr/bin/aweos-session" ] || fail "/usr/bin/aweos-session is not executable"
 [ -x "${ROOTFS_DIR}/usr/bin/awepkg" ] || fail "/usr/bin/awepkg is not executable"
 
