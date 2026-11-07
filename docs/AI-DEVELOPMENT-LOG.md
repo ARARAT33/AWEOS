@@ -1334,3 +1334,15 @@ Next:
    BIOS, UEFI, and direct-kernel QEMU tests on qemu64.
 4. Preserve the current compressed-kernel ISA regression and /linux read-only
    checks.
+
+### QEMU filter regression follow-up — 2026-11-07
+
+- The first userland run after widening the trace filter (#42343041467) failed
+  in scripts/test-qemu-test-runner.sh, before any real QEMU boot test. Review
+  of the failing xtrace showed that the test-file edit had replaced the mock
+  QEMU's dfilter printf with a grep assertion inside the mock process.
+- Restored the mock's debug-log write and moved the fixed-string assertion to
+  the parent test loop. The failure was in the test fixture, not in QEMU's
+  comma-separated filter handling or the guest.
+- A fresh userland run on the corrected head is required; no pass is claimed
+  for the failed run.

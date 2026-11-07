@@ -80,7 +80,7 @@ fi
 if [[ -n "$debug_log" ]]; then
     printf 'mock cpu=%s\n' "${AWEOS_QEMU_CPU:-qemu64}" > "$debug_log"
     if [[ -n "$dfilter" ]]; then
-    grep -qF "mock dfilter=0x500000..0x600000,0x3c00000..0x45d0000" "$build_dir/qemu-$mode-instrtrace-debug.log"
+        printf 'mock dfilter=%s\\n' "$dfilter" >> "$debug_log"
     fi
 fi
 
@@ -264,7 +264,7 @@ for mode in bios uefi kernel; do
     test -s "$build_dir/qemu-$mode-instrtrace.log"
     test -s "$build_dir/qemu-$mode-instrtrace-debug.log"
     grep -q "^mock cpu=qemu64$" "$build_dir/qemu-$mode-instrtrace-debug.log"
-    grep -q "^mock dfilter=0x3c00000\.\.0x45d0000$" "$build_dir/qemu-$mode-instrtrace-debug.log"
+    grep -qF "mock dfilter=0x500000..0x600000,0x3c00000..0x45d0000" "$build_dir/qemu-$mode-instrtrace-debug.log"
 done
 for mode in bios uefi kernel; do
     grep -q "^mock cpu=max$" "$build_dir/qemu-$mode-max-debug.log"
