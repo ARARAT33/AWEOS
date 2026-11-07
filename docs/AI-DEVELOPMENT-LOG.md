@@ -1280,3 +1280,14 @@ is not counted as a primary boot pass.
   workflow passed; userland and full-build shell suites stopped at this
   assertion before the new kernel build/ISA scan could run.
 - Re-run the full shell suite and build/boot workflow after this correction.
+
+
+### Build-command review — 2026-11-07
+
+- Reviewing the first CI traces exposed a Makefile escaping regression in the
+  new kernel command: the recipe needs `$$(nproc)` so GNU Make passes
+  `$(nproc)` to the shell. Corrected the line to preserve the existing
+  parallel-build behavior while retaining the explicit compiler flags.
+- The earlier shell-suite failure from the stale QEMU mock assertion has also
+  been corrected in commit `9da2867`; the next workflow run is the first
+  valid full validation of these changes.
