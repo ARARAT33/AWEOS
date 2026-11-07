@@ -1358,3 +1358,19 @@ is not counted as a primary boot pass.
    boot validation before reconciling the boot-fix stack.
 4. Audit the Rust GUI installer and C CLI for any remaining automatic target
    defaults or paths that can bypass explicit user confirmation.
+
+### CI follow-up — 2026-11-07
+
+- The first PR #45 userland and full-build shell runs (#42342147428 and
+  #42342147485) reached the new installer regression and failed its full-disk
+  confirmation assertion. The transaction state machine correctly returned
+  AWEOS_ERR_PERMISSION, but aweos_installer_run_cli() collapsed every
+  transaction-stage error into AWEOS_ERR_TRANSACTION, hiding the policy
+  denial from callers.
+- Updated the C installer to propagate the exact error code from each
+  transaction stage. This preserves the destructive-confirmation denial as
+  AWEOS_ERR_PERMISSION and retains AWEOS_ERR_TRANSACTION for the currently
+  unsupported staging backend. No transaction stage was enabled or bypassed.
+- The first CI result is recorded as a real test failure, not a pass. Fresh
+  userland, core-preservation, and full image/boot checks are required on the
+  corrected commit.

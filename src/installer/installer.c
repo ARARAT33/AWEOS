@@ -117,18 +117,29 @@ int aweos_installer_run_cli(aweos_installer_state_t *st) {
         snprintf(cfg.preserve_dst, sizeof(cfg.preserve_dst), "/archiveddata/home");
     }
 
-    if (aweos_tx_init(&st->tx, &cfg) != AWEOS_OK) return AWEOS_ERR_TRANSACTION;
-    if (aweos_tx_plan(&st->tx) != AWEOS_OK) return AWEOS_ERR_TRANSACTION;
-    if (aweos_tx_validate(&st->tx) != AWEOS_OK) return AWEOS_ERR_TRANSACTION;
-    if (aweos_tx_prepare(&st->tx) != AWEOS_OK) return AWEOS_ERR_TRANSACTION;
-    if (st->mode == INSTALL_MODE_DUAL_BOOT && aweos_tx_preserve(&st->tx) != AWEOS_OK) {
-        LOGE("User-data preservation failed; installation aborted before execution: %s", st->tx.error_msg);
-        return AWEOS_ERR_TRANSACTION;
+    int result = aweos_tx_init(&st->tx, &cfg);
+    if (result != AWEOS_OK) return result;
+    result = aweos_tx_plan(&st->tx);
+    if (result != AWEOS_OK) return result;
+    result = aweos_tx_validate(&st->tx);
+    if (result != AWEOS_OK) return result;
+    result = aweos_tx_prepare(&st->tx);
+    if (result != AWEOS_OK) return result;
+    if (st->mode == INSTALL_MODE_DUAL_BOOT) {
+        result = aweos_tx_preserve(&st->tx);
+        if (result != AWEOS_OK) {
+            LOGE("User-data preservation failed; installation aborted before execution: %s", st->tx.error_msg);
+            return result;
+        }
     }
-    if (aweos_tx_execute(&st->tx) != AWEOS_OK) return AWEOS_ERR_TRANSACTION;
-    if (aweos_tx_configure_boot(&st->tx) != AWEOS_OK) return AWEOS_ERR_TRANSACTION;
-    if (aweos_tx_verify(&st->tx) != AWEOS_OK) return AWEOS_ERR_TRANSACTION;
-    if (aweos_tx_commit(&st->tx) != AWEOS_OK) return AWEOS_ERR_TRANSACTION;
+    result = aweos_tx_execute(&st->tx);
+    if (result != AWEOS_OK) return result;
+    result = aweos_tx_configure_boot(&st->tx);
+    if (result != AWEOS_OK) return result;
+    result = aweos_tx_verify(&st->tx);
+    if (result != AWEOS_OK) return result;
+    result = aweos_tx_commit(&st->tx);
+    if (result != AWEOS_OK) return result;
 
     LOGI("AWEOS Installation to %s completed successfully!", cfg.target_disk);
     return AWEOS_OK;
