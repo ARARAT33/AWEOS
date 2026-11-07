@@ -6,7 +6,8 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 tmp_root="$(mktemp -d "${TMPDIR:-/tmp}/aweos-ayui-fb-build.XXXXXX")"
 trap 'rm -rf -- "$tmp_root"' EXIT
 
-cc -std=gnu11 -O2 -Wall -Wextra -Werror -Wno-unused-parameter \
+cc -std=gnu11 -O2 -march=x86-64 -mtune=generic -mno-avx -mno-avx2 -mno-bmi -mno-bmi2 \
+    -Wall -Wextra -Werror -Wno-unused-parameter \
     -D_FORTIFY_SOURCE=2 -fstack-protector-strong -fPIE -pie \
     -Wl,-z,relro,-z,now \
     -I"$repo_root/src/gui" -I"$repo_root/src/apps" \
