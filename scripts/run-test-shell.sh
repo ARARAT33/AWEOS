@@ -29,6 +29,7 @@ for test_script in \
     test-qemu-test-runner.sh \
     test-qemu-instrtrace-extract.sh \
     test-kernel-baseline-isa.sh \
+    test-qemu64-baseline-isa.sh \
     test-initramfs-root-discovery.sh \
     test-awepkg.sh \
     test-aosin-fail-closed.sh; do
