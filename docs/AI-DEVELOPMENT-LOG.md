@@ -1267,3 +1267,16 @@ is not counted as a primary boot pass.
    the transaction engine fail-closed and preserving user data.
 5. Continue with signed package metadata/key management and AYUI native
    DRM/KMS only after boot reliability is re-established.
+
+
+### CI follow-up — 2026-11-07
+
+- First validation on commit `13ff8c3` found a stale assertion in
+  `scripts/test-qemu-test-runner.sh`: the test expected the old narrow
+  `0x3c00000..0x3d00000` filter even though the test invocation had already
+  been widened to `0x3c00000..0x45d0000`.
+- This was a regression-test fixture mismatch, not a QEMU or kernel failure.
+  Updated the expected mock command line to the new range. The package-safety
+  workflow passed; userland and full-build shell suites stopped at this
+  assertion before the new kernel build/ISA scan could run.
+- Re-run the full shell suite and build/boot workflow after this correction.
