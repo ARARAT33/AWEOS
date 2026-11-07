@@ -1379,3 +1379,11 @@ Next:
 3. Confirm the rebuilt image reaches the verified rootfs hand-off in BIOS, UEFI, and direct-kernel qemu64 modes.
 4. If another #UD occurs, map its exact instruction to the responsible ELF; do not widen the CPU model or label the boot as fixed without evidence.
 5. Keep PRs stacked and unmerged until the base-chain review and all required checks pass. Preserve `/linux` read-only verification and the no-implicit-destructive-install invariant.
+
+
+### CI follow-up for baseline BusyBox branch — 2026-11-07
+
+- Package Security workflow run `42345079130` (#51): PASS.
+- Userland workflow run `42345079144` (#425): shell/C transaction safety tests, repository-boundary verification, Cargo metadata validation, and Rust workspace tests completed successfully. The Rust userland binary build was still running at the time of this update.
+- Full x86_64 build workflow run `42345079128` (#482): Limine host utility build, shell/C/rootfs/session/QEMU-runner regressions, and the pre-build `/linux` read-only verification completed successfully. The Rust workspace test step was still running; image build and BIOS/UEFI/direct-kernel boot tests had not started.
+- Therefore the new ISA regression and updated rootfs fixture are confirmed passing in GitHub Actions, but the pinned BusyBox source build and the rebuilt-image boot result remain pending. No boot-fix claim is made.
