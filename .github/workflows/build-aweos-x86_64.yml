@@ -79,7 +79,43 @@ jobs:
 
 
       - name: Build AWEOS images
-        run: make image
+        id: build_images
+        run: |
+          set -o pipefail
+          make image 2>&1 | tee image-build.log
+
+      - name: Publish image-build failure diagnostics
+        if: ${{ failure() && steps.build_images.outcome == 'failure' }}
+        run: |
+          set -uo pipefail
+          mkdir -p build
+          summary="build/image-build-failure-summary.txt"
+          : > "$summary"
+          {
+            echo "AWEOS image build failure diagnostics"
+            echo
+            echo "First make/script errors:"
+            grep -nE 'ERROR:|Error [0-9]+|\*\*\*' image-build.log | head -n 40 || true
+            echo
+            echo "Last 100 log lines:"
+            tail -n 100 image-build.log || true
+          } | tee -a "$summary"
+          if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+            cat "$summary" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          excerpt="$(grep -m1 -E 'ERROR:|\*\*\*' image-build.log | cut -c1-700 || true)"
+          if [ -n "${excerpt:-}" ]; then
+            echo "::error::AWEOS image build failed: ${excerpt}"
+          fi
+
+      - name: Upload image build log on failure
+        if: ${{ failure() && steps.build_images.outcome == 'failure' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: AWEOS-image-build-log
+          path: image-build.log
+          if-no-files-found: ignore
+          retention-days: 30
 
       - name: Verify /linux after build
         run: ./scripts/verify-linux-readonly.sh
