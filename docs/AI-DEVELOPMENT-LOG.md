@@ -1300,3 +1300,61 @@ is not counted as a primary boot pass.
   literal-safe replacement and verified the stored line now contains
   `$$(nproc)`, so GNU Make passes the job-count command substitution to the
   shell rather than expanding an undefined Make variable.
+
+
+## 2026-11-07 — Remove implicit target selection from the C installer
+
+### Inspection
+
+- Re-read the current stacked PR #44 head, the C installer state/API, storage
+  discovery, the transaction state machine, the existing fail-closed C test,
+  and the README safety invariants before editing.
+- Found a concrete mismatch: README.md promises that no target disk is
+  selected automatically, but aweos_installer_init() still initialized
+  selected_disk_idx to zero whenever discovery found a disk. The transaction
+  backend currently stops before staging or disk writes, but that default
+  would silently become dangerous if the backend were later enabled.
+
+### Changes
+
+- Initialize both selected disk and selected partition indices to -1.
+- Add aweos_installer_select_target() as the explicit target-selection API.
+  It validates observed disk/partition indexes and device paths before
+  changing state. Dual-boot requires a valid selected partition; full-disk
+  replacement requires a selected disk and no partition selection.
+- Make aweos_installer_run_cli() revalidate the selected target, mode, and
+  firmware mode before transaction initialization. A missing or invalid
+  target is rejected before a transaction can begin.
+- Keep destructive replacement separately gated by
+  user_confirmed_destructive; selecting a disk never sets that flag.
+- Extend the existing C transaction safety regression to cover the default
+  unselected state, rejected/out-of-range selections, explicit dual-boot
+  selection, full-disk selection without partition, and the destructive
+  confirmation gate. The test uses stubs and never accesses real block devices.
+
+### Files changed
+
+- src/installer/installer.c
+- src/installer/installer.h
+- scripts/test-transaction-fail-closed.sh
+- docs/AI-DEVELOPMENT-LOG.md
+
+### Validation status
+
+- Source-level anchor checks passed while preparing the patch.
+- The updated regression is part of make test-shell through the existing
+  scripts/run-test-shell.sh list; fresh GitHub Actions execution is
+  required before this change is considered validated.
+- No changes under /linux; no disk, partition, filesystem, bootloader, or
+  user-data operations were performed. All new installer checks are exercised
+  against in-memory fixtures and transaction stubs.
+
+### Next priorities
+
+1. Inspect the new PR's actual userland CI result and C regression output.
+2. Keep the installer transaction backend fail-closed until a real staging,
+   backup verification, rollback, and bootloader deployment path is tested.
+3. Finish the current PR #44 compressed-kernel ISA scan and qemu64 BIOS/UEFI
+   boot validation before reconciling the boot-fix stack.
+4. Audit the Rust GUI installer and C CLI for any remaining automatic target
+   defaults or paths that can bypass explicit user confirmation.
