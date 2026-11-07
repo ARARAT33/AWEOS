@@ -163,28 +163,49 @@ int main(void) {
     if (check(aweos_installer_init(&installer_probe) == AWEOS_OK,
               "installer may display a real unpartitioned disk for a future partitioning flow")) return 1;
     if (check(installer_probe.boot_mode == BOOT_MODE_UEFI &&
-              installer_probe.selected_disk_idx == 0 &&
+              installer_probe.selected_disk_idx == -1 &&
               installer_probe.selected_part_idx == -1 &&
               !installer_probe.confirmed_destructive,
-              "installer defaults must remain non-destructive and must not select a nonexistent partition")) return 1;
+              "installer must not auto-select any discovered disk or partition")) return 1;
+    if (check(aweos_installer_run_cli(&installer_probe) == AWEOS_ERR_INVALID_PARAM,
+              "installer must refuse to run before an explicit target is selected")) return 1;
+    if (check(installer_probe.tx.status_msg[0] == '\0',
+              "missing target selection must be rejected before a transaction is initialized")) return 1;
 
     detected_boot_mode = BOOT_MODE_BIOS;
     storage_disk_count = 1;
     storage_partition_count = 1;
+    if (check(aweos_installer_init(&installer_probe) == AWEOS_OK,
+              "installer must rediscover a real disk without selecting it")) return 1;
+    if (check(aweos_installer_select_target(&installer_probe, -1, 0) == AWEOS_ERR_INVALID_PARAM &&
+              aweos_installer_select_target(&installer_probe, 1, 0) == AWEOS_ERR_INVALID_PARAM &&
+              aweos_installer_select_target(&installer_probe, 0, -1) == AWEOS_ERR_INVALID_PARAM &&
+              aweos_installer_select_target(&installer_probe, 0, 1) == AWEOS_ERR_INVALID_PARAM,
+              "installer must reject negative and out-of-range disk/partition selections")) return 1;
+    if (check(installer_probe.selected_disk_idx == -1 && installer_probe.selected_part_idx == -1,
+              "rejected target selections must not mutate the current selection")) return 1;
+    if (check(aweos_installer_select_target(&installer_probe, 0, 0) == AWEOS_OK,
+              "dual-boot target selection must require and accept an explicit valid disk and partition")) return 1;
+    if (check(installer_probe.selected_disk_idx == 0 && installer_probe.selected_part_idx == 0,
+              "explicit target selection must be recorded")) return 1;
+    if (check(aweos_installer_run_cli(&installer_probe) == AWEOS_ERR_TRANSACTION,
+              "selected installer must still stop when the staging backend is unavailable")) return 1;
+    if (check(installer_probe.tx.state == TX_STATE_FAILED,
+              "selected installer must expose the fail-closed transaction state")) return 1;
 
-    aweos_installer_state_t installer = {0};
-    installer.mode = INSTALL_MODE_DUAL_BOOT;
-    installer.boot_mode = BOOT_MODE_BIOS;
-    installer.selected_disk_idx = 0;
-    installer.selected_part_idx = 0;
-    installer.storage.disk_count = 1;
-    installer.storage.disks[0].partition_count = 1;
-    snprintf(installer.storage.disks[0].dev_path, sizeof(installer.storage.disks[0].dev_path), "/dev/test-disk");
-    snprintf(installer.storage.disks[0].partitions[0].dev_path,
-             sizeof(installer.storage.disks[0].partitions[0].dev_path), "/dev/test-partition");
-    if (check(aweos_installer_run_cli(&installer) == AWEOS_ERR_TRANSACTION,
-              "installer must stop when staging backend is unavailable")) return 1;
-    if (check(installer.tx.state == TX_STATE_FAILED, "installer must expose a failed transaction")) return 1;
+    installer_probe.mode = INSTALL_MODE_REPLACE_DISK;
+    if (check(aweos_installer_select_target(&installer_probe, 0, 0) == AWEOS_ERR_INVALID_PARAM,
+              "full-disk replacement must not carry a partition selection")) return 1;
+    if (check(aweos_installer_select_target(&installer_probe, 0, -1) == AWEOS_OK,
+              "full-disk replacement may explicitly select a disk without selecting a partition")) return 1;
+    if (check(!installer_probe.confirmed_destructive,
+              "selecting a disk must never imply destructive confirmation")) return 1;
+    if (check(aweos_installer_run_cli(&installer_probe) == AWEOS_ERR_PERMISSION,
+              "full-disk replacement must remain blocked without explicit destructive confirmation")) return 1;
+    if (check(installer_probe.tx.state == TX_STATE_FAILED,
+              "unconfirmed full-disk replacement must fail before staging")) return 1;
+    if (check(archive_calls == 0 && boot_calls == 0,
+              "installer target selection tests must never archive data or write boot files")) return 1;
 
     aweos_updater_state_t updater;
     if (check(aweos_updater_init(&updater, "/tmp/fake-aweos.iso") == AWEOS_OK,
