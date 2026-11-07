@@ -1162,3 +1162,108 @@ is not counted as a primary boot pass.
   pushed as commit `047166f`.
 - The CI runs started on the first head `429b54f` will fail at this
   regression by design; the corrected head `047166f` re-runs them.
+
+
+## 2026-11-07 — Trace the qemu64 #UD to BMI2 and enforce the x86_64 boot baseline
+
+### Inspection and evidence
+
+- Re-inspected PR #43, its latest full image/boot run #42237519208, the actual
+  `AWEOS-QEMU-diagnostics` artifact, the compressed-kernel ELF, its
+  `System.map`/symbols, the Makefile, x86 kernel build rules, and the existing
+  trace extractor before changing code.
+- The BIOS `qemu64` trace records `#UD` at
+  `RIP=0x3cd63c7`. The preceding QEMU block is printed as the short address
+  `0x03cd63bc:` followed by an `OBJD-T:` raw-byte record, not a 16-digit
+  disassembly line. The bytes at the faulting IP are
+  `c4 e2 fb f7 ca`; disassembly of the exact compressed `vmlinux` decodes
+  this as `shrx rcx,rdx,rax` (BMI2) inside
+  `kernel_ident_mapping_init`.
+- The same code is relocated by 8 MiB on the UEFI path
+  (`RIP=0x44d63c7`). The previous trace filter
+  `0x3c00000..0x3d00000` covered BIOS but excluded this UEFI address, so
+  the diagnostic retry could not capture both paths.
+- Scanning the failing compressed-kernel ELF found multiple BMI1/BMI2
+  instructions (89 matches in this artifact). The x86 compressed-kernel
+  Makefile resets `KBUILD_CFLAGS`; it does not retain the normal x86
+  `-march=x86-64` baseline flag. This lets the build compiler's default ISA
+  leak into code that runs before CPU-feature alternatives are available.
+- The earlier extractor searched only for a zero-padded exact 16-digit
+  instruction address. It therefore missed QEMU's short-address
+  `OBJD-T` block and produced an unhelpful 529-byte summary artifact.
+
+### Implemented on a new stacked branch
+
+- Updated the kernel build invocation to pass explicit
+  `-march=x86-64 -mtune=generic -mno-bmi -mno-bmi2` compiler flags through
+  Kbuild's `CC` command for the entire x86_64 kernel build. This keeps the
+  compressed boot code on the x86_64 baseline without modifying the protected
+  `/linux` source tree.
+- Added `scripts/check-kernel-baseline-isa.sh`. After the kernel build it
+  disassembles the actual compressed `vmlinux` and fails the image build if
+  BMI1/BMI2 instructions appear. This is a post-build binary check, not a
+  workflow-YAML-only assertion.
+- Added `scripts/test-kernel-baseline-isa.sh`, which assembles a safe fixture
+  and an explicit SHRX/BMI2 fixture, verifies that baseline code is accepted,
+  and verifies that BMI2 code is rejected. Wired it into `make test-shell`.
+- Updated the QEMU trace extractor to accept short and zero-padded addresses,
+  read the `OBJD-T` raw-byte records, locate the instruction within a block,
+  and decode the bytes with `objdump` when available.
+- Expanded the targeted QEMU trace filter to
+  `0x3c00000..0x45d0000` so the same diagnostic captures both BIOS and UEFI
+  relocated fault addresses. Added BIOS and UEFI address fixtures to the
+  extractor regression.
+
+### Files changed
+
+- `Makefile`
+- `.github/workflows/build-aweos-x86_64.yml`
+- `scripts/run-test-shell.sh`
+- `scripts/test-qemu-test-runner.sh`
+- `scripts/extract-qemu-instrtrace.sh`
+- `scripts/test-qemu-instrtrace-extract.sh`
+- `scripts/check-kernel-baseline-isa.sh` (new)
+- `scripts/test-kernel-baseline-isa.sh` (new)
+- `docs/AI-DEVELOPMENT-LOG.md`
+
+### Validation status
+
+- Local QEMU trace-extractor regression: **PASS**, including the BIOS short
+  address, UEFI +8 MiB relocation, selector-form and `RIP=0x` fault records,
+  decoded-instruction fallback, and bounded output.
+- Local compressed-kernel ISA-checker regression: **PASS**. A safe object is
+  accepted and a deliberately encoded SHRX object is rejected.
+- Applied the new ISA checker to the actual failing CI compressed `vmlinux`:
+  it **correctly FAILS** and reports the existing BMI1/BMI2 instructions,
+  including SHRX. This is the expected pre-fix result and confirms the
+  regression guard detects the real defect.
+- The extractor was replayed against the actual BIOS trace and successfully
+  decoded the faulting instruction as SHRX. The previous UEFI artifact did
+  not contain the relocated trace block because its old filter was too narrow;
+  the UEFI parser path is covered by a synthetic regression fixture.
+- Fresh GitHub Actions userland, kernel build, post-build ISA scan, BIOS/UEFI
+  QEMU boot, and /linux integrity results are **pending** on this new branch.
+  No claim is made that the boot fault is fixed until those checks pass.
+
+### Additional safety finding for the next cycle
+
+- The C installer initialization still sets `selected_disk_idx = 0` when a
+  disk is discovered, despite the documented no-implicit-target-selection
+  invariant. The transaction backend currently fails closed before writes,
+  but the default-selection mismatch should be corrected and regression-tested
+  in a separate scoped safety change. No installer code or disk behavior was
+  changed in this boot-diagnostics change.
+
+### Next priorities
+
+1. Run the new branch's full CI and inspect the actual compressed-kernel ISA
+   scan result; confirm no BMI1/BMI2 instruction remains in the boot-critical
+   compressed image.
+2. Re-run qemu64 BIOS, UEFI, and direct-kernel paths. Require the primary
+   qemu64 BIOS/UEFI tests to pass; do not substitute a `max` CPU retry.
+3. Verify /linux before and after the full build, and inspect the actual
+   ISO/disk-image artifacts and checksums.
+4. Fix the C installer default target selection in a separate PR, keeping
+   the transaction engine fail-closed and preserving user data.
+5. Continue with signed package metadata/key management and AYUI native
+   DRM/KMS only after boot reliability is re-established.

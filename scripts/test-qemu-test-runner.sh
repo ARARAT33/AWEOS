@@ -237,7 +237,7 @@ grep -q -- "-dfilter 0x3c00000-0x3d00000: Invalid range" "$tmp_root/invalid-dfil
 PATH="$mock_bin:$PATH" \
 AWEOS_UEFI_FIRMWARE="$firmware" \
 AWEOS_QEMU_LOG_SUFFIX=instrtrace \
-AWEOS_QEMU_DFILTER=0x3c00000..0x3d00000 \
+AWEOS_QEMU_DFILTER=0x3c00000..0x45d0000 \
 MOCK_QEMU_MODE=success \
     bash "$repo_root/scripts/run-qemu-tests.sh" "$build_dir" all \
     > "$tmp_root/trace-output.log" 2>&1

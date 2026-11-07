@@ -28,6 +28,7 @@ for test_script in \
     test-aweos-session-fallback.sh \
     test-qemu-test-runner.sh \
     test-qemu-instrtrace-extract.sh \
+    test-kernel-baseline-isa.sh \
     test-initramfs-root-discovery.sh \
     test-awepkg.sh \
     test-aosin-fail-closed.sh; do
