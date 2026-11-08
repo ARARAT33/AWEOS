@@ -67,17 +67,7 @@ SOURCE_DIR="$WORK_DIR/busybox-$VERSION"
 }
 
 make -C "$SOURCE_DIR" defconfig
-if grep -q '^# CONFIG_STATIC is not set$' "$SOURCE_DIR/.config"; then
-    sed -i 's/^# CONFIG_STATIC is not set$/CONFIG_STATIC=y/' "$SOURCE_DIR/.config"
-elif grep -q '^CONFIG_STATIC=' "$SOURCE_DIR/.config"; then
-    sed -i 's/^CONFIG_STATIC=.*/CONFIG_STATIC=y/' "$SOURCE_DIR/.config"
-else
-    printf '\nCONFIG_STATIC=y\n' >> "$SOURCE_DIR/.config"
-fi
-grep -qx 'CONFIG_STATIC=y' "$SOURCE_DIR/.config" || {
-    echo "ERROR: BusyBox static linking could not be enabled." >&2
-    exit 1
-}
+bash "$SCRIPT_DIR/configure-busybox-baseline.sh" "$SOURCE_DIR"
 
 jobs="${AWEOS_BUILD_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || printf '2')}"
 case "$jobs" in
