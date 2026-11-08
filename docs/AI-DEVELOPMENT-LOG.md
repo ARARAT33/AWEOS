@@ -1563,3 +1563,40 @@ Next:
 - Code-identical build run `42448461287` on `ac08eab` has passed shell/C regressions, `/linux` integrity, and Cargo workspace tests; its image build is still in progress.
 - Final-head build run `42448670031` on `ac3fdb7` has passed dependency installation, Limine host utility build, shell/C regressions, and `/linux` integrity; Cargo and image build steps remain pending.
 - Keep PR #48 in draft and do not merge until a final-head image build and the required boot matrix complete successfully.
+
+## 2026-11-08 — BusyBox SHA hardware acceleration breaks the qemu64 baseline ISA scan
+
+### Actual CI evidence
+
+- The latest full image/boot runs on the PR #48 head `7609a34a4c9e33a9b03ed6f0a3bf8b2c4ae82cbc` (runs #507, #509, #510, e.g. run 42448670031) all failed at the same point: the pinned BusyBox 1.38.0 static musl build completed, and the qemu64 baseline ISA scan then rejected the produced binary with "contains instructions outside the AWEOS qemu64/x86-64 baseline". The raw report lines are inside the uploaded `AWEOS-image-build-log` artifacts; the single-line CI annotation only showed the first error line, so the exact mnemonics were not published to the run page.
+- Inspection of the BusyBox source explains the failure without guessing: BusyBox's `libbb/Config.src` defines `CONFIG_SHA1_HWACCEL` and `CONFIG_SHA256_HWACCEL`, both default y. Their x86-64 implementations are hand-written assembly (`libbb/hash_sha1_hwaccel_x86-64.S`, `libbb/hash_sha256_hwaccel_x86-64.S`) that BusyBox's `libbb/Kbuild.src` adds to `lib-y` unconditionally on x86-64. Those sources contain SHA-NI instructions (`sha1rnds4`, `sha256rnds2`, `sha256msg1/2`) and SSSE3/SSE4.1 instructions (`pshufb`, `palignr`, `pinsrd`), several of which are in AWEOS's rejection list. Compiler flags such as `-march=x86-64` cannot restrict hand-written assembly, so the default-defconfig build links post-baseline instructions into the bootstrap binary even with the baseline `CC` flags.
+- This matches upstream practice: Buildroot, OpenEmbedded and the docker-library BusyBox images all carry patches or configuration changes that disable SHA1/SHA256 hardware acceleration on x86.
+
+### Implemented on branch `boot/busybox-sha-hwaccel-baseline-20261108`
+
+- `scripts/configure-busybox-baseline.sh` now disables `CONFIG_SHA1_HWACCEL` and `CONFIG_SHA256_HWACCEL` before `oldconfig`, and verifies both survived Kconfig processing. With both options off, `libbb/hash_md5_sha.c` compiles no CPUID dispatch and emits no references to the hwaccel objects, so the static linker does not pull the post-baseline assembly into the bootstrap binary. The portable generic SHA1/SHA256 implementations and the required applet set (`sha256sum`, `sha1sum`, etc.) are unchanged.
+- `scripts/test-busybox-baseline-config.sh` gained HWACCEL-enabled fixture entries and assertions that both options are forced off and that the transformation stays deterministic and idempotent.
+- `scripts/check-qemu64-baseline-isa.sh` now prints a compact mnemonic histogram (up to 20 mnemonics with counts) on the first error line, so a future rejection is diagnosable directly from the single-line CI annotation without downloading the log artifact. Rejection semantics are unchanged; the existing AVX/BMI1/BMI2 regression still passes because the detailed report lines are still printed.
+- `README.md` development status records the new blocker and correction.
+- No changes under `/linux`; no disk, partition, installer, updater, bootloader, or user-data behavior changed.
+
+### Files changed
+
+- `scripts/configure-busybox-baseline.sh`
+- `scripts/test-busybox-baseline-config.sh`
+- `scripts/check-qemu64-baseline-isa.sh`
+- `README.md`
+- `docs/AI-DEVELOPMENT-LOG.md`
+
+### Validation status
+
+- The previous PR #48 image runs prove the BusyBox source build itself now works (UAPI headers resolved, `tc` disabled, static link succeeded); the failure was solely the ISA scan. This branch's change removes the known source of post-baseline instructions, but no pass is claimed until a fresh run completes: the config-helper regression in `make test-shell`, the real BusyBox static build, the ISA scan, ISO assembly, and the qemu64 BIOS/UEFI/direct-kernel boot matrix must all pass on this branch's own head.
+- If the ISA scan still fails after this change, the new mnemonic histogram in the annotation will identify the remaining offender directly; do not widen the CPU model or weaken the baseline check.
+
+### Next priorities
+
+1. Inspect this branch's userland and full image/boot workflow results.
+2. If the ISA scan passes, inspect the qemu64 BIOS, UEFI, and direct-kernel boot results, including root hand-off and AYUI/recovery markers.
+3. If boot faults recur, capture the faulting instruction with the existing tagged instruction-trace machinery before changing anything else.
+4. Keep the stacked PR chain (#43 through this branch) unmerged until the base chain is reconciled and fresh required checks pass.
+5. Preserve `/linux` read-only verification and the fail-closed, non-destructive installer/updater invariants.
