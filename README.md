@@ -16,7 +16,12 @@ utilities, package-management experiments, and C installer/updater components.
 > `linux-libc-dev`. Its first rerun showed that `musl-gcc`'s `-nostdinc` mode
 > still hides distro UAPI headers, so the branch now adds those headers after
 > musl's own include directories and preflights the real compile path. The
-> rebuilt-image and BIOS/UEFI/direct-kernel boot results are still pending. Do not
+> latest full image build passed the Linux UAPI header preflight but failed
+> in BusyBox's optional `tc` applet because the current Linux UAPI no longer
+> exports legacy CBQ types (`TCA_CBQ_*`). AWEOS's required bootstrap applet set
+> does not include `tc`; PR #48 now disables that unsupported optional applet
+> while retaining the other BusyBox networking utilities. A fresh image build
+> and BIOS/UEFI/direct-kernel boot results are still pending. Do not
 > use the installer/updater to modify a disk containing valuable data. Both
 > the C transaction path and the Rust GUI installer now fail closed: the
 > previous Rust flow automatically selected the first disk and repartitioned
