@@ -32,7 +32,7 @@ UAPI_INCLUDE_FLAGS=(-idirafter /usr/include -idirafter /usr/include/x86_64-linux
 if ! printf '#include <linux/kd.h>\n' |
     musl-gcc -march=x86-64 -mtune=generic -mno-avx -mno-avx2 -mno-bmi -mno-bmi2 \
         "${UAPI_INCLUDE_FLAGS[@]}" -x c -fsyntax-only - >/dev/null 2>&1; then
-    echo "ERROR: Linux UAPI header <linux/kd.h> is unavailable to musl-gcc; install linux-libc-dev before building BusyBox." >&2
+    echo "ERROR: Linux UAPI header <linux/kd.h> is unavailable to musl-gcc even with explicit UAPI include paths; install linux-libc-dev and verify the system UAPI headers." >&2
     exit 2
 fi
 
