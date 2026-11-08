@@ -33,13 +33,15 @@ set_bool_config() {
     esac
 
     if grep -q "^${symbol}=" "$CONFIG"; then
-        sed -i "s/^${symbol}=.*/${replacement}/" "$CONFIG"
+        sed -i "s/^${symbol}=.*/$replacement/" "$CONFIG"
     elif grep -qx "# ${symbol} is not set" "$CONFIG"; then
         if [[ "$value" == y ]]; then
-            sed -i "s/^# ${symbol} is not set$/${replacement}/" "$CONFIG"
+            sed -i "s/^# ${symbol} is not set$/$replacement/" "$CONFIG"
         fi
     else
-        printf '\n%s\n' "$replacement" >> "$CONFIG"
+        printf '
+%s
+' "$replacement" >> "$CONFIG"
     fi
 }
 
@@ -50,6 +52,23 @@ set_bool_config() {
 set_bool_config CONFIG_STATIC y
 set_bool_config CONFIG_TC n
 set_bool_config CONFIG_FEATURE_TC_INGRESS n
+
+# BusyBox's default configuration enables hardware-accelerated SHA1/SHA256
+# (CONFIG_SHA1_HWACCEL / CONFIG_SHA256_HWACCEL, both default y). On x86 those
+# implementations are hand-written assembly sources
+# (libbb/hash_sha1_hwaccel_x86-64.S, libbb/hash_sha256_hwaccel_x86-64.S) that
+# use SHA-NI and SSSE3/SSE4.1 instructions (pshufb, palignr, pinsrd,
+# sha256rnds2, ...). Compiler flags such as -march=x86-64 cannot restrict
+# hand-written assembly, and BusyBox adds those objects to lib-y on x86-64
+# unconditionally, so the default build links post-baseline instructions into
+# the bootstrap binary and the qemu64 ISA scan correctly rejects it. They are
+# dispatched at runtime through CPUID, but the AWEOS bootstrap contract
+# requires a static x86-64-v1 baseline ELF with no post-baseline instructions
+# at all, so the hardware-accelerated hashing paths must be disabled.
+# The portable generic SHA1/SHA256 implementations remain enabled; the
+# required applet set (sha256sum, sha1sum, crypt, etc.) is unchanged.
+set_bool_config CONFIG_SHA1_HWACCEL n
+set_bool_config CONFIG_SHA256_HWACCEL n
 
 # Regenerate BusyBox's derived configuration headers before compiling.
 make -C "$SOURCE_DIR" oldconfig </dev/null
@@ -66,5 +85,13 @@ grep -qx '# CONFIG_FEATURE_TC_INGRESS is not set' "$CONFIG" || {
     echo "ERROR: BusyBox tc ingress support is still enabled." >&2
     exit 1
 }
+grep -qx '# CONFIG_SHA1_HWACCEL is not set' "$CONFIG" || {
+    echo "ERROR: BusyBox SHA1 hardware acceleration is still enabled; the bootstrap binary must stay on the x86-64 baseline." >&2
+    exit 1
+}
+grep -qx '# CONFIG_SHA256_HWACCEL is not set' "$CONFIG" || {
+    echo "ERROR: BusyBox SHA256 hardware acceleration is still enabled; the bootstrap binary must stay on the x86-64 baseline." >&2
+    exit 1
+}
 
-echo "PASS: BusyBox static baseline configured; unsupported tc applet disabled."
+echo "PASS: BusyBox static baseline configured; unsupported tc applet and SHA hardware acceleration disabled."
