@@ -1478,3 +1478,29 @@ Next:
 3. Require the primary `qemu64` BIOS, UEFI, and direct-kernel tests to pass before claiming the boot path is repaired.
 4. Keep the PR stack unmerged until its base chain is reconciled and fresh required checks pass.
 5. Preserve `/linux` read-only verification and the no-implicit-destructive-install invariant.
+### Follow-up: musl-gcc excludes host UAPI include paths — 2026-11-08
+
+#### Actual CI evidence
+
+- The first dependency-fix run `42446411572` installed `linux-libc-dev` successfully (`linux-libc-dev:amd64 7.0.0-43.43`), but the new preflight still failed before the BusyBox source build.
+- The failure was now explicit: `ERROR: Linux UAPI header <linux/kd.h> is unavailable to musl-gcc`.
+- This exposed the second half of the dependency issue: the musl-gcc wrapper uses `-nostdinc`, so it does not search the host's normal `/usr/include` and architecture-specific include directories unless they are added explicitly. Installing the package alone is insufficient.
+- The same run passed shell/C/rootfs/session/QEMU-runner regressions, `/linux` read-only verification, and `cargo test --workspace`; it failed only at the image build preflight. BIOS/UEFI/direct-kernel tests were not reached.
+
+#### Corrective change on the same PR branch
+
+- Add `-idirafter /usr/include` and `-idirafter /usr/include/x86_64-linux-gnu` to both the compile-only preflight and the BusyBox `CC` command.
+- Use `-idirafter` rather than `-I` so musl's own libc headers retain precedence and distro UAPI headers are used only as a fallback.
+- The preflight now exercises the same include search configuration as the actual BusyBox build.
+
+#### Validation status
+
+- The earlier preflight implementation correctly detected the missing include path and prevented a long, opaque compile failure.
+- A local GCC harness confirmed that `linux/kd.h` is present and that the positive/negative preflight control flow behaves as intended, but this is not a substitute for the actual musl-gcc run.
+- Fresh CI on the updated head is required to prove that the musl-gcc include path resolves `linux/kd.h`, that BusyBox builds statically with the required applets, and that the resulting ISO passes the qemu64 BIOS/UEFI/direct-kernel boot matrix.
+
+#### Next priorities
+
+1. Inspect the updated PR workflow's actual BusyBox compile and image-build logs.
+2. If image creation succeeds, inspect BIOS, UEFI, and direct-kernel QEMU results and verify the root hand-off markers.
+3. Keep `/linux` read-only verification and installer fail-closed guarantees mandatory.
