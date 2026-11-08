@@ -25,9 +25,13 @@ done
 # includes <linux/kd.h>. musl provides libc headers but not the Linux UAPI
 # development headers. Check this before downloading and compiling BusyBox so
 # a missing linux-libc-dev package produces an actionable error.
+# musl-gcc uses -nostdinc, so distro UAPI headers are not searched by
+# default. Add them after musl's own headers to avoid mixing glibc headers
+# into the target's libc include chain.
+UAPI_INCLUDE_FLAGS=(-idirafter /usr/include -idirafter /usr/include/x86_64-linux-gnu)
 if ! printf '#include <linux/kd.h>\n' |
     musl-gcc -march=x86-64 -mtune=generic -mno-avx -mno-avx2 -mno-bmi -mno-bmi2 \
-        -x c -fsyntax-only - >/dev/null 2>&1; then
+        "${UAPI_INCLUDE_FLAGS[@]}" -x c -fsyntax-only - >/dev/null 2>&1; then
     echo "ERROR: Linux UAPI header <linux/kd.h> is unavailable to musl-gcc; install linux-libc-dev before building BusyBox." >&2
     exit 2
 fi
@@ -80,7 +84,7 @@ case "$jobs" in
     ''|*[!0-9]*) jobs=2 ;;
 esac
 [ "$jobs" -gt 0 ] || jobs=2
-compiler="musl-gcc -march=x86-64 -mtune=generic -mno-avx -mno-avx2 -mno-bmi -mno-bmi2"
+compiler="musl-gcc -march=x86-64 -mtune=generic -mno-avx -mno-avx2 -mno-bmi -mno-bmi2 -idirafter /usr/include -idirafter /usr/include/x86_64-linux-gnu"
 
 echo "Building static BusyBox with an explicit x86-64 baseline compiler target..."
 make -C "$SOURCE_DIR" -j"$jobs" \
