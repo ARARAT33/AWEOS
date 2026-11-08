@@ -14,6 +14,8 @@ cat > "$SOURCE_DIR/.config" <<'EOF'
 # CONFIG_STATIC is not set
 CONFIG_TC=y
 CONFIG_FEATURE_TC_INGRESS=y
+CONFIG_SHA1_HWACCEL=y
+CONFIG_SHA256_HWACCEL=y
 CONFIG_ROUTE=y
 EOF
 
@@ -30,6 +32,8 @@ PATH="$FAKE_BIN:$PATH" bash "$REPO_ROOT/scripts/configure-busybox-baseline.sh" "
 grep -qx 'CONFIG_STATIC=y' "$SOURCE_DIR/.config"
 grep -qx '# CONFIG_TC is not set' "$SOURCE_DIR/.config"
 grep -qx '# CONFIG_FEATURE_TC_INGRESS is not set' "$SOURCE_DIR/.config"
+grep -qx '# CONFIG_SHA1_HWACCEL is not set' "$SOURCE_DIR/.config"
+grep -qx '# CONFIG_SHA256_HWACCEL is not set' "$SOURCE_DIR/.config"
 grep -qx 'CONFIG_ROUTE=y' "$SOURCE_DIR/.config"
 
 cp "$SOURCE_DIR/.config" "$TEMP_ROOT/first.config"
