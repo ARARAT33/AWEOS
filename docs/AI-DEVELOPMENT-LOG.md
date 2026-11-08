@@ -1496,7 +1496,7 @@ Next:
 #### Validation status
 
 - The earlier preflight implementation correctly detected the missing include path and prevented a long, opaque compile failure.
-- A local GCC harness confirmed that `linux/kd.h` is present and that the positive/negative preflight control flow behaves as intended, but this is not a substitute for the actual musl-gcc run.
+- No local compile result is claimed: this container's `cc`/GCC executable resolves to a stub that exits with status 1, and `musl-gcc` is not installed. The actual musl-gcc GitHub Actions run is authoritative.
 - Fresh CI on the updated head is required to prove that the musl-gcc include path resolves `linux/kd.h`, that BusyBox builds statically with the required applets, and that the resulting ISO passes the qemu64 BIOS/UEFI/direct-kernel boot matrix.
 
 #### Next priorities
@@ -1504,3 +1504,8 @@ Next:
 1. Inspect the updated PR workflow's actual BusyBox compile and image-build logs.
 2. If image creation succeeds, inspect BIOS, UEFI, and direct-kernel QEMU results and verify the root hand-off markers.
 3. Keep `/linux` read-only verification and installer fail-closed guarantees mandatory.
+### Local toolchain validation limitation — 2026-11-08
+
+- A follow-up inspection showed that the container's `/usr/bin/x86_64-linux-gnu-gcc-14` is a 17-byte stub that exits with status 1; `musl-gcc` is also absent. Therefore the earlier local header-check output is not accepted as compiler evidence and is explicitly superseded.
+- The updated script now passes the UAPI include directories with `-idirafter` to both the preflight and actual BusyBox compiler command. Only a fresh GitHub Actions run using the real Ubuntu musl-gcc toolchain can validate this change.
+- Do not count the local shell harness as a passing compile test.
