@@ -1444,3 +1444,37 @@ Next:
    userland binary. Neither is confirmed.
 3. Until the BusyBox baseline build passes and qemu64 BIOS/UEFI boots are
    proven, PRs #44/#45/#46 remain unmerged and no boot fix is claimed.
+
+### BusyBox build failure diagnosis and Linux UAPI header prerequisite — 2026-11-08
+
+#### Actual CI evidence
+
+- Inspected the complete failed job logs, not only the workflow definition:
+  - PR #46 full image workflow run `42345461570` failed during `make image`.
+  - PR #47 diagnostics workflow run `42384042946` failed at the same target and successfully published the new `AWEOS-image-build-log` artifact and step-summary excerpt.
+- The first failing compile unit is BusyBox `console-tools/kbd_mode.o`:
+  `console-tools/kbd_mode.c:32:10: fatal error: linux/kd.h: No such file or directory`.
+  The failure propagates through `console-tools` and the `busybox` Make target.
+- The workflow installed `musl-tools` but did not explicitly install the Linux UAPI development headers. This is a build-dependency failure, not a qemu64 ISA-check failure or a kernel/ISO/boot result.
+- The `/linux` read-only verification still passed in run `42384042946`. Because `make image` stopped before producing a new ISO, BIOS, UEFI, and direct-kernel QEMU tests were skipped.
+
+#### Implemented on branch `fix/busybox-linux-uapi-headers-20261108`
+
+- Added `linux-libc-dev` to the x86_64 image workflow's explicit apt dependencies.
+- Added an early compile-only preflight for `<linux/kd.h>` using the same musl compiler and x86-64 baseline flags as the BusyBox build. Missing headers now produce a clear actionable error before downloading and compiling the BusyBox source archive.
+- Updated README development status and build prerequisites to describe the actual blocker and the new follow-up branch.
+- No files under `/linux` were modified. No installer, disk, partition, bootloader, updater, or user-data write behavior changed.
+
+#### Validation status
+
+- The previous PR #47 workflow run confirms the diagnostics step itself works and exposes the exact failing make target.
+- Fresh `make test-shell`, Rust workspace tests, the Linux UAPI preflight, BusyBox source build, ISO build, and BIOS/UEFI/direct-kernel QEMU tests on this new branch are pending its GitHub Actions run.
+- The prior PR #46 userland and package-security workflows passed, but they do not validate this new build-dependency fix.
+
+#### Next priorities
+
+1. Inspect the new branch's userland, package-security, and full image workflow results.
+2. Confirm the musl preflight finds `linux/kd.h` and the pinned BusyBox build completes with all required applets, static linking, and qemu64 ISA checks.
+3. Require the primary `qemu64` BIOS, UEFI, and direct-kernel tests to pass before claiming the boot path is repaired.
+4. Keep the PR stack unmerged until its base chain is reconciled and fresh required checks pass.
+5. Preserve `/linux` read-only verification and the no-implicit-destructive-install invariant.
