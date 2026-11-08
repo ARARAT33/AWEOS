@@ -1559,4 +1559,7 @@ Next:
   - AYUI Winit compositor smoke test under Xvfb.
 - The final PR head `ac08eab68471bbdb6e6635a294995af389ce5305` adds only README/development-log documentation after that code-tested commit; the build/test scripts are unchanged.
 - The latest `AWEOS x86_64 Build, Image and Boot Tests` run `42448461287` on the final head has so far passed the shell/C/rootfs/session/QEMU-runner regression step and `/linux` read-only verification; Cargo workspace tests also passed. The image build step has not yet completed, so no BusyBox, ISO, BIOS, UEFI, or direct-kernel success is claimed.
-- A second final-head userland run `42448461252` is still in progress at this log update. Continue inspecting the completed run results before changing the PR from draft or merging it.
+- Final-head userland run `42448461252` completed successfully; all 13 steps passed, including the full shell/C suite, `/linux` integrity, Cargo tests and release build, installer no-write test, and AYUI Xvfb smoke test.
+- Code-identical build run `42448461287` on `ac08eab` has passed shell/C regressions, `/linux` integrity, and Cargo workspace tests; its image build is still in progress.
+- Final-head build run `42448670031` on `ac3fdb7` has passed dependency installation, Limine host utility build, shell/C regressions, and `/linux` integrity; Cargo and image build steps remain pending.
+- Keep PR #48 in draft and do not merge until a final-head image build and the required boot matrix complete successfully.
