@@ -21,6 +21,17 @@ for tool in curl sha256sum tar make musl-gcc readelf; do
     }
 done
 
+# BusyBox's default console-tools configuration builds kbd_mode, which
+# includes <linux/kd.h>. musl provides libc headers but not the Linux UAPI
+# development headers. Check this before downloading and compiling BusyBox so
+# a missing linux-libc-dev package produces an actionable error.
+if ! printf '#include <linux/kd.h>\n' |
+    musl-gcc -march=x86-64 -mtune=generic -mno-avx -mno-avx2 -mno-bmi -mno-bmi2 \
+        -x c -fsyntax-only - >/dev/null 2>&1; then
+    echo "ERROR: Linux UAPI header <linux/kd.h> is unavailable to musl-gcc; install linux-libc-dev before building BusyBox." >&2
+    exit 2
+fi
+
 WORK_DIR="$(mktemp -d "$BUILD_DIR/.busybox-build.XXXXXX")"
 TOOLS_DIR="$BUILD_DIR/tools"
 OUTPUT="$TOOLS_DIR/busybox"
