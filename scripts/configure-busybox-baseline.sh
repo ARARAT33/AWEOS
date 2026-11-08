@@ -32,18 +32,14 @@ set_bool_config() {
             ;;
     esac
 
-    if grep -q "^\${symbol}=" "$CONFIG"; then
+    if grep -q "^${symbol}=" "$CONFIG"; then
+        sed -i "s/^${symbol}=.*/${replacement}/" "$CONFIG"
+    elif grep -qx "# ${symbol} is not set" "$CONFIG"; then
         if [[ "$value" == y ]]; then
-            sed -i "s/^\${symbol}=.*/\${replacement}/" "$CONFIG"
-        else
-            sed -i "s/^\${symbol}=.*/\${replacement}/" "$CONFIG"
-        fi
-    elif grep -qx "# \${symbol} is not set" "$CONFIG"; then
-        if [[ "$value" == y ]]; then
-            sed -i "s/^# \${symbol} is not set$/\${replacement}/" "$CONFIG"
+            sed -i "s/^# ${symbol} is not set$/${replacement}/" "$CONFIG"
         fi
     else
-        printf '\\n%s\\n' "$replacement" >> "$CONFIG"
+        printf '\n%s\n' "$replacement" >> "$CONFIG"
     fi
 }
 
