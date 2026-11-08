@@ -4,13 +4,17 @@ AWEOS is an x86_64 Linux-based operating-system project with its own boot
 integration, root filesystem, initramfs, Rust-based AYUI desktop work, system
 utilities, package-management experiments, and C installer/updater components.
 
-> **Development status — 2026-11-07: not production-ready.** The repository has
+> **Development status — 2026-11-08: not production-ready.** The repository has
 > working component tests and an image-build pipeline, but full BIOS/UEFI
 > end-to-end boot and real-hardware validation are not yet established. The
 > latest qemu64 trace identifies an AVX instruction in the host-provided BusyBox
 > binary as a userspace invalid-opcode fault after the kernel starts. Draft PR
 > #46 replaces that host binary with a pinned static x86-64 baseline build and
-> adds ELF ISA checks; the rebuilt image and boot reruns are still pending. Do not
+> adds ELF ISA checks. Its first full image build then exposed a missing Linux
+> UAPI header (`linux/kd.h`) while compiling BusyBox's `kbd_mode` applet. The
+> follow-up branch `fix/busybox-linux-uapi-headers-20261108` installs and
+> preflights the required headers; rebuilt-image and BIOS/UEFI/direct-kernel
+> boot results are still pending. Do not
 > use the installer/updater to modify a disk containing valuable data. Both
 > the C transaction path and the Rust GUI installer now fail closed: the
 > previous Rust flow automatically selected the first disk and repartitioned
@@ -102,7 +106,8 @@ The main Make targets currently defined in the repository are:
 The full image and QEMU targets require the host dependencies installed by
 [the x86_64 GitHub Actions workflow](.github/workflows/build-aweos-x86_64.yml),
 including a Limine host utility, QEMU, OVMF, xorriso, the musl toolchain
-(`musl-tools`/`musl-gcc`), cpio, and ext4 tools. The build downloads and verifies
+(`musl-tools`/`musl-gcc`), Linux UAPI development headers
+(`linux-libc-dev`), cpio, and ext4 tools. The build downloads and verifies
 its pinned BusyBox source archive; a host BusyBox executable is not required.
 
 ## Architecture
