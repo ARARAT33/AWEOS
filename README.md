@@ -12,9 +12,11 @@ utilities, package-management experiments, and C installer/updater components.
 > #46 replaces that host binary with a pinned static x86-64 baseline build and
 > adds ELF ISA checks. Its first full image build then exposed a missing Linux
 > UAPI header (`linux/kd.h`) while compiling BusyBox's `kbd_mode` applet. The
-> follow-up branch `fix/busybox-linux-uapi-headers-20261108` installs and
-> preflights the required headers; rebuilt-image and BIOS/UEFI/direct-kernel
-> boot results are still pending. Do not
+> follow-up branch `fix/busybox-linux-uapi-headers-20261108` now installs
+> `linux-libc-dev`. Its first rerun showed that `musl-gcc`'s `-nostdinc` mode
+> still hides distro UAPI headers, so the branch now adds those headers after
+> musl's own include directories and preflights the real compile path. The
+> rebuilt-image and BIOS/UEFI/direct-kernel boot results are still pending. Do not
 > use the installer/updater to modify a disk containing valuable data. Both
 > the C transaction path and the Rust GUI installer now fail closed: the
 > previous Rust flow automatically selected the first disk and repartitioned
