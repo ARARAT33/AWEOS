@@ -1547,3 +1547,16 @@ Next:
 3. If the image builds, inspect the ISO and actual BIOS, UEFI, and direct-kernel QEMU results, including root hand-off and AYUI/recovery markers.
 4. Keep the stacked PR chain unmerged until its bases are reconciled and fresh required checks pass.
 5. Continue enforcing `/linux` read-only verification and fail-closed, non-destructive installer/updater behavior.
+
+### Fresh CI validation after the BusyBox `tc` configuration change — 2026-11-08
+
+- `Validate AWEOS Userland` run `42448407387` completed successfully on commit `05982fa93c1c324f752be3e7b9b66faaadb61442`. All 13 job steps passed, including:
+  - the shell/C regression suite (which now includes `test-busybox-baseline-config.sh`);
+  - `/linux` read-only verification;
+  - Cargo metadata and `cargo test --workspace`;
+  - release builds and expected-binary checks;
+  - the Rust installer no-unattended-write test;
+  - AYUI Winit compositor smoke test under Xvfb.
+- The final PR head `ac08eab68471bbdb6e6635a294995af389ce5305` adds only README/development-log documentation after that code-tested commit; the build/test scripts are unchanged.
+- The latest `AWEOS x86_64 Build, Image and Boot Tests` run `42448461287` on the final head has so far passed the shell/C/rootfs/session/QEMU-runner regression step and `/linux` read-only verification; Cargo workspace tests also passed. The image build step has not yet completed, so no BusyBox, ISO, BIOS, UEFI, or direct-kernel success is claimed.
+- A second final-head userland run `42448461252` is still in progress at this log update. Continue inspecting the completed run results before changing the PR from draft or merging it.
