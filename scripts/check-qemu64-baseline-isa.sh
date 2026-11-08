@@ -49,7 +49,32 @@ objdump -d -Mintel "$image" | awk '
 }' > "$report"
 
 if [ -s "$report" ]; then
-    echo "ERROR: $image contains instructions outside the AWEOS qemu64/x86-64 baseline:" >&2
+    # Compact mnemonic histogram on the first error line so the failure is
+    # diagnosable from a single-line CI annotation without downloading logs.
+    summary="$(awk '
+        /^[[:space:]]*[[:xdigit:]]+:/ {
+            line = $0
+            sub(/^[[:space:]]*[[:xdigit:]]+:[[:space:]]*/, "", line)
+            count = split(line, fields, /[[:space:]]+/)
+            i = 1
+            while (i <= count && length(fields[i]) == 2 &&
+                   fields[i] ~ /^[[:xdigit:]][[:xdigit:]]$/) {
+                i++
+            }
+            counts[tolower(fields[i])]++
+        }
+        END {
+            shown = 0
+            sep = ""
+            for (m in counts) {
+                printf "%s%s(%d)", sep, m, counts[m]
+                sep = ", "
+                if (++shown >= 20) {
+                    break
+                }
+            }
+        }' "$report")"
+    echo "ERROR: $image contains instructions outside the AWEOS qemu64/x86-64 baseline (mnemonics: $summary):" >&2
     sed -n '1,30p' "$report" >&2
     echo "Refusing to package this ELF; rebuild it with an explicit x86-64 baseline target." >&2
     exit 1
