@@ -20,8 +20,7 @@ utilities, package-management experiments, and C installer/updater components.
 > in BusyBox's optional `tc` applet because the current Linux UAPI no longer
 > exports legacy CBQ types (`TCA_CBQ_*`). AWEOS's required bootstrap applet set
 > does not include `tc`; PR #48 now disables that unsupported optional applet
-> while retaining the other BusyBox networking utilities. A fresh image build
-> and BIOS/UEFI/direct-kernel boot results are still pending. Do not
+> while retaining the other BusyBox networking utilities. The latest full-image builds on that head completed the pinned BusyBox 1.38.0 static build but then failed AWEOS's qemu64 baseline ISA scan: BusyBox's default-on `CONFIG_SHA1_HWACCEL`/`CONFIG_SHA256_HWACCEL` implementations are hand-written x86-64 assembly using SHA-NI/SSSE3/SSE4.1 instructions (pshufb, palignr, pinsrd, sha256rnds2, ...) that `-march=x86-64` cannot restrict, so they must be disabled for the bootstrap binary. The stacked branch `boot/busybox-sha-hwaccel-baseline-20261108` now disables both hardware-accelerated hashing paths (keeping the portable generic hashing applets) and teaches the ISA checker to print a mnemonic histogram in its first error line. A fresh image build and BIOS/UEFI/direct-kernel boot results are still pending. Do not
 > use the installer/updater to modify a disk containing valuable data. Both
 > the C transaction path and the Rust GUI installer now fail closed: the
 > previous Rust flow automatically selected the first disk and repartitioned
