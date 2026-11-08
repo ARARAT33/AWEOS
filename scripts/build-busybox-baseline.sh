@@ -21,6 +21,21 @@ for tool in curl sha256sum tar make musl-gcc readelf; do
     }
 done
 
+# BusyBox's default console-tools configuration builds kbd_mode, which
+# includes <linux/kd.h>. musl provides libc headers but not the Linux UAPI
+# development headers. Check this before downloading and compiling BusyBox so
+# a missing linux-libc-dev package produces an actionable error.
+# musl-gcc uses -nostdinc, so distro UAPI headers are not searched by
+# default. Add them after musl's own headers to avoid mixing glibc headers
+# into the target's libc include chain.
+UAPI_INCLUDE_FLAGS=(-idirafter /usr/include -idirafter /usr/include/x86_64-linux-gnu)
+if ! printf '#include <linux/kd.h>\n' |
+    musl-gcc -march=x86-64 -mtune=generic -mno-avx -mno-avx2 -mno-bmi -mno-bmi2 \
+        "${UAPI_INCLUDE_FLAGS[@]}" -x c -fsyntax-only - >/dev/null 2>&1; then
+    echo "ERROR: Linux UAPI header <linux/kd.h> is unavailable to musl-gcc even with explicit UAPI include paths; install linux-libc-dev and verify the system UAPI headers." >&2
+    exit 2
+fi
+
 WORK_DIR="$(mktemp -d "$BUILD_DIR/.busybox-build.XXXXXX")"
 TOOLS_DIR="$BUILD_DIR/tools"
 OUTPUT="$TOOLS_DIR/busybox"
@@ -52,24 +67,14 @@ SOURCE_DIR="$WORK_DIR/busybox-$VERSION"
 }
 
 make -C "$SOURCE_DIR" defconfig
-if grep -q '^# CONFIG_STATIC is not set$' "$SOURCE_DIR/.config"; then
-    sed -i 's/^# CONFIG_STATIC is not set$/CONFIG_STATIC=y/' "$SOURCE_DIR/.config"
-elif grep -q '^CONFIG_STATIC=' "$SOURCE_DIR/.config"; then
-    sed -i 's/^CONFIG_STATIC=.*/CONFIG_STATIC=y/' "$SOURCE_DIR/.config"
-else
-    printf '\nCONFIG_STATIC=y\n' >> "$SOURCE_DIR/.config"
-fi
-grep -qx 'CONFIG_STATIC=y' "$SOURCE_DIR/.config" || {
-    echo "ERROR: BusyBox static linking could not be enabled." >&2
-    exit 1
-}
+bash "$SCRIPT_DIR/configure-busybox-baseline.sh" "$SOURCE_DIR"
 
 jobs="${AWEOS_BUILD_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || printf '2')}"
 case "$jobs" in
     ''|*[!0-9]*) jobs=2 ;;
 esac
 [ "$jobs" -gt 0 ] || jobs=2
-compiler="musl-gcc -march=x86-64 -mtune=generic -mno-avx -mno-avx2 -mno-bmi -mno-bmi2"
+compiler="musl-gcc -march=x86-64 -mtune=generic -mno-avx -mno-avx2 -mno-bmi -mno-bmi2 -idirafter /usr/include -idirafter /usr/include/x86_64-linux-gnu"
 
 echo "Building static BusyBox with an explicit x86-64 baseline compiler target..."
 make -C "$SOURCE_DIR" -j"$jobs" \

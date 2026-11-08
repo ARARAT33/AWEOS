@@ -1444,3 +1444,122 @@ Next:
    userland binary. Neither is confirmed.
 3. Until the BusyBox baseline build passes and qemu64 BIOS/UEFI boots are
    proven, PRs #44/#45/#46 remain unmerged and no boot fix is claimed.
+
+### BusyBox build failure diagnosis and Linux UAPI header prerequisite — 2026-11-08
+
+#### Actual CI evidence
+
+- Inspected the complete failed job logs, not only the workflow definition:
+  - PR #46 full image workflow run `42345461570` failed during `make image`.
+  - PR #47 diagnostics workflow run `42384042946` failed at the same target and successfully published the new `AWEOS-image-build-log` artifact and step-summary excerpt.
+- The first failing compile unit is BusyBox `console-tools/kbd_mode.o`:
+  `console-tools/kbd_mode.c:32:10: fatal error: linux/kd.h: No such file or directory`.
+  The failure propagates through `console-tools` and the `busybox` Make target.
+- The workflow installed `musl-tools` but did not explicitly install the Linux UAPI development headers. This is a build-dependency failure, not a qemu64 ISA-check failure or a kernel/ISO/boot result.
+- The `/linux` read-only verification still passed in run `42384042946`. Because `make image` stopped before producing a new ISO, BIOS, UEFI, and direct-kernel QEMU tests were skipped.
+
+#### Implemented on branch `fix/busybox-linux-uapi-headers-20261108`
+
+- Added `linux-libc-dev` to the x86_64 image workflow's explicit apt dependencies.
+- Added an early compile-only preflight for `<linux/kd.h>` using the same musl compiler and x86-64 baseline flags as the BusyBox build. Missing headers now produce a clear actionable error before downloading and compiling the BusyBox source archive.
+- Updated README development status and build prerequisites to describe the actual blocker and the new follow-up branch.
+- No files under `/linux` were modified. No installer, disk, partition, bootloader, updater, or user-data write behavior changed.
+
+#### Validation status
+
+- The previous PR #47 workflow run confirms the diagnostics step itself works and exposes the exact failing make target.
+- Fresh `make test-shell`, Rust workspace tests, the Linux UAPI preflight, BusyBox source build, ISO build, and BIOS/UEFI/direct-kernel QEMU tests on this new branch are pending its GitHub Actions run.
+- The prior PR #46 userland and package-security workflows passed, but they do not validate this new build-dependency fix.
+
+#### Next priorities
+
+1. Inspect the new branch's userland, package-security, and full image workflow results.
+2. Confirm the musl preflight finds `linux/kd.h` and the pinned BusyBox build completes with all required applets, static linking, and qemu64 ISA checks.
+3. Require the primary `qemu64` BIOS, UEFI, and direct-kernel tests to pass before claiming the boot path is repaired.
+4. Keep the PR stack unmerged until its base chain is reconciled and fresh required checks pass.
+5. Preserve `/linux` read-only verification and the no-implicit-destructive-install invariant.
+### Follow-up: musl-gcc excludes host UAPI include paths — 2026-11-08
+
+#### Actual CI evidence
+
+- The first dependency-fix run `42446411572` installed `linux-libc-dev` successfully (`linux-libc-dev:amd64 7.0.0-43.43`), but the new preflight still failed before the BusyBox source build.
+- The failure was now explicit: `ERROR: Linux UAPI header <linux/kd.h> is unavailable to musl-gcc`.
+- This exposed the second half of the dependency issue: the musl-gcc wrapper uses `-nostdinc`, so it does not search the host's normal `/usr/include` and architecture-specific include directories unless they are added explicitly. Installing the package alone is insufficient.
+- The same run passed shell/C/rootfs/session/QEMU-runner regressions, `/linux` read-only verification, and `cargo test --workspace`; it failed only at the image build preflight. BIOS/UEFI/direct-kernel tests were not reached.
+
+#### Corrective change on the same PR branch
+
+- Add `-idirafter /usr/include` and `-idirafter /usr/include/x86_64-linux-gnu` to both the compile-only preflight and the BusyBox `CC` command.
+- Use `-idirafter` rather than `-I` so musl's own libc headers retain precedence and distro UAPI headers are used only as a fallback.
+- The preflight now exercises the same include search configuration as the actual BusyBox build.
+
+#### Validation status
+
+- The earlier preflight implementation correctly detected the missing include path and prevented a long, opaque compile failure.
+- No local compile result is claimed: this container's `cc`/GCC executable resolves to a stub that exits with status 1, and `musl-gcc` is not installed. The actual musl-gcc GitHub Actions run is authoritative.
+- Fresh CI on the updated head is required to prove that the musl-gcc include path resolves `linux/kd.h`, that BusyBox builds statically with the required applets, and that the resulting ISO passes the qemu64 BIOS/UEFI/direct-kernel boot matrix.
+
+#### Next priorities
+
+1. Inspect the updated PR workflow's actual BusyBox compile and image-build logs.
+2. If image creation succeeds, inspect BIOS, UEFI, and direct-kernel QEMU results and verify the root hand-off markers.
+3. Keep `/linux` read-only verification and installer fail-closed guarantees mandatory.
+### Local toolchain validation limitation — 2026-11-08
+
+- A follow-up inspection showed that the container's `/usr/bin/x86_64-linux-gnu-gcc-14` is a 17-byte stub that exits with status 1; `musl-gcc` is also absent. Therefore the earlier local header-check output is not accepted as compiler evidence and is explicitly superseded.
+- The updated script now passes the UAPI include directories with `-idirafter` to both the preflight and actual BusyBox compiler command. Only a fresh GitHub Actions run using the real Ubuntu musl-gcc toolchain can validate this change.
+- Do not count the local shell harness as a passing compile test.
+
+### BusyBox `tc` applet incompatibility with modern Linux UAPI — 2026-11-08
+
+#### Actual CI evidence
+
+- Inspected the complete build-and-boot job log for workflow run `42447168781` (job `128628431999`) on PR #48's merge commit `10f6d484d844883b118cc6578c141980bba75eae`.
+- The musl-gcc preflight for `<linux/kd.h>` passed, and BusyBox compilation progressed beyond the earlier `kbd_mode` failure. The first failing target is now `networking/tc.o`.
+- The compiler reports missing legacy CBQ UAPI declarations, including `TCA_CBQ_MAX`, `TCA_CBQ_RATE`, `TCA_CBQ_LSSOPT`, `TCA_CBQ_WRROPT`, `TCA_CBQ_FOPT`, `TCA_CBQ_OVL_STRATEGY`, and incomplete `struct tc_cbq_*` types.
+- Inspected the pinned kernel source's `linux/include/uapi/linux/pkt_sched.h` at the PR head. It contains no CBQ declarations. This is an upstream UAPI compatibility issue, not another missing include directory.
+- Upstream Buildroot removed BusyBox `CONFIG_TC` from its default configuration because the applet fails to build with Linux kernel headers >= 6.8 (Buildroot commit [44c221c856a473179daeb9e49bcb89af2b1b1405](https://git.buildroot.net/buildroot/commit/?id=44c221c856a473179daeb9e49bcb89af2b1b1405)).
+- In run `42447168781`, shell/C/rootfs/session/QEMU-runner regressions passed, `cargo test --workspace` passed, and `/linux` read-only verification passed. The image build failed at BusyBox `networking/tc.o`; ISO creation and BIOS/UEFI/direct-kernel QEMU tests were skipped. Failure diagnostics were uploaded.
+
+#### Implemented on PR #48 branch `fix/busybox-linux-uapi-headers-20261108`
+
+- Added `scripts/configure-busybox-baseline.sh` to make the baseline configuration explicit and repeatable:
+  - keep `CONFIG_STATIC=y`;
+  - disable unused `CONFIG_TC` and `CONFIG_FEATURE_TC_INGRESS`;
+  - run BusyBox `oldconfig` to regenerate derived configuration headers;
+  - verify that the requested configuration survived Kconfig processing.
+- Updated `scripts/build-busybox-baseline.sh` to use the configuration helper after `defconfig`. The required AWEOS applet list remains unchanged; `tc` was never a required bootstrap applet.
+- Added `scripts/test-busybox-baseline-config.sh`, which exercises the config transformation against a fixture, checks that unrelated options are preserved, and verifies idempotence.
+- Added the new test to `scripts/run-test-shell.sh`.
+- Updated README's development status with the current observed blocker and scoped correction.
+
+#### Validation status
+
+- The previous CI run proves that the Linux UAPI header preflight now succeeds, but it does not validate the new `CONFIG_TC` change.
+- The fixture test and shell syntax checks must pass in a fresh CI run. The pinned BusyBox static build, required-applet check, qemu64 ISA scan, image assembly, and BIOS/UEFI/direct-kernel boot matrix remain pending.
+- No local BusyBox compiler result is claimed because this environment does not provide the real musl-gcc toolchain.
+- `/linux` remains read-only; no kernel source files were modified. Installer, updater, partitioning, disk-write, bootloader deployment, and user-data preservation behavior were not changed.
+
+#### Next priorities
+
+1. Inspect the new PR #48 workflow run and verify the BusyBox config helper test passes.
+2. Confirm BusyBox 1.38.0 compiles statically with the full required applet set and passes the qemu64 ISA scan.
+3. If the image builds, inspect the ISO and actual BIOS, UEFI, and direct-kernel QEMU results, including root hand-off and AYUI/recovery markers.
+4. Keep the stacked PR chain unmerged until its bases are reconciled and fresh required checks pass.
+5. Continue enforcing `/linux` read-only verification and fail-closed, non-destructive installer/updater behavior.
+
+### Fresh CI validation after the BusyBox `tc` configuration change — 2026-11-08
+
+- `Validate AWEOS Userland` run `42448407387` completed successfully on commit `05982fa93c1c324f752be3e7b9b66faaadb61442`. All 13 job steps passed, including:
+  - the shell/C regression suite (which now includes `test-busybox-baseline-config.sh`);
+  - `/linux` read-only verification;
+  - Cargo metadata and `cargo test --workspace`;
+  - release builds and expected-binary checks;
+  - the Rust installer no-unattended-write test;
+  - AYUI Winit compositor smoke test under Xvfb.
+- The final PR head `ac08eab68471bbdb6e6635a294995af389ce5305` adds only README/development-log documentation after that code-tested commit; the build/test scripts are unchanged.
+- The latest `AWEOS x86_64 Build, Image and Boot Tests` run `42448461287` on the final head has so far passed the shell/C/rootfs/session/QEMU-runner regression step and `/linux` read-only verification; Cargo workspace tests also passed. The image build step has not yet completed, so no BusyBox, ISO, BIOS, UEFI, or direct-kernel success is claimed.
+- Final-head userland run `42448461252` completed successfully; all 13 steps passed, including the full shell/C suite, `/linux` integrity, Cargo tests and release build, installer no-write test, and AYUI Xvfb smoke test.
+- Code-identical build run `42448461287` on `ac08eab` has passed shell/C regressions, `/linux` integrity, and Cargo workspace tests; its image build is still in progress.
+- Final-head build run `42448670031` on `ac3fdb7` has passed dependency installation, Limine host utility build, shell/C regressions, and `/linux` integrity; Cargo and image build steps remain pending.
+- Keep PR #48 in draft and do not merge until a final-head image build and the required boot matrix complete successfully.
