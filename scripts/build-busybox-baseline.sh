@@ -82,7 +82,7 @@ esac
 echo "Building static BusyBox with the enforced x86-64-v1 compiler policy..."
 AWEOS_MUSL_CC="$MUSL_CC" make -C "$SOURCE_DIR" -j"$jobs" \
     HOSTCC="${HOSTCC:-cc}" \
-    CC="bash $SCRIPT_DIR/cc-x86_64-baseline.sh" \
+    CC="bash $SCRIPT_DIR/cc-x86_64-baseline.sh ${UAPI_INCLUDE_FLAGS[*]}" \
     busybox
 
 BUILT="$SOURCE_DIR/busybox"
