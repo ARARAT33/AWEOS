@@ -31,6 +31,7 @@ for test_script in \
     test-kernel-baseline-isa.sh \
     test-qemu64-baseline-isa.sh \
     test-busybox-baseline-config.sh \
+    test-x86_64-baseline-cc.sh \
     test-initramfs-root-discovery.sh \
     test-awepkg.sh \
     test-aosin-fail-closed.sh; do
