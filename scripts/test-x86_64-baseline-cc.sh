@@ -98,10 +98,11 @@ uint64_t aweos_baseline_probe(const uint64_t *src, uint64_t *dst, size_t n)
     uint64_t sum = 0;
     for (size_t i = 0; i < n; ++i) {
         uint64_t value = src[i];
-        dst[i] = (value * UINT64_C(0x9e3779b185ebca87)) ^ (value >> 13);
+        uint64_t lowbit = value & (~value + 1);
+        unsigned shift = (unsigned)(value & 31u);
+        dst[i] = (value * UINT64_C(0x9e3779b185ebca87)) ^
+                 (value >> shift) ^ lowbit;
         sum ^= dst[i];
-        if (value != 0)
-            sum ^= (uint64_t)__builtin_ctzll(value);
     }
     return sum;
 }
