@@ -32,6 +32,10 @@ trap 'rm -f -- "$report"' EXIT
 # common post-baseline extensions. verr and verw are legacy instructions,
 # not VEX instructions, and are therefore intentionally excluded.
 objdump -d -Mintel "$image" | awk '
+/^[[:space:]]*[[:xdigit:]]+[[:space:]]+<[^>]+>:/ {
+    current_symbol = $0
+    next
+}
 /^[[:space:]]*[[:xdigit:]]+:/ {
     line = $0
     sub(/^[[:space:]]*[[:xdigit:]]+:[[:space:]]*/, "", line)
@@ -44,6 +48,10 @@ objdump -d -Mintel "$image" | awk '
     mnemonic = tolower(fields[i])
     if ((mnemonic ~ /^v/ && mnemonic != "verr" && mnemonic != "verw") ||
         mnemonic ~ /^(andn|bextr|blsi|blsmsk|blsr|bzhi|mulx|pdep|pext|rorx|sarx|shlx|shrx|tzcnt|popcnt|lzcnt|movbe|crc32|adcx|adox|rdrand|rdseed|clflushopt|clwb|addsubpd|addsubps|haddpd|haddps|hsubpd|hsubps|lddqu|movddup|movshdup|movsldup|pabsb|pabsw|pabsd|palignr|phaddw|phaddd|phaddsw|phsubw|phsubd|phsubsw|pmaddubsw|pmulhrsw|pshufb|psignb|psignw|psignd|blendpd|blendps|blendvpd|blendvps|dpps|dppd|extractps|insertps|movntdqa|mpsadbw|packusdw|pblendvb|pblendw|pcmpeqq|pinsrb|pinsrd|pinsrq|pmovsxbw|pmovsxbd|pmovsxbq|pmovsxwd|pmovsxwq|pmovsxdq|pmovzxbw|pmovzxbd|pmovzxbq|pmovzxwd|pmovzxwq|pmovzxdq|pmulld|ptest|roundsd|roundss|roundpd|roundps|pcmpestri|pcmpestrm|pcmpistri|pcmpistrm|pcmpgtq)$/) {
+        if (current_symbol != last_symbol && current_symbol != "") {
+            print current_symbol
+            last_symbol = current_symbol
+        }
         print $0
     }
 }' > "$report"
