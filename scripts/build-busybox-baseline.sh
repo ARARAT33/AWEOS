@@ -41,6 +41,33 @@ if ! printf '#include <linux/kd.h>\n' |
     exit 2
 fi
 
+# Verify the real compiler's effective target state, not just the wrapper's
+# argument ordering. This catches a toolchain/specs mismatch before compiling
+# the bootstrap binary.
+TARGET_REPORT="$BUILD_DIR/busybox-compiler-target-report.txt"
+AWEOS_MUSL_CC="$MUSL_CC" bash "$SCRIPT_DIR/cc-x86_64-baseline.sh" \
+    -Q --help=target > "$TARGET_REPORT"
+for option in -mavx -mavx2 -mavx512f -mbmi -mbmi2 -mmovbe \
+              -mpopcnt -mlzcnt -msse3 -mssse3 -msse4.1 -msse4.2 \
+              -maes -mpclmul -mrdrnd -mrdseed -madx; do
+    if ! awk -v wanted="$option" \
+        '$1 == wanted && $2 == "[disabled]" { found = 1 } END { exit !found }' \
+        "$TARGET_REPORT"; then
+        echo "ERROR: compiler target policy did not disable $option." >&2
+        grep -E "^[[:space:]]*$option[[:space:]]" "$TARGET_REPORT" >&2 || true
+        exit 2
+    fi
+done
+awk '$1 == "-msse2" && $2 == "[enabled]" { found = 1 } END { exit !found }' \
+    "$TARGET_REPORT" || {
+    echo "ERROR: compiler target policy does not retain baseline SSE2." >&2
+    exit 2
+}
+echo "Effective BusyBox compiler target policy:"
+grep -E '^[[:space:]]+-(mavx|mavx2|mavx512f|mbmi|mbmi2|mmovbe|mpopcnt|mlzcnt|msse2|msse3|mssse3|msse4\.1|msse4\.2|maes|mpclmul|mrdrnd|mrdseed|madx)[[:space:]]' \
+    "$TARGET_REPORT" || true
+echo "PASS: the actual BusyBox compiler reports the required x86-64 baseline."
+
 WORK_DIR="$(mktemp -d "$BUILD_DIR/.busybox-build.XXXXXX")"
 TOOLS_DIR="$BUILD_DIR/tools"
 OUTPUT="$TOOLS_DIR/busybox"
