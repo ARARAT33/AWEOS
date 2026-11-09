@@ -1616,7 +1616,7 @@ Next:
 
 - Added `scripts/cc-x86_64-baseline.sh`, a compiler wrapper that appends the AWEOS x86-64-v1 target policy after every argument passed by BusyBox's build system. This addresses the observed gap in the previous approach: placing flags in the `CC` value did not guarantee they were the final target options once BusyBox supplied its own compile flags.
 - The enforced policy selects `-march=x86-64 -mtune=generic` and explicitly disables AVX/AVX2/AVX-512F, BMI1/BMI2, MOVBE, POPCNT, LZCNT, SSE3/SSSE3/SSE4.1/SSE4.2, AES, PCLMUL, RDRAND, RDSEED, and ADX.
-- The same wrapper is now used by the `<linux/kd.h>` musl UAPI preflight and by every BusyBox compile/link invocation, so the preflight and actual build share the compiler policy.
+- The same wrapper is now used by the `<linux/kd.h>` musl UAPI preflight and by every BusyBox compile/link invocation. The actual `CC` command also preserves both `-idirafter` Linux UAPI include directories, so the earlier `linux/kd.h` fix remains in force while the final ISA policy is appended last.
 - Added `scripts/test-x86_64-baseline-cc.sh`. It uses a fake compiler to verify that the baseline options are the final arguments even when conflicting `-march=native`, `-mavx2`, and `-mbmi2` flags are supplied; it also verifies compiler exit-code propagation and fail-closed handling of a missing compiler.
 - Wired the new regression into `scripts/run-test-shell.sh`.
 - Updated README status with the exact latest CI failure and the fact that boot tests were not reached.
