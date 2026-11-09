@@ -14,12 +14,17 @@ URL="https://busybox.net/downloads/${ARCHIVE}"
 # Pinned upstream tarball digest (also recorded by Buildroot's BusyBox recipe).
 SHA256="34f9ea6ff8636f2c9241153b9114eefa9e65674a45318ae1ef95bb5f31c53bb2"
 
-for tool in curl sha256sum tar make musl-gcc readelf; do
+MUSL_CC="${MUSL_CC:-musl-gcc}"
+for tool in curl sha256sum tar make readelf; do
     command -v "$tool" >/dev/null 2>&1 || {
         echo "ERROR: $tool is required to build the baseline BusyBox." >&2
         exit 2
     }
 done
+command -v "$MUSL_CC" >/dev/null 2>&1 || {
+    echo "ERROR: $MUSL_CC is required to build the baseline BusyBox." >&2
+    exit 2
+}
 
 # BusyBox's default console-tools configuration builds kbd_mode, which
 # includes <linux/kd.h>. musl provides libc headers but not the Linux UAPI
@@ -30,7 +35,7 @@ done
 # into the target's libc include chain.
 UAPI_INCLUDE_FLAGS=(-idirafter /usr/include -idirafter /usr/include/x86_64-linux-gnu)
 if ! printf '#include <linux/kd.h>\n' |
-    musl-gcc -march=x86-64 -mtune=generic -mno-avx -mno-avx2 -mno-bmi -mno-bmi2 \
+    AWEOS_MUSL_CC="$MUSL_CC" bash "$SCRIPT_DIR/cc-x86_64-baseline.sh" \
         "${UAPI_INCLUDE_FLAGS[@]}" -x c -fsyntax-only - >/dev/null 2>&1; then
     echo "ERROR: Linux UAPI header <linux/kd.h> is unavailable to musl-gcc even with explicit UAPI include paths; install linux-libc-dev and verify the system UAPI headers." >&2
     exit 2
@@ -74,12 +79,10 @@ case "$jobs" in
     ''|*[!0-9]*) jobs=2 ;;
 esac
 [ "$jobs" -gt 0 ] || jobs=2
-compiler="musl-gcc -march=x86-64 -mtune=generic -mno-avx -mno-avx2 -mno-bmi -mno-bmi2 -idirafter /usr/include -idirafter /usr/include/x86_64-linux-gnu"
-
-echo "Building static BusyBox with an explicit x86-64 baseline compiler target..."
-make -C "$SOURCE_DIR" -j"$jobs" \
+echo "Building static BusyBox with the enforced x86-64-v1 compiler policy..."
+AWEOS_MUSL_CC="$MUSL_CC" make -C "$SOURCE_DIR" -j"$jobs" \
     HOSTCC="${HOSTCC:-cc}" \
-    CC="$compiler" \
+    CC="bash $SCRIPT_DIR/cc-x86_64-baseline.sh" \
     busybox
 
 BUILT="$SOURCE_DIR/busybox"
