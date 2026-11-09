@@ -1600,3 +1600,48 @@ Next:
 3. If boot faults recur, capture the faulting instruction with the existing tagged instruction-trace machinery before changing anything else.
 4. Keep the stacked PR chain (#43 through this branch) unmerged until the base chain is reconciled and fresh required checks pass.
 5. Preserve `/linux` read-only verification and the fail-closed, non-destructive installer/updater invariants.
+
+
+## 2026-11-09 — Enforce BusyBox x86-64 baseline flags last
+
+### Repository and CI inspection
+
+- The default `master` branch is still at commit `0939488f5261b04c9c3af150e5e4dc8888896a9f` (2026-09-25); the active development work is on an unmerged stack. Do not treat the default branch as containing the November boot work.
+- Inspected the open stack: PR #49 (draft) is based on PR #48 (draft), which is based on PR #47; PR #47 is based on PR #46. All remain unmerged. The new work is based on PR #49's head `7e7bb459770b37ade7590dcc55c517122017397e`, not on `master`.
+- Latest PR #49 userland run `42492061640` passed all 13 steps, including shell/C regressions, Rust workspace tests, release builds, installer no-unattended-write verification, and AYUI's Xvfb compositor smoke test.
+- Latest full image run `42492061559` failed at the real pinned BusyBox build's qemu64 ISA scan. The BusyBox configuration helper confirmed both `CONFIG_SHA1_HWACCEL` and `CONFIG_SHA256_HWACCEL` were disabled, and the static link completed, but the final ELF still contained VEX/AVX mnemonics (`vmovdqa`, `vmovaps`, `vpxor`, etc.), BMI instructions (`tzcnt`, `blsi`), and `movbe`. The ISO and BIOS/UEFI/direct-kernel boot tests were skipped because image creation stopped at this gate.
+- The previous PR #48 image run also failed at the same ISA gate after resolving the UAPI headers and `tc` incompatibility. The latest result therefore does not support claiming that the BusyBox baseline is fixed.
+
+### Implemented on `boot/busybox-cc-flags-last-20261109`
+
+- Added `scripts/cc-x86_64-baseline.sh`, a compiler wrapper that appends the AWEOS x86-64-v1 target policy after every argument passed by BusyBox's build system. This addresses the observed gap in the previous approach: placing flags in the `CC` value did not guarantee they were the final target options once BusyBox supplied its own compile flags.
+- The enforced policy selects `-march=x86-64 -mtune=generic` and explicitly disables AVX/AVX2/AVX-512F, BMI1/BMI2, MOVBE, POPCNT, LZCNT, SSE3/SSSE3/SSE4.1/SSE4.2, AES, PCLMUL, RDRAND, RDSEED, and ADX.
+- The same wrapper is now used by the `<linux/kd.h>` musl UAPI preflight and by every BusyBox compile/link invocation, so the preflight and actual build share the compiler policy.
+- Added `scripts/test-x86_64-baseline-cc.sh`. It uses a fake compiler to verify that the baseline options are the final arguments even when conflicting `-march=native`, `-mavx2`, and `-mbmi2` flags are supplied; it also verifies compiler exit-code propagation and fail-closed handling of a missing compiler.
+- Wired the new regression into `scripts/run-test-shell.sh`.
+- Updated README status with the exact latest CI failure and the fact that boot tests were not reached.
+- No files under `/linux` were changed. No installer, partition, disk, bootloader, updater, or user-data behavior was changed.
+
+### Files changed
+
+- `scripts/cc-x86_64-baseline.sh` (new)
+- `scripts/test-x86_64-baseline-cc.sh` (new)
+- `scripts/build-busybox-baseline.sh`
+- `scripts/run-test-shell.sh`
+- `README.md`
+- `docs/AI-DEVELOPMENT-LOG.md`
+
+### Validation
+
+- The parent PR #49 head's userland CI passed, but that run does not validate this follow-up.
+- This branch's compiler-wrapper regression, full `make test-shell`, Rust tests, BusyBox static build, qemu64 ELF scan, ISO build, and BIOS/UEFI/direct-kernel boot tests have not yet run. No pass is claimed.
+- The local environment in the prior run lacked a working GCC/musl-gcc toolchain; GitHub Actions with the real Ubuntu toolchain remains the authoritative build test.
+- `/linux` remains outside the change set by design; CI must continue to run `scripts/verify-linux-readonly.sh`.
+
+### Unresolved issues and next priorities
+
+1. Run the new branch's userland workflow and confirm the compiler-wrapper regression passes.
+2. Run the full image workflow and inspect the actual BusyBox compiler commands and ISA scan. If post-baseline instructions remain, identify the offending object/toolchain component; do not weaken the scanner or widen the qemu64 CPU model.
+3. Require a successful static BusyBox build, complete required applet check, qemu64 ISA scan, ISO assembly, and BIOS/UEFI/direct-kernel QEMU matrix before claiming image/boot success.
+4. Reconcile the stacked PR bases only after fresh checks pass on the final head; do not merge an unverified stack.
+5. Continue preserving the read-only `/linux` boundary and fail-closed installer/updater guarantees.
