@@ -1684,3 +1684,13 @@ Next:
 3. If the BusyBox ELF still fails, use the newly emitted symbol labels and verbose instruction context to locate the offending function; determine whether it is compiler-generated code, an assembly object, or a linked library before changing build flags.
 4. Do not weaken the qemu64 ISA scanner or widen the CPU model to hide the incompatibility.
 5. Only after the BusyBox static build, required applet check, ISA scan, ISO assembly, and BIOS/UEFI/direct-kernel boot matrix pass on the final reconciled head should the stacked PRs be considered for merge.
+
+
+### CI correction — remove an ambiguous TZCNT probe instruction (2026-11-09)
+
+- Follow-up full-image run `42567483733` stopped in `make test-shell` before image building. The new real-compiler probe itself produced one `tzcnt` mnemonic from `__builtin_ctzll`; the symbol-aware scanner correctly exposed the probe function, but the test was not isolating the intended AVX/BMI2 override behavior.
+- GCC can encode a nonzero-input count-trailing-zeros operation using the REP-prefixed BSF encoding, which modern `objdump` names `tzcnt`. On CPUs without BMI1 that encoding executes as BSF; the probe explicitly guarded against zero. The current scanner intentionally remains conservative and rejects the mnemonic, so the probe should not manufacture it.
+- Replaced the probe's `__builtin_ctzll` expression with low-bit extraction and a variable shift. These patterns still exercise AVX/BMI code generation under the hostile flags without intentionally requesting the ambiguous TZCNT/BSF encoding.
+- This run did not reach the BusyBox build. The separate prior BusyBox failure remains unresolved: its report included AVX/VEX instructions, `blsi`, `sarx`, and `movbe` in addition to `tzcnt`. No conclusion about the actual BusyBox binary can be drawn from the probe-only failure.
+- The `/linux` read-only verification step still passed after the shell-test failure. ISO assembly and all boot tests were skipped.
+- The corrected probe has not yet been validated by a fresh workflow run. Keep PR #50 in draft until the new test, BusyBox build, ISA scan, ISO, and BIOS/UEFI/direct-kernel boot checks pass.
