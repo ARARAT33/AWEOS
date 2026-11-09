@@ -1694,3 +1694,42 @@ Next:
 - This run did not reach the BusyBox build. The separate prior BusyBox failure remains unresolved: its report included AVX/VEX instructions, `blsi`, `sarx`, and `movbe` in addition to `tzcnt`. No conclusion about the actual BusyBox binary can be drawn from the probe-only failure.
 - The `/linux` read-only verification step still passed after the shell-test failure. ISO assembly and all boot tests were skipped.
 - The corrected probe has not yet been validated by a fresh workflow run. Keep PR #50 in draft until the new test, BusyBox build, ISA scan, ISO, and BIOS/UEFI/direct-kernel boot checks pass.
+## 2026-11-09  -  Attribute the remaining BusyBox qemu64 ISA violation with persistent CI evidence
+
+### Repository and CI inspection
+
+- The active stack is unchanged: PR #50 (draft) is based on PR #49 (draft); PR #47/#48/#49 and their bases remain unmerged; `master` is still at `0939488` (2026-09-25). This run continues on the existing PR #50 branch head `2dad984547e4290d5c9fcd4e70d3af4a9eab07bc` without force pushes.
+- PR #50's userland run `42567776056` passed. The full image run `42567776075` failed at the BusyBox qemu64 ISA gate before ISO assembly or any boot test, with mnemonics `vmovdqa(61), vmovaps(80), vcvtsi2sd(15), movbe(22), vpermpd(2), vinserti128(4), tzcnt(5), blsi(2), ...` in the linked ELF.
+- Decisive observation: the new pre-build effective-target gate passed on this run, which proves the wrapper produces a correct x86-64-v1 target state for the invocations it compiles. The remaining violating instructions therefore come either from linked inputs the wrapper never compiles (prebuilt musl `libc.a`, `libgcc.a`, crt objects on the runner) or from invocations that bypass the wrapper. The previous CI evidence could not distinguish these cases: the symbol-labeled scan report was deleted by the checker's EXIT trap and the raw job log is not readable through the available tooling.
+- No change to the BusyBox result is claimed; the failure remains unresolved until the attribution evidence and a green image run exist.
+
+### Implemented on `boot/busybox-cc-flags-last-20261109`
+
+- `scripts/check-qemu64-baseline-isa.sh`:
+  - `AWEOS_ISA_REPORT_OUT=<path>` persists the full symbol-labeled report file; the fail-closed verdict and exit codes are unchanged.
+  - The first ERROR line now also names the top six offending symbols, so the single-line CI annotation identifies the actual functions without downloading logs.
+  - New `AWEOS_ISA_SOFT=1` diagnostic mode never fails: it prints machine-readable `AWEOS_ISA_OFFENDERS=<count>` and `AWEOS_ISA_SYMBOLS=<names>` and exits 0. In soft mode the checker also accepts `ar` archives so linked static-library inputs can be scanned; strict mode still rejects non-ELF inputs.
+- `scripts/build-busybox-baseline.sh`: when the final BusyBox ELF fails the ISA scan, the build now persists the report to `build/busybox-isa-report.txt` and writes an attribution to `build/busybox-isa-attribution.txt` by soft-scanning every linked input: all BusyBox `built-in.a` archives (falling back to all non-`scripts/` objects if kbuild archives are absent), the prebuilt musl `libc.a` (located via the compiler or standard musl paths), `libgcc.a`, and the crt objects. It prints a `DIAGNOSIS:` section naming exactly which inputs are dirty, then still exits non-zero: packaging remains fail-closed.
+- `.github/workflows/build-aweos-x86_64.yml`: the image-build failure summary now inlines the attribution file, and the failure artifact upload includes the BusyBox ISA report, attribution, compiler target report, and failure summary.
+- `scripts/test-qemu64-baseline-isa.sh`: regressions for report persistence (both failing and passing inputs), symbol names on the error line, soft-mode offender counts and symbols, soft-mode archive scanning, strict-mode archive rejection, and soft-mode exit status.
+- No files under `/linux` were changed. No installer, disk, partition, bootloader, updater, or user-data behavior changed. The qemu64 ISA scanner was not weakened and the qemu64 CPU model was not widened.
+
+### Files changed
+
+- `scripts/check-qemu64-baseline-isa.sh`
+- `scripts/build-busybox-baseline.sh`
+- `scripts/test-qemu64-baseline-isa.sh`
+- `.github/workflows/build-aweos-x86_64.yml`
+- `docs/AI-DEVELOPMENT-LOG.md`
+
+### Validation status
+
+- The edited scripts were line-by-line reviewed, but this environment provides no usable shell (`bash -n` is unavailable here) and no musl toolchain, compiler, or binutils, so no local syntax run, BusyBox build, or checker execution is claimed. GitHub Actions remains the authoritative validator.
+- No workflow run has validated this head yet. The expected outcome of the next run is: userland passes; the image build fails (expected) at the ISA gate, but now with a `DIAGNOSIS:` section, persisted symbol report, and artifacts naming the offending linked input. If the dirty input is a prebuilt musl/libgcc archive, the correct fix is building those components from source under the same baseline policy, not flag changes and not scanner weakening.
+
+### Unresolved issues and next priorities
+
+1. Read the new attribution evidence from the next CI run and fix the actual source of the violation (primary hypothesis: prebuilt musl `libc.a` or `libgcc.a` from the runner's `musl-tools` package).
+2. If toolchain archives are confirmed as the source, add a pinned from-source musl build under the enforced x86-64-v1 policy so the bootstrap binary no longer depends on distro-built archives.
+3. Keep PR #50 in draft and the stacked chain unmerged until the static BusyBox build, required applet check, qemu64 ISA scan, ISO assembly, and BIOS/UEFI/direct-kernel boot matrix all pass on a reconciled head.
+4. Preserve the fail-closed installer/updater invariants and the read-only `/linux` boundary in every subsequent change.

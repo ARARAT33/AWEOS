@@ -101,7 +101,7 @@ SOURCE_DIR="$WORK_DIR/busybox-$VERSION"
 make -C "$SOURCE_DIR" defconfig
 bash "$SCRIPT_DIR/configure-busybox-baseline.sh" "$SOURCE_DIR"
 
-jobs="${AWEOS_BUILD_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || printf '2')}"
+jobs="${AWEOS_BUILD_JOBS:-$(getconf _NPROCESSORS_ONLO 2>/dev/null || printf '2')}"
 case "$jobs" in
     ''|*[!0-9]*) jobs=2 ;;
 esac
@@ -128,16 +128,140 @@ required_applets=(
 )
 applets="$("$BUILT" --list)"
 for applet in "${required_applets[@]}"; do
-    printf '%s\n' "$applets" | grep -Fxq "$applet" || {
+    printf '%s\n' "$applet" | grep -Fxq "$applet" || {
         echo "ERROR: baseline BusyBox is missing required applet: $applet" >&2
         exit 1
     }
 done
 
-bash "$SCRIPT_DIR/check-qemu64-baseline-isa.sh" "$BUILT"
+ISA_REPORT="$BUILD_DIR/busybox-isa-report.txt"
+if ! AWEOS_ISA_REPORT_OUT="$ISA_REPORT" \
+    bash "$SCRIPT_DIR/check-qemu64-baseline-isa.sh" "$BUILT"; then
+    echo "ERROR: BusyBox ELF failed the qemu64 baseline ISA scan; attributing the offending code before failing." >&2
+    ATTRIB="$BUILD_DIR/busybox-isa-attribution.txt"
+    : > "$ATTRIB"
+
+    # Soft scanner: counts offenders in any ELF or ar archive without failing.
+    isa_soft_scan() {
+        local path="$1"
+        AWEOS_ISA_SOFT=1 bash "$SCRIPT_DIR/check-qemu64-baseline-isa.sh" "$path" \
+            2>/dev/null || printf 'AWEOS_ISA_OFFENDERS=?\nAWEOS_ISA_SYMBOLS=unreadable\n'
+    }
+    isa_attribute() {
+        local label="$1" path="$2" scan count symbols
+        [ -f "$path" ] && [ -s "$path" ] || return 0
+        scan="$(isa_soft_scan "$path")"
+        count="$(printf '%s\n' "$scan" | sed -n 's/^AWEOS_ISA_OFFENDERS=//p' | tail -n1)"
+        symbols="$(printf '%s\n' "$scan" | sed -n 's/^AWEOS_ISA_SYMBOLS=//p' | tail -n1)"
+        {
+            echo "input: $label"
+            echo "  path: $path"
+            echo "  offenders: ${count:-?}; top symbols: ${symbols:-none}"
+        } >> "$ATTRIB"
+        if [ -n "${count:-}" ] && [ "$count" != "0" ] && [ "$count" != "?" ]; then
+            echo "DIRTY: $label contains $count non-baseline instructions (symbols: ${symbols:-unknown})." | tee -a "$ATTRIB"
+        fi
+    }
+
+    {
+        echo "AWEOS qemu64/x86-64 ISA scan attribution"
+        echo "Final BusyBox ELF: $BUILT"
+        if [ -s "$ISA_REPORT" ]; then
+            echo
+            echo "Per-symbol offender counts in the final ELF:"
+            awk '/^[[:space:]]*[[:xdigit:]]+[[:space:]]+<[^>]+>:/ {
+                     name = $2
+                     gsub(/[<>:]/, "", name)
+                     counts[name]++
+                 }
+                 END {
+                     for (name in counts) {
+                         print counts[name], name
+                     }
+                 }' "$ISA_REPORT" | sort -rn | head -n 10
+        else
+            echo "The persisted ISA report is missing or empty."
+        fi
+        echo
+        echo "Scanned linked inputs:"
+    } >> "$ATTRIB"
+
+    # 1. BusyBox's own compiled code: kbuild archives everything linked into
+    #    the final binary into per-directory built-in.a archives.
+    found_builtins=0
+    while IFS= read -r -d '' input; do
+        found_builtins=1
+        rel="${input#"$SOURCE_DIR"/}"
+        isa_attribute "busybox built-in.a:$rel" "$input"
+    done < <(find "$SOURCE_DIR" -type f -name 'built-in.a' -print0 | sort -z)
+    if [ "$found_builtins" -eq 0 ]; then
+        {
+            echo "input: busybox per-object fallback"
+            echo "  note: no built-in.a archives were found under the source tree; scanning all non-scripts objects instead."
+        } >> "$ATTRIB"
+        while IFS= read -r -d '' input; do
+            rel="${input#"$SOURCE_DIR"/}"
+            isa_attribute "busybox object:$rel" "$input"
+        done < <(find "$SOURCE_DIR" -type f -name '*.o' -not -path "$SOURCE_DIR/scripts/*" -print0 | sort -z)
+    fi
+
+    # 2. Prebuilt toolchain inputs consumed by the static link.
+    toolchain_libc=""
+    candidate="$("$MUSL_CC" -print-file-name=libc.a 2>/dev/null || true)"
+    case "$candidate" in
+        /*) [ -f "$candidate" ] && toolchain_libc="$candidate" ;;
+    esac
+    if [ -z "$toolchain_libc" ]; then
+        for dir in /usr/lib/x86_64-linux-musl /usr/lib/musl /usr/local/musl/lib; do
+            if [ -f "$dir/libc.a" ]; then
+                toolchain_libc="$dir/libc.a"
+                break
+            fi
+        done
+    fi
+    [ -n "$toolchain_libc" ] || {
+        echo "input: musl libc.a (prebuilt)" >> "$ATTRIB"
+        echo "  note: could not locate the musl libc.a consumed by the static link." >> "$ATTRIB"
+    }
+    [ -n "$toolchain_libc" ] && \
+        isa_attribute "musl libc.a (prebuilt toolchain)" "$toolchain_libc"
+
+    toolchain_libgcc="$("$MUSL_CC" -print-libgcc-file-name 2>/dev/null || true)"
+    case "$toolchain_libgcc" in
+        /*) isa_attribute "libgcc.a (prebuilt toolchain)" "$toolchain_libgcc" ;;
+        *)
+            {
+                echo "input: libgcc.a (prebuilt toolchain)"
+                echo "  note: the compiler did not report an absolute libgcc path ($toolchain_libgcc)."
+            } >> "$ATTRIB"
+            ;;
+    esac
+
+    for crt in crt1.o crti.o crtn.o Scrt1.o rcrt1.o; do
+        crt_path="$("$MUSL_CC" -print-file-name="$crt" 2>/dev/null || true)"
+        case "$crt_path" in
+            /*) isa_attribute "crt object $crt (prebuilt toolchain)" "$crt_path" ;;
+        esac
+    done
+
+    {
+        echo
+        echo "DIAGNOSIS:"
+        if grep -q '^DIRTY:' "$ATTRIB"; then
+            echo "Linked inputs that contain non-baseline instructions:"
+            grep '^DIRTY:' "$ATTRIB"
+        else
+            echo "No scanned linked input reproduced the violation; the offending code is in an input that was not located or scanned. Record every link input before changing flags."
+        fi
+    } >> "$ATTRIB"
+
+    cat "$ATTRIB"
+    echo "ERROR: BusyBox packaging remains fail-closed. Full attribution: $ATTRIB; symbol report: $ISA_REPORT." >&2
+    exit 1
+fi
 
 OUTPUT_TMP="$(mktemp "$TOOLS_DIR/.busybox.XXXXXX")"
-CHECKSUM_TMP="$(mktemp "$TOOLS_DIR/.busybox.sha256.XXXXXX")"
+CHECKSUM_TMP="$(mktemp "$TOOLS_DIR/busybox.sha256.XXXXXX")""
 install -m 0755 "$BUILT" "$OUTPUT_TMP"
 sha256sum "$OUTPUT_TMP" > "$CHECKSUM_TMP"
 mv -f -- "$OUTPUT_TMP" "$OUTPUT"
