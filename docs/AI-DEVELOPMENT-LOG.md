@@ -1645,3 +1645,42 @@ Next:
 3. Require a successful static BusyBox build, complete required applet check, qemu64 ISA scan, ISO assembly, and BIOS/UEFI/direct-kernel QEMU matrix before claiming image/boot success.
 4. Reconcile the stacked PR bases only after fresh checks pass on the final head; do not merge an unverified stack.
 5. Continue preserving the read-only `/linux` boundary and fail-closed installer/updater guarantees.
+
+
+## 2026-11-09 — Diagnose the remaining BusyBox x86-64 baseline violation
+
+### Fresh CI evidence
+
+- Full image/boot run `42565058549` on PR #50 head `9f887e25bd692c973235b60e4ba4bf2067b84ab9` completed the shell/C/rootfs/session/QEMU-runner regressions, `/linux` read-only verification, and Cargo workspace tests successfully.
+- The real pinned BusyBox 1.38.0 static build completed, but `check-qemu64-baseline-isa.sh` rejected the resulting ELF. The diagnostic reported VEX/AVX instructions (including `vpxor`, `vmovdqa`, `vmovaps`), BMI instructions (`tzcnt`, `blsi`, `sarx`), and `movbe`.
+- ISO assembly and BIOS/UEFI/direct-kernel QEMU boot tests were skipped because the BusyBox ISA gate failed. No image or boot success is claimed.
+- The same commit's userland validation run `42565058648` passed. This does not validate the real BusyBox image build.
+
+### Implemented on `boot/busybox-cc-flags-last-20261109`
+
+- Extended `scripts/test-x86_64-baseline-cc.sh` to exercise an installed real musl compiler, deliberately pass hostile `-march=native -mavx2 -mbmi2` options, compile a probe object through the wrapper, and run the actual object through the qemu64 ISA scanner.
+- The real-compiler test also inspects GCC's effective `-Q --help=target` state and requires AVX, BMI, MOVBE, POPCNT, LZCNT, post-baseline SSE, AES, PCLMUL, RDRAND, RDSEED, and ADX to be disabled while baseline SSE2 remains enabled. It skips only in test environments without the musl compiler; the image workflow installs `musl-tools` and the BusyBox build itself still requires the compiler.
+- `scripts/build-busybox-baseline.sh` now writes `build/busybox-compiler-target-report.txt` and fails before the BusyBox source build if the real compiler does not report the expected target feature state.
+- `scripts/check-qemu64-baseline-isa.sh` now includes the enclosing symbol label with rejected instruction lines, so the next CI failure can identify which function contains the non-baseline code.
+- No files under `/linux` were changed. Installer, disk, partition, bootloader deployment, updater, and user-data behavior remain unchanged.
+
+### Files changed in this run
+
+- `scripts/test-x86_64-baseline-cc.sh`
+- `scripts/check-qemu64-baseline-isa.sh`
+- `scripts/build-busybox-baseline.sh`
+- `docs/AI-DEVELOPMENT-LOG.md`
+
+### Validation status
+
+- The source changes have been committed to the existing PR #50 branch in three small commits. The new real-compiler probe, target-report gate, and symbol-aware scanner have not yet been validated by a fresh GitHub Actions run.
+- The previous run's passing shell/C tests, Cargo tests, and `/linux` integrity check are evidence for the prior head only; do not carry those results forward as validation of the new commits.
+- No local musl toolchain is available in this environment, so no local BusyBox build or local musl compiler result is claimed.
+
+### Next priorities
+
+1. Inspect the fresh PR #50 userland run and require the real compiler probe to pass on the image runner.
+2. Inspect the fresh full image run. Confirm the effective target report explicitly disables the required extensions.
+3. If the BusyBox ELF still fails, use the newly emitted symbol labels and verbose instruction context to locate the offending function; determine whether it is compiler-generated code, an assembly object, or a linked library before changing build flags.
+4. Do not weaken the qemu64 ISA scanner or widen the CPU model to hide the incompatibility.
+5. Only after the BusyBox static build, required applet check, ISA scan, ISO assembly, and BIOS/UEFI/direct-kernel boot matrix pass on the final reconciled head should the stacked PRs be considered for merge.
