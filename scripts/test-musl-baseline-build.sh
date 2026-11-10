@@ -43,7 +43,7 @@ install:
 	mkdir -p "$(PREFIX)/bin" "$(PREFIX)/lib" "$(PREFIX)/include"
 	printf '#!/bin/sh\nexec "$$REALGCC" "$$@"\n' > "$(PREFIX)/bin/musl-gcc"
 	chmod 0755 "$(PREFIX)/bin/musl-gcc"
-	: > "$(PREFIX)/lib/libc.a"
+	printf 'baseline synthetic libc\n' > "$(PREFIX)/lib/libc.a"
 	printf '#include <stdio.h>\n' > "$(PREFIX)/include/stdio.h"
 EOF
 
