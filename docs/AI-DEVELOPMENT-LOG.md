@@ -1733,3 +1733,37 @@ Next:
 2. If toolchain archives are confirmed as the source, add a pinned from-source musl build under the enforced x86-64-v1 policy so the bootstrap binary no longer depends on distro-built archives.
 3. Keep PR #50 in draft and the stacked chain unmerged until the static BusyBox build, required applet check, qemu64 ISA scan, ISO assembly, and BIOS/UEFI/direct-kernel boot matrix all pass on a reconciled head.
 4. Preserve the fail-closed installer/updater invariants and the read-only `/linux` boundary in every subsequent change.
+
+## 2026-11-10 — Repair PR #50 BusyBox build-script regressions
+
+### Repository and CI inspection
+
+- Continued on the existing draft PR #50 branch `boot/busybox-cc-flags-last-20261109`, based on head `04232014125fea586f7dbd5a82f5d15f9f92f4ea`; the stacked PR chain remains unmerged.
+- Latest full-image run `42634171192` and userland run `42634171131` both stopped in the shell regression gate. The exact failure was `bash -n`: `scripts/build-busybox-baseline.sh: line 272: unexpected EOF while looking for matching '"'`.
+- The failing step ran before Rust tests, image assembly, ISO generation, or BIOS/UEFI/direct-kernel boot tests. The `/linux` read-only integrity check passed.
+
+### Implemented on this branch
+
+- Removed the extra trailing quote from the temporary BusyBox checksum filename assignment, restoring valid shell syntax.
+- Corrected the `getconf` key from the misspelled `_NPROCESSORS_ONLO` to Linux's `_NPROCESSORS_ONLN`, so automatic build parallelism is detected instead of always falling back to two jobs.
+- Fixed a false-positive required-applet check. The previous code compared each applet against itself, so missing BusyBox commands could never be detected. Extracted the check into `scripts/check-busybox-applets.sh`; it now reads the actual binary's `--list` output and fails closed on missing applets or a failed `--list` command.
+- Extended `scripts/test-busybox-baseline-config.sh` with fake-BusyBox regressions for complete applet lists, missing applets, and `--list` execution failure. The existing `make test-shell` runner syntax-checks every `scripts/*.sh` file and runs this regression script.
+
+### Files changed
+
+- `scripts/build-busybox-baseline.sh`
+- `scripts/check-busybox-applets.sh` (new)
+- `scripts/test-busybox-baseline-config.sh`
+- `docs/AI-DEVELOPMENT-LOG.md`
+
+### Validation status
+
+- Changes are committed to the existing PR #50 branch; this entry does not claim that tests passed.
+- Fresh GitHub Actions results are required to verify shell syntax, the BusyBox applet regression, Rust/userland checks, the real BusyBox build, qemu64 ISA validation, ISO assembly, and the BIOS/UEFI/direct-kernel boot matrix.
+- No files under `/linux` were modified. No installer, partition, disk, updater, or user-data behavior was changed.
+
+### Next priorities
+
+1. Inspect fresh PR #50 userland and full-image workflow runs; confirm the shell and applet regressions pass.
+2. Continue from the first real build failure after the shell gate. Use the persisted ISA report and linked-input attribution rather than weakening the x86-64 baseline scanner.
+3. Keep PR #50 and its stacked predecessors in draft/unmerged state until the final reconciled head passes the required build and boot matrix.

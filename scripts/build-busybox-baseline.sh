@@ -101,7 +101,7 @@ SOURCE_DIR="$WORK_DIR/busybox-$VERSION"
 make -C "$SOURCE_DIR" defconfig
 bash "$SCRIPT_DIR/configure-busybox-baseline.sh" "$SOURCE_DIR"
 
-jobs="${AWEOS_BUILD_JOBS:-$(getconf _NPROCESSORS_ONLO 2>/dev/null || printf '2')}"
+jobs="${AWEOS_BUILD_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || printf '2')}"
 case "$jobs" in
     ''|*[!0-9]*) jobs=2 ;;
 esac
@@ -126,13 +126,7 @@ required_applets=(
     awk cat chmod cp cttyhack dd find grep hostname ln mkdir mktemp mknod
     mount mv rm rmdir sed sha256sum sh sleep sort switch_root tar tr umount wc
 )
-applets="$("$BUILT" --list)"
-for applet in "${required_applets[@]}"; do
-    printf '%s\n' "$applet" | grep -Fxq "$applet" || {
-        echo "ERROR: baseline BusyBox is missing required applet: $applet" >&2
-        exit 1
-    }
-done
+bash "$SCRIPT_DIR/check-busybox-applets.sh" "$BUILT" "${required_applets[@]}"
 
 ISA_REPORT="$BUILD_DIR/busybox-isa-report.txt"
 if ! AWEOS_ISA_REPORT_OUT="$ISA_REPORT" \
@@ -261,7 +255,7 @@ if ! AWEOS_ISA_REPORT_OUT="$ISA_REPORT" \
 fi
 
 OUTPUT_TMP="$(mktemp "$TOOLS_DIR/.busybox.XXXXXX")"
-CHECKSUM_TMP="$(mktemp "$TOOLS_DIR/busybox.sha256.XXXXXX")""
+CHECKSUM_TMP="$(mktemp "$TOOLS_DIR/busybox.sha256.XXXXXX")"
 install -m 0755 "$BUILT" "$OUTPUT_TMP"
 sha256sum "$OUTPUT_TMP" > "$CHECKSUM_TMP"
 mv -f -- "$OUTPUT_TMP" "$OUTPUT"
