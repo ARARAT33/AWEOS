@@ -64,7 +64,7 @@ if ! printf '#include <linux/kd.h>\n' |
     AWEOS_MUSL_CC="$MUSL_CC" bash "$SCRIPT_DIR/cc-x86_64-baseline.sh" \
         "${UAPI_INCLUDE_FLAGS[@]}" -x c -fsyntax-only - >"$UAPI_PROBE_ERR" 2>&1; then
     probe_first="$(sed -n '1p' "$UAPI_PROBE_ERR" 2>/dev/null || true)"
-    echo "ERROR: musl-gcc UAPI probe for <linux/kd.h> failed: "${probe_first:-the compiler produced no output}" >&2
+    echo "ERROR: musl-gcc UAPI probe for <linux/kd.h> failed: ${probe_first:-the compiler produced no output}" >&2
     sed -n '1,40p' "$UAPI_PROBE_ERR" 2>/dev/null | sed 's/^/ERROR: probe: /' >&2 || true
     exit 2
 fi
