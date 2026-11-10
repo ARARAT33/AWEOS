@@ -52,7 +52,13 @@ cc -c "$workdir/avx.S" -o "$workdir/avx.o"
 cc -c "$workdir/bmi1.S" -o "$workdir/bmi1.o"
 cc -c "$workdir/bmi2.S" -o "$workdir/bmi2.o"
 
-bash "$checker" "$workdir/safe.o"
+# With no report path configured, the checker must not create a stray
+# file named "-" in its caller's working directory.
+(
+    cd "$workdir"
+    bash "$checker" "$workdir/safe.o" >"$workdir/default.out"
+    [ ! -e "$workdir/-" ]
+)
 
 if bash "$checker" "$workdir/avx.o" >"$workdir/avx.out" 2>&1; then
     echo "ERROR: qemu64 ISA checker accepted a VEX/AVX instruction." >&2

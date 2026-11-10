@@ -1767,3 +1767,10 @@ Next:
 1. Inspect fresh PR #50 userland and full-image workflow runs; confirm the shell and applet regressions pass.
 2. Continue from the first real build failure after the shell gate. Use the persisted ISA report and linked-input attribution rather than weakening the x86-64 baseline scanner.
 3. Keep PR #50 and its stacked predecessors in draft/unmerged state until the final reconciled head passes the required build and boot matrix.
+
+## 2026-11-10 follow-up — Keep the ISA checker report output opt-in
+
+- A post-commit review found that `AWEOS_ISA_REPORT_OUT` defaulted to the literal `-`, while the EXIT cleanup treated every non-empty value as a destination path. Normal checker invocations could therefore create a stray file named `-` in the caller's working directory.
+- Changed the unset default to an empty string. Report persistence remains enabled only when an explicit output path is supplied; fail-closed scan behavior is unchanged.
+- Extended `scripts/test-qemu64-baseline-isa.sh` to run the checker with no report path from an isolated directory and assert that no `-` file is created. Existing explicit report-persistence tests remain.
+- Validation: this follow-up is committed to the PR #50 branch. Fresh GitHub Actions results are required; no pass is claimed until the updated shell/ISA tests and image pipeline complete.

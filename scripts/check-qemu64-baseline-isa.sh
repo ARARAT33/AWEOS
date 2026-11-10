@@ -30,7 +30,7 @@ for tool in readelf objdump awk; do
     }
 done
 
-report_out="${AWEOS_ISA_REPORT_OUT:--}"
+report_out="${AWEOS_ISA_REPORT_OUT:-}"
 isa_soft="${AWEOS_ISA_SOFT:-0}"
 if ! readelf -h "$image" 2>/dev/null | grep -Eqi 'Machine:.*(X86-64|x86-64)'; then
     if [ "$isa_soft" != "1" ]; then
