@@ -54,7 +54,7 @@ MISMATCH_SHA256="000000000000000000000000000000000000000000000000000000000000000
 # 1. A missing required tool fails closed before any download.
 FAKE_BIN="$TEMP_ROOT/fakebin"
 mkdir -p "$FAKE_BIN"
-for tool in bash sha256sum tar make mktemp rm grep mkdir chmod cp cat find ln realpath getconf cc awk sed touch; do
+for tool in bash env dirname basename sha256sum tar make mktemp rm grep mkdir chmod cp cat find ln realpath getconf cc awk sed touch sort head tail cut tr install; do
     command -v "$tool" >/dev/null 2>&1 || continue
     ln -s "$(command -v "$tool")" "$FAKE_BIN/$tool"
 done
