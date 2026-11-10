@@ -1782,3 +1782,10 @@ Next:
 - The separate Linux-sync PR #51 now has a passing staged-subtree regression workflow (`42759726417`) and a passing userland workflow (`42759718078`). Its full image workflow `42759726735` has passed the repository boundary and Rust workspace tests and is still building images.
 - PR #51's first userland run exposed missing native linker dependencies (`-linput`, `-lxkbcommon`). Installing `libinput-dev` and `libxkbcommon-dev` in both CI workflows fixed that failure on the latest head.
 - No ISO, BIOS/UEFI boot, physical-hardware, or production-readiness claim is made until the current image and boot jobs finish successfully.
+
+### CI completion update — 2026-11-10
+
+- PR #50 userland run `42759603359` completed successfully on code commit `82f0fd36d0b945e84cbcad4b69a957eb86f3cfbc`: shell/C safety regressions, repository boundary, Cargo metadata, workspace tests, release binaries, expected-binary checks, installer no-write checks, and AYUI Xvfb smoke checks passed.
+- PR #50 full image run `42759603318` has passed shell/C/rootfs/session/QEMU-runner regressions, `/linux` integrity, and Rust workspace tests. Its image build is still running; no ISO or boot result is claimed yet.
+- PR #51's latest userland run `42759726522` and Linux index-subtree regression run `42759726417` completed successfully. Its full image run `42759726735` has passed Rust workspace tests and is still in the image-build stage.
+- The later PR #50 commit `5b12b10` only updates this development log; the tested source code is unchanged from `82f0fd3`.
