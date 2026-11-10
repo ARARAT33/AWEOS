@@ -34,7 +34,7 @@ printf 'PREFIX = %s\n' "$prefix" > config.mak
 EOF
 chmod 0755 "$FAKE_SRC/configure"
 
-cat > "$FAKE_SRC/Makefile'' <<'EOF'
+cat > "$FAKE_SRC/Makefile" <<'EOF'
 include config.mak
 
 .PHONY: all install
