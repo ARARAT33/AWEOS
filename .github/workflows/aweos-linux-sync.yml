@@ -81,7 +81,7 @@ jobs:
           test -f linux/Kconfig
           test -d linux/kernel
           test -d linux/arch
-          test "$(git rev-parse :linux)" = "$(git rev-parse linux-upstream/master^{tree})"
+          bash scripts/verify-index-subtree.sh linux linux-upstream/master
 
       - name: Verify NOTHING outside /linux changed
         if: steps.compare.outputs.changed == 'true'

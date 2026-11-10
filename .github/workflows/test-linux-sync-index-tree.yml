@@ -1,0 +1,29 @@
+name: Test Linux sync index-tree verification
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/aweos-linux-sync.yml"
+      - ".github/workflows/test-linux-sync-index-tree.yml"
+      - "scripts/verify-index-subtree.sh"
+      - "scripts/test-linux-sync-index-tree.sh"
+  push:
+    branches:
+      - master
+    paths:
+      - ".github/workflows/aweos-linux-sync.yml"
+      - ".github/workflows/test-linux-sync-index-tree.yml"
+      - "scripts/verify-index-subtree.sh"
+      - "scripts/test-linux-sync-index-tree.sh"
+
+permissions:
+  contents: read
+
+jobs:
+  index-subtree-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout AWEOS
+        uses: actions/checkout@v5
+      - name: Test staged index subtree verification
+        run: bash scripts/test-linux-sync-index-tree.sh
