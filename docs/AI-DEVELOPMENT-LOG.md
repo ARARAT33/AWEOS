@@ -1789,3 +1789,98 @@ Next:
 - PR #50 full image run `42759603318` has passed shell/C/rootfs/session/QEMU-runner regressions, `/linux` integrity, and Rust workspace tests. Its image build is still running; no ISO or boot result is claimed yet.
 - PR #51's latest userland run `42759726522` and Linux index-subtree regression run `42759726417` completed successfully. Its full image run `42759726735` has passed Rust workspace tests and is still in the image-build stage.
 - The later PR #50 commit `5b12b10` only updates this development log; the tested source code is unchanged from `82f0fd3`.
+
+## 2026-11-10 — Replace the distribution musl link with a pinned from-source baseline build
+
+### Repository and CI inspection
+
+- Continued on the draft PR #50 branch `boot/busybox-cc-flags-last-20261109`
+  from head `2909e5e`; the stacked PR chain (#43-#50) remains unmerged and no
+  boot success is claimed.
+- The latest full-image run `42760114712` on that head failed the qemu64 ISA
+  gate again: the pinned static BusyBox ELF still contained AVX/VEX mnemonics
+  (vmovdqa(61), vmovaps(80), vcvtsi2sd(15), vinserti128, vpermpd, ...), BMI
+  (blsi), tzcnt, and MOVBE(22). The userland workflow passed on the same head.
+- The compiler wrapper itself is verified by the in-tree regressions (flag
+  precedence, hostile -march=native/-mavx2/-mbmi2 override, exit-code
+  propagation) and by the earlier real-compiler probe run, and the effective
+  GCC target-state check passed before the build. The violating instructions
+  therefore come from the prebuilt archives consumed by the static link. The
+  mnemonic histogram (AVX + BMI/BMI2 + MOVBE, no AVX-512) matches an
+  x86-64-v3-built distribution libc, i.e. the runner's `musl-tools` libc.a and
+  crt objects on the current Ubuntu runner images. This confirms the primary
+  hypothesis recorded in the previous entry, and the fix planned there is now
+  implemented.
+- The separate Linux-sync PR #51 (based on master, outside this stack) passed
+  its userland and index-subtree regression workflows, but its full-image run
+  `42759726735` failed at the "Build AWEOS images" step with exit code 2. That
+  failure is not yet diagnosed and is independent of this branch.
+
+### Implemented
+
+- `scripts/build-musl-baseline.sh` (new): downloads the pinned musl 1.2.5
+  release from musl.libc.org, verifies its SHA-256 digest
+  (`a9a118bbe84d8764da0ea0d28b3ab3fae8477fc7e4085d90102b8596fc7c75e4`,
+  cross-checked against the Debian musl 1.2.5-1 upload record and the
+  Buildroot/musl-cross-make hash records), compiles musl through the same
+  `cc-x86_64-baseline.sh` policy wrapper used for BusyBox (with
+  `AWEOS_MUSL_CC=$HOSTCC`), installs it under `build/tools/musl`, verifies the
+  musl-gcc wrapper, libc.a, and libc headers, and records a version+digest
+  marker so a completed build is reused idempotently. A regression-test hook
+  (`AWEOS_MUSL_TEST_TARBALL` / `AWEOS_MUSL_TEST_SHA256`) exists only for the
+  synthetic-tree tests; production builds always download and verify the
+  pinned upstream archive.
+- `scripts/build-busybox-baseline.sh`: the bootstrap link now defaults to the
+  from-source baseline musl (`build/tools/musl/bin/musl-gcc`); the explicit
+  `MUSL_CC` override is retained for diagnostics but the ISA scan still
+  fail-closes the final ELF either way. The ISA attribution labels no longer
+  call the toolchain inputs "prebuilt", and the from-source libc directory was
+  added to the fallback search list.
+- `scripts/test-musl-baseline-build.sh` (new): offline regressions using a
+  synthetic musl source tree: a missing required tool fails closed; a test
+  tarball without a checksum fails closed; a checksum mismatch fails closed; a
+  verified tarball builds and installs the wrapper, libc.a, headers, and the
+  pinned marker; and a completed build is reused from cache without
+  re-downloading.
+- `scripts/run-test-shell.sh`: the new regression runs in the `make test-shell`
+  suite (after the compiler-policy regression).
+- `README.md`: the development-status note and the bootstrap-pipeline
+  description now record the from-source musl link and the pending fresh image
+  build and boot matrix.
+
+### Files changed
+
+- `scripts/build-musl-baseline.sh` (new)
+- `scripts/build-busybox-baseline.sh`
+- `scripts/test-musl-baseline-build.sh` (new)
+- `scripts/run-test-shell.sh`
+- `README.md`
+- `docs/AI-DEVELOPMENT-LOG.md`
+
+### Validation status
+
+- This environment provides no usable shell, compiler, or network for local
+  verification; GitHub Actions remains the authoritative validator. The suite
+  driver syntax-checks every `scripts/*.sh` with `bash -n` before running the
+  regressions.
+- No pass is claimed. The new regressions, the real pinned musl build, the
+  pinned BusyBox build, the required-applet check, the qemu64 ISA scan, ISO
+  assembly, and the BIOS/UEFI/direct-kernel QEMU boot matrix must all pass on
+  this head before PR #50 can leave draft.
+- If the ISA scan still fails after this change, the persisted attribution
+  file should now name the remaining dirty linked input; the leading candidate
+  would be the distribution `libgcc.a`. The correct next fix is building that
+  component from source under the same baseline policy, never weakening the
+  scanner or the qemu64 CPU model.
+
+### Unresolved issues and next priorities
+
+1. Inspect the fresh userland and full-image workflows on this head: confirm
+   the from-source musl build completes and whether the BusyBox ELF now passes
+   the qemu64 baseline ISA scan.
+2. Diagnose PR #51's full-image "Build AWEOS images" exit-code-2 failure on
+   the master-based branch; it is independent of this stack.
+3. If the attribution names libgcc.a as dirty, add a baseline-built libgcc
+   from source under the same policy.
+4. Keep PR #50 and its stacked predecessors unmerged until a reconciled head
+   passes the full image and boot matrix.
