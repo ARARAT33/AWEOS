@@ -56,16 +56,16 @@ fi
 # they match the kernel being built and keep the bootstrap toolchain
 # independent of the runner's linux-libc-dev packaging. Distro paths remain
 # as fallbacks.
-UAPI_INCLUDE_FLAGS=(-idirafter "$REPO_ROOT/include/uapi" \
-    -idirafter "$REPO_ROOT/arch/x86/include/uapi" \
+UAPI_INCLUDE_FLAGS=(-idirafter "$REPO_ROOT/linux/include/uapi" \
+    -idirafter "$REPO_ROOT/linux/arch/x86/include/uapi" \
     -idirafter /usr/include -idirafter /usr/include/x86_64-linux-gnu)
 UAPI_PROBE_ERR="$BUILD_DIR/busybox-uapi-probe-error.txt"
 if ! printf '#include <linux/kd.h>\n' |
     AWEOS_MUSL_CC="$MUSL_CC" bash "$SCRIPT_DIR/cc-x86_64-baseline.sh" \
         "${UAPI_INCLUDE_FLAGS[@]}" -x c -fsyntax-only - >"$UAPI_PROBE_ERR" 2>&1; then
-    echo "ERROR: Linux UAPI header <linux/kd.h> is unavailable to musl-gcc even with explicit UAPI include paths." >&2
-    echo "--- probe compiler output (first 40 lines) ---" >&2
-    sed -n '1,40p' "$UAPI_PROBE_ERR" >&2 || true
+    probe_first="$(sed -n '1p' "$UAPI_PROBE_ERR" 2>/dev/null || true)"
+    echo "ERROR: musl-gcc UAPI probe for <linux/kd.h> failed: "${probe_first:-the compiler produced no output}" >&2
+    sed -n '1,40p' "$UAPI_PROBE_ERR" 2>/dev/null | sed 's/^/ERROR: probe: /' >&2 || true
     exit 2
 fi
 
