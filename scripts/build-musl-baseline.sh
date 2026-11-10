@@ -105,6 +105,21 @@ echo "Building baseline musl $VERSION..."
 make -C "$SOURCE_DIR" -j"$jobs"
 make -C "$SOURCE_DIR" install
 
+# musl bakes the configure-time CC into the generated musl-gcc wrapper as
+# the REALGCC default. We compile musl through the baseline policy wrapper,
+# but the installed musl-gcc must drive the plain host compiler: with the
+# policy wrapper baked in, musl-gcc tries to exec the whole
+# "bash .../cc-x86_64-baseline.sh" string as a single file and every
+# compilation through it fails. Rewrite the baked default to the host
+# compiler and fail closed if the wrapper is still referenced afterwards.
+if grep -q 'cc-x86_64-baseline.sh' "$MUSL_PREFIX/bin/musl-gcc" 2>/dev/null; then
+    sed -i "s|REALGCC:-[^}]*}|REALGCC:-${HOSTCC}|" "$MUSL_PREFIX/bin/musl-gcc"
+    if grep -q 'cc-x86_64-baseline.sh' "$MUSL_PREFIX/bin/musl-gcc" 2>/dev/null; then
+        echo "ERROR: the installed musl-gcc wrapper still references the baseline policy wrapper; refusing to publish an unusable toolchain." >&2
+        exit 1
+    fi
+fi
+
 [ -x "$MUSL_PREFIX/bin/musl-gcc" ] || {
     echo "ERROR: the baseline musl install did not provide the musl-gcc wrapper." >&2
     exit 1

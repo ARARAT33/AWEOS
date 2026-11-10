@@ -41,7 +41,7 @@ include config.mak
 all:
 install:
 	mkdir -p "$(PREFIX)/bin" "$(PREFIX)/lib" "$(PREFIX)/include"
-	printf '#!/bin/sh\nexec "$$REALGCC" "$$@"\n' > "$(PREFIX)/bin/musl-gcc"
+	printf '#!/bin/sh\nexec "${REALGCC:-bash /nonexistent/cc-x86_64-baseline.sh}" "$@"\n' > "$(PREFIX)/bin/musl-gcc"
 	chmod 0755 "$(PREFIX)/bin/musl-gcc"
 	printf 'baseline synthetic libc\n' > "$(PREFIX)/lib/libc.a"
 	printf '#include <stdio.h>\n' > "$(PREFIX)/include/stdio.h"
@@ -89,6 +89,13 @@ AWEOS_MUSL_TEST_TARBALL="$TARBALL" AWEOS_MUSL_TEST_SHA256="$TEST_SHA256" \
 grep -Fq 'PASS: baseline musl 1.2.5 installed' "$TEMP_ROOT/build.out"
 MUSL_PREFIX="$BUILD_DIR/tools/musl"
 [ -x "$MUSL_PREFIX/bin/musl-gcc" ]
+# The installed wrapper must no longer reference the configure-time policy
+# wrapper; its REALGCC default must have been rewritten to the host compiler.
+if grep -q 'cc-x86_64-baseline.sh' "$MUSL_PREFIX/bin/musl-gcc"; then
+    echo "ERROR: the installed musl-gcc still references the baseline policy wrapper." >&2
+    exit 1
+fi
+grep -q 'REALGCC:-cc}' "$MUSL_PREFIX/bin/musl-gcc"
 [ -s "$MUSL_PREFIX/lib/libc.a" ]
 [ -f "$MUSL_PREFIX/include/stdio.h" ]
 grep -qx '1.2.5 a9a118bbe84d8764da0ea0d28b3ab3fae8477fc7e4085d90102b8596fc7c75e4' \
