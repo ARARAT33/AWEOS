@@ -1774,3 +1774,11 @@ Next:
 - Changed the unset default to an empty string. Report persistence remains enabled only when an explicit output path is supplied; fail-closed scan behavior is unchanged.
 - Extended `scripts/test-qemu64-baseline-isa.sh` to run the checker with no report path from an isolated directory and assert that no `-` file is created. Existing explicit report-persistence tests remain.
 - Validation: this follow-up is committed to the PR #50 branch. Fresh GitHub Actions results are required; no pass is claimed until the updated shell/ISA tests and image pipeline complete.
+
+### CI checkpoint — 2026-11-10
+
+- On current PR #50 head `82f0fd36d0b945e84cbcad4b69a957eb86f3cfbc`, the full image workflow `42759603318` has passed the shell/C/rootfs/session/QEMU-runner regression step, the `/linux` read-only boundary check, and `cargo test --workspace`. `make image` is still running; ISO and boot results are not yet available.
+- PR #50 userland workflow `42759603359` has passed shell/C safety tests, repository-boundary verification, Cargo metadata, and `cargo test --workspace`; release binary compilation and its remaining checks are still running.
+- The separate Linux-sync PR #51 now has a passing staged-subtree regression workflow (`42759726417`) and a passing userland workflow (`42759718078`). Its full image workflow `42759726735` has passed the repository boundary and Rust workspace tests and is still building images.
+- PR #51's first userland run exposed missing native linker dependencies (`-linput`, `-lxkbcommon`). Installing `libinput-dev` and `libxkbcommon-dev` in both CI workflows fixed that failure on the latest head.
+- No ISO, BIOS/UEFI boot, physical-hardware, or production-readiness claim is made until the current image and boot jobs finish successfully.
