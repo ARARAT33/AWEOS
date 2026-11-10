@@ -52,11 +52,20 @@ fi
 # musl-gcc uses -nostdinc, so distro UAPI headers are not searched by
 # default. Add them after musl's own headers to avoid mixing glibc headers
 # into the target's libc include chain.
-UAPI_INCLUDE_FLAGS=(-idirafter /usr/include -idirafter /usr/include/x86_64-linux-gnu)
+# Prefer the Linux UAPI headers shipped in this repository's kernel tree;
+# they match the kernel being built and keep the bootstrap toolchain
+# independent of the runner's linux-libc-dev packaging. Distro paths remain
+# as fallbacks.
+UAPI_INCLUDE_FLAGS=(-idirafter "$REPO_ROOT/include/uapi" \
+    -idirafter "$REPO_ROOT/arch/x86/include/uapi" \
+    -idirafter /usr/include -idirafter /usr/include/x86_64-linux-gnu)
+UAPI_PROBE_ERR="$BUILD_DIR/busybox-uapi-probe-error.txt"
 if ! printf '#include <linux/kd.h>\n' |
     AWEOS_MUSL_CC="$MUSL_CC" bash "$SCRIPT_DIR/cc-x86_64-baseline.sh" \
-        "${UAPI_INCLUDE_FLAGS[@]}" -x c -fsyntax-only - >/dev/null 2>&1; then
-    echo "ERROR: Linux UAPI header <linux/kd.h> is unavailable to musl-gcc even with explicit UAPI include paths; install linux-libc-dev and verify the system UAPI headers." >&2
+        "${UAPI_INCLUDE_FLAGS[@]}" -x c -fsyntax-only - >"$UAPI_PROBE_ERR" 2>&1; then
+    echo "ERROR: Linux UAPI header <linux/kd.h> is unavailable to musl-gcc even with explicit UAPI include paths." >&2
+    echo "--- probe compiler output (first 40 lines) ---" >&2
+    sed -n '1,40p' "$UAPI_PROBE_ERR" >&2 || true
     exit 2
 fi
 
