@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Build the initramfs/rootfs BusyBox ourselves instead of copying the host
-# distribution binary, which may be an amd64v3/AVX-optimized package.
+# distribution binary, which may be an amd64v3/AVX-optimized package. The
+# static link also consumes a pinned from-source musl libc built under the
+# same enforced x86-64 baseline policy, never the distribution musl-tools
+# archives (see scripts/build-musl-baseline.sh).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
@@ -14,17 +17,33 @@ URL="https://busybox.net/downloads/${ARCHIVE}"
 # Pinned upstream tarball digest (also recorded by Buildroot's BusyBox recipe).
 SHA256="34f9ea6ff8636f2c9241153b9114eefa9e65674a45318ae1ef95bb5f31c53bb2"
 
-MUSL_CC="${MUSL_CC:-musl-gcc}"
 for tool in curl sha256sum tar make readelf; do
     command -v "$tool" >/dev/null 2>&1 || {
         echo "ERROR: $tool is required to build the baseline BusyBox." >&2
         exit 2
     }
 done
-command -v "$MUSL_CC" >/dev/null 2>&1 || {
-    echo "ERROR: $MUSL_CC is required to build the baseline BusyBox." >&2
-    exit 2
-}
+# The distribution musl-tools archives on current runners are built for
+# newer x86-64 microarchitecture levels (AVX/BMI/MOVBE) and are linked
+# verbatim into the static bootstrap ELF, which the qemu64 ISA scan then
+# correctly rejects. Build a pinned musl from source under the enforced
+# baseline policy and link against that. An explicit MUSL_CC override
+# remains available for diagnostics, but the ISA scan still fail-closes the
+# final binary either way.
+MUSL_CC="${MUSL_CC:-}"
+if [ -z "$MUSL_CC" ]; then
+    bash "$SCRIPT_DIR/build-musl-baseline.sh" "$BUILD_DIR"
+    MUSL_CC="$BUILD_DIR/tools/musl/bin/musl-gcc"
+    [ -x "$MUSL_CC" ] || {
+        echo "ERROR: the from-source baseline musl-gcc wrapper is missing: $MUSL_CC" >&2
+        exit 2
+    }
+else
+    command -v "$MUSL_CC" >/dev/null 2>&1 || {
+        echo "ERROR: $MUSL_CC is required to build the baseline BusyBox." >&2
+        exit 2
+    }
+fi
 
 # BusyBox's default console-tools configuration builds kbd_mode, which
 # includes <linux/kd.h>. musl provides libc headers but not the Linux UAPI
@@ -199,14 +218,17 @@ if ! AWEOS_ISA_REPORT_OUT="$ISA_REPORT" \
         done < <(find "$SOURCE_DIR" -type f -name '*.o' -not -path "$SOURCE_DIR/scripts/*" -print0 | sort -z)
     fi
 
-    # 2. Prebuilt toolchain inputs consumed by the static link.
+    # 2. Toolchain inputs consumed by the static link. The libc.a and crt
+    #    objects normally come from the from-source baseline musl build; the
+    #    compiler-reported paths are scanned regardless so a toolchain swap or
+    #    an explicit MUSL_CC override cannot hide a dirty input.
     toolchain_libc=""
     candidate="$("$MUSL_CC" -print-file-name=libc.a 2>/dev/null || true)"
     case "$candidate" in
         /*) [ -f "$candidate" ] && toolchain_libc="$candidate" ;;
     esac
     if [ -z "$toolchain_libc" ]; then
-        for dir in /usr/lib/x86_64-linux-musl /usr/lib/musl /usr/local/musl/lib; do
+        for dir in "$BUILD_DIR"/tools/musl/lib /usr/lib/x86_64-linux-musl /usr/lib/musl /usr/local/musl/lib; do
             if [ -f "$dir/libc.a" ]; then
                 toolchain_libc="$dir/libc.a"
                 break
@@ -214,18 +236,18 @@ if ! AWEOS_ISA_REPORT_OUT="$ISA_REPORT" \
         done
     fi
     [ -n "$toolchain_libc" ] || {
-        echo "input: musl libc.a (prebuilt)" >> "$ATTRIB"
+        echo "input: musl libc.a (toolchain)" >> "$ATTRIB"
         echo "  note: could not locate the musl libc.a consumed by the static link." >> "$ATTRIB"
     }
     [ -n "$toolchain_libc" ] && \
-        isa_attribute "musl libc.a (prebuilt toolchain)" "$toolchain_libc"
+        isa_attribute "musl libc.a (toolchain)" "$toolchain_libc"
 
     toolchain_libgcc="$("$MUSL_CC" -print-libgcc-file-name 2>/dev/null || true)"
     case "$toolchain_libgcc" in
-        /*) isa_attribute "libgcc.a (prebuilt toolchain)" "$toolchain_libgcc" ;;
+        /*) isa_attribute "libgcc.a (toolchain)" "$toolchain_libgcc" ;;
         *)
             {
-                echo "input: libgcc.a (prebuilt toolchain)"
+                echo "input: libgcc.a (toolchain)"
                 echo "  note: the compiler did not report an absolute libgcc path ($toolchain_libgcc)."
             } >> "$ATTRIB"
             ;;
@@ -234,7 +256,7 @@ if ! AWEOS_ISA_REPORT_OUT="$ISA_REPORT" \
     for crt in crt1.o crti.o crtn.o Scrt1.o rcrt1.o; do
         crt_path="$("$MUSL_CC" -print-file-name="$crt" 2>/dev/null || true)"
         case "$crt_path" in
-            /*) isa_attribute "crt object $crt (prebuilt toolchain)" "$crt_path" ;;
+            /*) isa_attribute "crt object $crt (toolchain)" "$crt_path" ;;
         esac
     done
 
