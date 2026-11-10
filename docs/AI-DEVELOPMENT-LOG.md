@@ -1884,3 +1884,20 @@ Next:
    from source under the same policy.
 4. Keep PR #50 and its stacked predecessors unmerged until a reconciled head
    passes the full image and boot matrix.
+
+## 2026-11-10 follow-up — Fix the musl baseline regression fake PATH
+
+- The first fresh userland run on this branch (`42832353614`) failed in the
+  shell regression gate at `scripts/test-musl-baseline-build.sh`: the
+  missing-tool case runs `build-musl-baseline.sh` under a restricted fake
+  `PATH`, but the fake bin directory did not include `dirname` (an external
+  command used by the script's own `SCRIPT_DIR` resolution), so the script
+  exited with "dirname: command not found" before reaching the expected
+  "curl is required" fail-closed message.
+- Commit `142ecf75` extends the fake bin directory to include the coreutils
+  the script and the build-safety helpers actually call (`env`, `dirname`,
+  `basename`, `sort`, `head`, `tail`, `cut`, `tr`, `install` in addition to
+  the previous set); `curl` remains deliberately absent.
+- Fresh userland and full-image workflows on head `142ecf7` were started
+  (`42832699332`, `42832699975`) and were still running when this entry was
+  written. No pass is claimed; results must be read from those runs.
