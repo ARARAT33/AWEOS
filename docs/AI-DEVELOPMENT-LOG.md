@@ -44,3 +44,15 @@
   - `PASS: Makefile invokes the rootfs validator and invalid rootfs layouts are rejected.`
 - The full x86_64 image/BIOS/UEFI QEMU workflow [#42962547574](https://github.com/ARARAT33/AWEOS/actions/runs/42962547574) was still running at the last poll, after the new shell regression and Rust workspace tests had passed and while `Build AWEOS images` was in progress. No ISO or boot success is claimed yet.
 - PR #52 remains a draft and unmerged. Do not merge until the full image/boot workflow finishes and its logs are reviewed.
+
+
+### Architecture audit notes for the next development cycle
+
+- The current Makefile's production userland path is the Rust Cargo workspace (`AWEUI` plus `APPS`). The parallel C implementation under `src/gui` is not built by the current Makefile path; it must not be described as part of the shipped desktop until a separate build/integration path is added and tested.
+- The Rust AYUI compositor currently handles keyboard input and a limited pointer-motion focus path, but the inspected Wayland handler does not yet implement a complete pointer/seat interaction path. Window titles and app IDs are currently hard-coded for newly created toplevels. Full desktop input/window-management support remains unverified.
+- The current master IPC constructor unconditionally unlinks the configured path before binding. PR #21 already contains a safer stale-socket-only cleanup, a private socket mode, a per-session runtime path, and regression coverage; review that existing work rather than reimplementing it.
+- The C updater in master does not check the result of `aweos_tx_preserve()` before continuing. PR #23 already addresses fail-closed preservation and adds archive/updater regression tests; keep the updater disabled from destructive use until that branch's tests and integration are verified.
+- The C WLIN path currently initializes `target_disk_idx = 0` and accesses that index without first proving that storage discovery found a disk; its staging function sets a state flag but does not yet stage a kernel/initramfs payload. Treat WLIN as incomplete, not a working cross-OS installer.
+- The QEMU helper checks serial boot markers and panic patterns; it does not yet prove interactive input, window creation, pointer operation, or application launch. A boot marker is not equivalent to a desktop acceptance test.
+
+These are source-inspection findings, not claims that the affected paths were executed in this run. They are recorded to prevent planned or partial functionality from being presented as production-ready.
