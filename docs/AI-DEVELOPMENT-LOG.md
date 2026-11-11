@@ -32,3 +32,15 @@
 3. Continue the independent Linux sync PR #51 only after reviewing its complete check set.
 4. Audit the installer, updater, package manager, and AYUI runtime against their actual tests; keep unimplemented hardware/network features explicitly marked as unsupported until exercised.
 5. Preserve the read-only `/linux` boundary and do not merge unverified changes.
+
+
+### CI follow-up — 2026-11-11
+
+- The first intermediate branch checks exposed a second, independent baseline issue: clean Ubuntu runners could not link `-linput` and `-lxkbcommon`. The logs showed the missing native libraries explicitly. Added `libinput-dev` and `libxkbcommon-dev` to both CI dependency sets; this overlaps the same runner fix already present in the independent Linux-sync PR #51.
+- Added `make test-shell` to both relevant workflows so the new fixture-based rootfs regression is actually executed by CI, rather than merely being present in the repository.
+- Final-head PR userland workflow **PASS** on `0ad6bd2f8fc863060f10a0649151ef3a69cad5d5` (run [#42962547537](https://github.com/ARARAT33/AWEOS/actions/runs/42962547537)). Verified completed steps: repository boundary, shell/rootfs regression, Cargo metadata, Rust workspace tests, release build, and expected binary checks all passed.
+- The rootfs regression output confirmed both the valid layout and fail-closed missing-config case:
+  - `AWEOS rootfs layout validation passed`
+  - `PASS: Makefile invokes the rootfs validator and invalid rootfs layouts are rejected.`
+- The full x86_64 image/BIOS/UEFI QEMU workflow [#42962547574](https://github.com/ARARAT33/AWEOS/actions/runs/42962547574) was still running at the last poll, after the new shell regression and Rust workspace tests had passed and while `Build AWEOS images` was in progress. No ISO or boot success is claimed yet.
+- PR #52 remains a draft and unmerged. Do not merge until the full image/boot workflow finishes and its logs are reviewed.
