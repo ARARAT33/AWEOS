@@ -56,3 +56,29 @@
 - The QEMU helper checks serial boot markers and panic patterns; it does not yet prove interactive input, window creation, pointer operation, or application launch. A boot marker is not equivalent to a desktop acceptance test.
 
 These are source-inspection findings, not claims that the affected paths were executed in this run. They are recorded to prevent planned or partial functionality from being presented as production-ready.
+
+
+## 2026-11-11 second run — Publish image-build failure diagnostics
+
+### CI results inspected
+- PR #52 userland workflow 42962547537: PASS on 0ad6bd2 (repository boundary, shell/rootfs regression, Cargo metadata, Rust workspace tests, release build, expected binary checks).
+- PR #52 full x86_64 image workflow 42962547574: FAIL. The single job build-and-boot-test finished in 16m 51s with exit code 2; no artifacts were published and the only annotation is the exit code, so the first real failing command inside make image is still unknown.
+- GitHub Actions logs require an authenticated web session and the unauthenticated Actions REST API was rate-limited from this environment, so the failing command could not be read directly this run. No speculative build fix was made for that reason.
+
+### Implemented
+- .github/workflows/build-aweos-x86_64.yml: the Build AWEOS images step now runs make image 2>&1 | tee build-make-image.log under set -o pipefail, preserving the make exit code while capturing the full output.
+- New Publish make-image failure diagnostics step (if: failure()): appends the last 300 lines of the captured log to the job step summary.
+- New Upload make-image and QEMU logs step (if: failure()): uploads build-make-image.log plus the QEMU BIOS/UEFI serial logs as the aweos-build-failure-logs artifact, so image and boot failures are readable without a web login.
+- No production build or runtime code path was changed; the existing steps and the /linux verification order are preserved.
+
+### Files changed
+- .github/workflows/build-aweos-x86_64.yml
+- docs/AI-DEVELOPMENT-LOG.md
+
+### Validation status
+- No pass is claimed. The change is CI-only; the authoritative validation is the next run of the x86_64 image workflow on this branch.
+
+### Next priorities
+1. Read the step summary or the aweos-build-failure-logs artifact from the next run and identify the actual failing command inside make image (or make test-qemu).
+2. Fix that concrete failure; do not merge PR #52 until a full image + BIOS/UEFI boot run passes.
+3. Keep the separate PR #43-#50 boot stack and the PR #51 Linux-sync work unmerged until their own gates pass.
