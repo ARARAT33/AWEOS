@@ -43,7 +43,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y             build-essential bc bison flex libssl-dev libelf-dev cpio gzip xz-utils             curl xorriso qemu-system-x86 ovmf busybox-static util-linux e2fsprogs             parted netcat-openbsd pkg-config git patch autoconf automake libtool nasm mtools lld             llvm debootstrap rsync
+          sudo apt-get install -y             build-essential bc bison flex libssl-dev libelf-dev libinput-dev libxkbcommon-dev cpio gzip xz-utils             curl xorriso qemu-system-x86 ovmf busybox-static util-linux e2fsprogs             parted netcat-openbsd pkg-config git patch autoconf automake libtool nasm mtools lld             llvm debootstrap rsync
 
       - name: Build Limine host utility
         run: |
@@ -60,11 +60,37 @@ jobs:
       - name: Verify /linux is untouched
         run: ./scripts/verify-linux-readonly.sh
 
+      - name: Run shell and rootfs regression tests
+        run: make test-shell
+
       - name: Test Rust workspace
         run: cargo test --workspace
 
       - name: Build AWEOS images
-        run: make image
+        run: |
+          set -o pipefail
+          make image 2>&1 | tee build-make-image.log
+
+      - name: Publish make-image failure diagnostics
+        if: failure()
+        run: |
+          echo '## make image failure tail' >> "$GITHUB_STEP_SUMMARY"
+          if [ -f build-make-image.log ]; then
+            tail -n 300 build-make-image.log >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'build-make-image.log not found' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload make-image and QEMU logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aweos-build-failure-logs
+          path: |
+            build-make-image.log
+            build/qemu-bios.log
+            build/qemu-uefi.log
+          if-no-files-found: ignore
 
       - name: Verify /linux after build
         run: ./scripts/verify-linux-readonly.sh

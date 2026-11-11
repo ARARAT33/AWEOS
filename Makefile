@@ -47,10 +47,10 @@ kernel: verify-linux
 
 rootfs: rust-build
 	@AWEOS_DESKTOP=${AWEOS_DESKTOP:-ayui} ./scripts/build-rootfs.sh $(BUILD_DIR)
-	@./scripts/validate-rootfs-layout.sh $(BUILD_DIR)
+	@bash ./scripts/validate-rootfs-layout.sh $(BUILD_DIR)
 
 validate-rootfs:
-	@./scripts/validate-rootfs-layout.sh $(BUILD_DIR)
+	@bash ./scripts/validate-rootfs-layout.sh $(BUILD_DIR)
 
 initramfs: rootfs
 	@./scripts/build-initramfs.sh $(BUILD_DIR)
@@ -94,6 +94,7 @@ test-shell:
 	for script in $(SHELL_SCRIPTS); do \
 		bash -n "$$script"; \
 	done
+	@bash ./scripts/test-rootfs-layout-validator.sh
 
 test-qemu: iso
 	@./scripts/run-qemu-tests.sh $(BUILD_DIR)
@@ -111,4 +112,4 @@ verify-artifacts:
 	done
 
 clean:
-	@rm -rf $(BUILD_DIR)
+	@rm -rf -- "$(BUILD_DIR)"
