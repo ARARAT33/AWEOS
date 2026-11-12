@@ -112,12 +112,21 @@ make -C "$SOURCE_DIR" install
 # "bash .../cc-x86_64-baseline.sh" string as a single file and every
 # compilation through it fails. Rewrite the baked default to the host
 # compiler and fail closed if the wrapper is still referenced afterwards.
+# The sed pattern consumes the closing brace of the REALGCC expansion, so
+# the replacement must re-emit it; dropping it leaves a syntactically
+# invalid wrapper (an unclosed default expansion).
 if grep -q 'cc-x86_64-baseline.sh' "$MUSL_PREFIX/bin/musl-gcc" 2>/dev/null; then
-    sed -i "s|REALGCC:-[^}]*}|REALGCC:-${HOSTCC}|" "$MUSL_PREFIX/bin/musl-gcc"
+    sed -i "s|REALGCC:-[^}]*}|REALGCC:-${HOSTCC}}|" "$MUSL_PREFIX/bin/musl-gcc"
     if grep -q 'cc-x86_64-baseline.sh' "$MUSL_PREFIX/bin/musl-gcc" 2>/dev/null; then
         echo "ERROR: the installed musl-gcc wrapper still references the baseline policy wrapper; refusing to publish an unusable toolchain." >&2
         exit 1
     fi
+fi
+
+# Fail closed on a syntactically broken wrapper before publishing it.
+if ! sh -n "$MUSL_PREFIX/bin/musl-gcc" 2>/dev/null; then
+    echo "ERROR: the installed musl-gcc wrapper is not valid shell; refusing to publish an unusable toolchain." >&2
+    exit 1
 fi
 
 [ -x "$MUSL_PREFIX/bin/musl-gcc" ] || {

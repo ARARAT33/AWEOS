@@ -89,6 +89,9 @@ AWEOS_MUSL_TEST_TARBALL="$TARBALL" AWEOS_MUSL_TEST_SHA256="$TEST_SHA256" \
 grep -Fq 'PASS: baseline musl 1.2.5 installed' "$TEMP_ROOT/build.out"
 MUSL_PREFIX="$BUILD_DIR/tools/musl"
 [ -x "$MUSL_PREFIX/bin/musl-gcc" ]
+# The installed wrapper must be valid shell: a rewrite that drops the closing
+# brace of the REALGCC expansion would leave an unusable toolchain behind.
+sh -n "$MUSL_PREFIX/bin/musl-gcc"
 # The installed wrapper must no longer reference the configure-time policy
 # wrapper; its REALGCC default must have been rewritten to the host compiler.
 if grep -q 'cc-x86_64-baseline.sh' "$MUSL_PREFIX/bin/musl-gcc"; then
