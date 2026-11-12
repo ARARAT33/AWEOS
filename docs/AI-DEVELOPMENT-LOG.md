@@ -47,3 +47,10 @@
 3. Fix only the proven failure with a regression test.
 4. Re-run the affected checks and preserve the `/linux` read-only invariant.
 5. Update this log with exact run IDs, job conclusions, and test evidence.
+
+
+### CI follow-up — PR #53 first validation
+- New stacked PR #53 triggered Userland Validation run #43158921437 and full image/boot run #43158921451.
+- Userland run #43158921437: the complete `make test-shell` step **PASS**, repository-boundary validation **PASS**, and Cargo metadata validation **PASS**. Cargo workspace tests were still running at the last poll.
+- Full image/boot run #43158921451: runner setup and build-dependency installation **PASS**; the Limine host utility build was in progress. Shell/rootfs tests, image assembly, and BIOS/UEFI QEMU boot remained pending at the last poll.
+- These are checks on the new stacked branch. No full image, ISO, BIOS, UEFI, or boot success is claimed until the corresponding steps complete.
