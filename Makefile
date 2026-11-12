@@ -97,6 +97,7 @@ test-shell:
 	@bash ./scripts/test-transaction-fail-closed.sh
 	@bash ./scripts/test-storage-discovery.sh
 	@bash ./scripts/test-build-iso-safety.sh
+	@bash ./scripts/test-rootfs-layout-validator.sh
 
 test-qemu: iso
 	@./scripts/run-qemu-tests.sh $(BUILD_DIR)
