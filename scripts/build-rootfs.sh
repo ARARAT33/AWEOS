@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [ "${AWEOS_DESKTOP:-ayui}" = "gnome" ]; then
-    exec "$(dirname "$0")/build-rootfs-gnome.sh" "$@"
+    exec bash "$(dirname "$0")/build-rootfs-gnome.sh" "$@"
 fi
 
 set -euo pipefail
