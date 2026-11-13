@@ -1901,3 +1901,27 @@ Next:
 - Fresh userland and full-image workflows on head `142ecf7` were started
   (`42832699332`, `42832699975`) and were still running when this entry was
   written. No pass is claimed; results must be read from those runs.
+
+
+## 2026-11-13 — Fix the synthetic musl-gcc test fixture's Makefile escaping
+
+### Inspection and exact CI evidence
+- Inspected PR #50 (`boot/busybox-cc-flags-last-20261109`) at head `3782aa2c71a70873e66d446dd6f1a17fce6d546d`.
+- Latest Userland Validation run `43244290674` failed in `make test-shell`, specifically `scripts/test-musl-baseline-build.sh`; the full image run `43244290455` failed at the same pre-image regression step. The BusyBox/musl build, ISO assembly, and boot matrix were not reached on that head.
+- The failing assertion was the expected `REALGCC:-cc}` in the synthetic installed `musl-gcc` wrapper. The production `scripts/build-musl-baseline.sh` already re-emits the closing brace and validates the installed wrapper with `sh -n`.
+- Reproduced the failure with GNU Make: the test's generated Makefile used single-dollar shell references (`${REALGCC...}` and `$@`). Make consumed them while parsing the recipe, producing `exec "" "install"` rather than a shell wrapper. This is a regression-fixture quoting defect, not evidence that the production sed rewrite is broken.
+
+### Implemented
+- Escaped the shell variables as `$${REALGCC...}` and `$$@` in the synthetic Makefile recipe so GNU Make passes literal dollar signs to the generated shell script.
+- Strengthened the post-install assertion to check the complete expected command line: `exec "${REALGCC:-cc}" "$@"`.
+- No production toolchain behavior, kernel source, bootloader, installer, disk, or user-data behavior was changed. No files under `/linux` were modified.
+
+### Validation
+- Local GNU Make reproduction: **PASS** — the old recipe generated `exec "" "install"`; the escaped recipe generates the intended literal `exec "${REALGCC:-bash /nonexistent/cc-x86_64-baseline.sh}" "$@"` before the production rewrite.
+- The fix is committed to the existing PR #50 branch. Fresh Userland Validation and full image/boot CI on the new head are required; no pass is claimed until those runs complete.
+
+### Remaining issues and next priorities
+1. Confirm the musl baseline regression passes on the new PR #50 head.
+2. Continue the real pinned musl + BusyBox static build and qemu64 ISA scan; attribute any remaining non-baseline object rather than weakening the ISA gate.
+3. Require ISO assembly and BIOS/UEFI/direct-kernel QEMU results on the final head.
+4. Reconcile the stacked PR chain only after fresh required checks pass. Preserve the `/linux` read-only invariant and keep unverified changes unmerged.
