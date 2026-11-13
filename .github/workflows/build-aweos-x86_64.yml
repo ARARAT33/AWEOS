@@ -97,6 +97,9 @@ jobs:
             echo "First make/script errors:"
             grep -nE 'ERROR:|Error [0-9]+|\*\*\*' image-build.log | head -n 40 || true
             echo
+            echo "BusyBox ISA attribution (when the ISA gate failed):"
+            cat build/busybox-isa-attribution.txt 2>/dev/null || true
+            echo
             echo "Last 100 log lines:"
             tail -n 100 image-build.log || true
           } | tee -a "$summary"
@@ -225,6 +228,10 @@ jobs:
             build/linux-x86_64/arch/x86/boot/bzImage
             build/linux-x86_64/arch/x86/boot/compressed/vmlinux
             build/aweos-initramfs.cpio.gz
+            build/busybox-isa-report.txt
+            build/busybox-isa-attribution.txt
+            build/busybox-compiler-target-report.txt
+            build/image-build-failure-summary.txt
           if-no-files-found: ignore
           include-hidden-files: true
           retention-days: 7
