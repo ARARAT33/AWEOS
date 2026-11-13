@@ -86,6 +86,13 @@ jobs:
           echo '## make image failure tail' >> "$GITHUB_STEP_SUMMARY"
           if [ -f build-make-image.log ]; then
             tail -n 300 build-make-image.log >> "$GITHUB_STEP_SUMMARY"
+            # Emit the concrete failing output as run-page error annotations so the
+            # failure is readable without an authenticated log session.
+            grep -nE 'ERROR:|Error [0-9]+|FAILURE|No such file|Permission denied|not found' build-make-image.log | tail -n 8 | cut -c1-400 > /tmp/aweos-errors.txt
+            while IFS= read -r line; do
+              [ -n "$line" ] || continue
+              echo "::error::$line"
+            done < /tmp/aweos-errors.txt
           else
             echo 'build-make-image.log not found' >> "$GITHUB_STEP_SUMMARY"
           fi

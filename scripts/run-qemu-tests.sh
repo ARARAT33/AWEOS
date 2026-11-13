@@ -13,6 +13,17 @@ echo "=========================================="
 echo "AWEOS QEMU boot verification"
 echo "=========================================="
 
+# Emit the last serial-log lines as GitHub error annotations so the concrete
+# failure is readable on the workflow run page without an authenticated session.
+annotate_log_tail() {
+    local logfile="$1" label="$2"
+    [ -f "${logfile}" ] || return 0
+    tail -n 8 "${logfile}" | while IFS= read -r line; do
+        [ -n "${line}" ] || continue
+        echo "::error::AWEOS ${label} boot serial tail: ${line}"
+    done
+}
+
 test_boot() {
     local mode="$1"
     local logfile="$2"
@@ -31,27 +42,31 @@ test_boot() {
     # timeout(124) is expected because AWEUI is intentionally a long-running compositor.
     if [ "${rc}" -ne 0 ] && [ "${rc}" -ne 124 ]; then
         echo "FAIL: QEMU exited with status ${rc} during ${mode} boot." >&2
+        annotate_log_tail "${logfile}" "${mode}"
         return 1
     fi
 
     grep -q "AWEOS BOOT SUCCESS: mode=" "${logfile}" || {
         echo "FAIL: root filesystem never reached its boot hand-off marker in ${mode} mode." >&2
+        annotate_log_tail "${logfile}" "${mode}"
         return 1
     }
 
     if grep -qiE "kernel panic|unable to mount root fs|VFS: Cannot open root device" "${logfile}"; then
         echo "FAIL: kernel/root-filesystem failure detected in ${mode} log." >&2
+        annotate_log_tail "${logfile}" "${mode}"
         return 1
     fi
 
-    if grep -q "AWEOS BOOT SUCCESS: mode=ayui" "${logfile}"; then
-        echo "SUCCESS: AWEOS ${mode} boot reached the default AYUI desktop."
-    elif grep -q "AWEOS BOOT SUCCESS: mode=gnome" "${logfile}"; then
-        echo "SUCCESS: AWEOS ${mode} boot reached the secondary GNOME userspace."
+    # The init script emits mode=aweui for the AYUI session (limine.conf passes
+    # aweos.mode=aweui) and mode=gui as the legacy default; both are the AYUI desktop.
+    if grep -qE "AWEOS BOOT SUCCESS: mode=(aweui|ayui|gnome|gui)" "${logfile}"; then
+        echo "SUCCESS: AWEOS ${mode} boot reached the configured desktop session."
     elif grep -q "AWEUI Compositor initialized successfully" "${logfile}"; then
         echo "SUCCESS: AWEOS ${mode} boot reached the AYUI compositor."
     else
         echo "FAIL: neither GNOME userspace nor AWEUI compositor reached running state in ${mode} mode." >&2
+        annotate_log_tail "${logfile}" "${mode}"
         return 1
     fi
 }
