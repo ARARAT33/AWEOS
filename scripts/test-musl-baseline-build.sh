@@ -98,7 +98,7 @@ if grep -q 'cc-x86_64-baseline.sh' "$MUSL_PREFIX/bin/musl-gcc"; then
     echo "ERROR: the installed musl-gcc still references the baseline policy wrapper." >&2
     exit 1
 fi
-grep -q 'REALGCC:-cc}' "$MUSL_PREFIX/bin/musl-gcc"
+grep -Fq 'exec "${REALGCC:-cc}" "$@"' "$MUSL_PREFIX/bin/musl-gcc"
 [ -s "$MUSL_PREFIX/lib/libc.a" ]
 [ -f "$MUSL_PREFIX/include/stdio.h" ]
 grep -qx '1.2.5 a9a118bbe84d8764da0ea0d28b3ab3fae8477fc7e4085d90102b8596fc7c75e4' \
