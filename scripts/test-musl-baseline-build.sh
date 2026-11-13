@@ -41,7 +41,7 @@ include config.mak
 all:
 install:
 	mkdir -p "$(PREFIX)/bin" "$(PREFIX)/lib" "$(PREFIX)/include"
-	printf '#!/bin/sh\nexec "${REALGCC:-bash /nonexistent/cc-x86_64-baseline.sh}" "$@"\n' > "$(PREFIX)/bin/musl-gcc"
+	printf '#!/bin/sh\nexec "$${REALGCC:-bash /nonexistent/cc-x86_64-baseline.sh}" "$$@"\n' > "$(PREFIX)/bin/musl-gcc"
 	chmod 0755 "$(PREFIX)/bin/musl-gcc"
 	printf 'baseline synthetic libc\n' > "$(PREFIX)/lib/libc.a"
 	printf '#include <stdio.h>\n' > "$(PREFIX)/include/stdio.h"
