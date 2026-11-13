@@ -1925,3 +1925,22 @@ Next:
 2. Continue the real pinned musl + BusyBox static build and qemu64 ISA scan; attribute any remaining non-baseline object rather than weakening the ISA gate.
 3. Require ISO assembly and BIOS/UEFI/direct-kernel QEMU results on the final head.
 4. Reconcile the stacked PR chain only after fresh required checks pass. Preserve the `/linux` read-only invariant and keep unverified changes unmerged.
+
+
+## 2026-11-13 — CI follow-up after Makefile dollar escaping
+
+### Intermediate validation and correction
+- The first two intermediate heads (`f173d632` and `568a695b`) still failed `test-musl-baseline-build.sh`. Reinspection of the commit diff showed that the strengthened assertion had landed, but the synthetic Makefile recipe itself had not yet received the required doubled dollar signs. The later `50327763` commit was empty and did not change the file; it is retained in history and was not force-pushed or rewritten.
+- Corrected the actual recipe in commit `6269a28ca67af0075bcc3b867eefd59098408fe4`: the test Makefile now uses `$${REALGCC...}` and `$$@`, which GNU Make reduces to literal shell references in the generated wrapper.
+- Replayed the exact Makefile expansion and production sed rewrite locally; `sh -n` and the full `exec "${REALGCC:-cc}" "$@"` assertion both passed.
+
+### Fresh CI on the corrected code head
+- Userland run [#43370593991](https://github.com/ARARAT33/AWEOS/actions/runs/43370593991): shell/C transaction safety tests **PASS**; repository-boundary verification **PASS**; Cargo metadata **PASS**; Rust workspace tests **PASS**. Release-binary build was still running at the last poll.
+- Full image run [#43370594125](https://github.com/ARARAT33/AWEOS/actions/runs/43370594125): shell, C, rootfs, session, and QEMU-runner regression suite **PASS**; `/linux` integrity check **PASS**; Rust workspace tests **PASS**. `Build AWEOS images` was still running at the last poll.
+- The specific musl fixture regression is part of the passing shell regression step, so the Makefile escaping defect is now covered by fresh GitHub Actions evidence. ISO assembly and BIOS/UEFI/direct-kernel boot results remain pending; no image or boot success is claimed yet.
+
+### Next priorities
+1. Read the final Userland and full-image conclusions on the corrected head.
+2. If image construction reaches the qemu64 BusyBox ISA gate, inspect the persisted attribution report and fix the actual offending object/toolchain input without weakening the scanner.
+3. If ISO assembly completes, require the BIOS, UEFI, and direct-kernel checks to finish and review their logs before claiming boot support.
+4. Keep PR #50 draft and unmerged until its complete final-head checks pass.
