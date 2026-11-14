@@ -9,7 +9,7 @@ trap 'rm -rf -- "$TEMP_ROOT"' EXIT
 BUILD_DIR="$TEMP_ROOT/build"
 FAKE_BIN="$TEMP_ROOT/bin"
 mkdir -p "$BUILD_DIR" "$FAKE_BIN"
-: > "$BUILD_DIR/AWEOS-x86_64.iso"
+printf x > "$BUILD_DIR/AWEOS-x86_64.iso"
 
 cat > "$FAKE_BIN/qemu-system-x86_64" <<'QEMU'
 #!/bin/sh
