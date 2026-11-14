@@ -140,3 +140,24 @@
 3. Run and record UEFI independently.
 4. Keep PR #53 stacked on PR #28 and do not merge unverified stack components.
 5. Continue preserving the `/linux` read-only integrity check.
+
+
+### Post-fix CI and architecture/security audit — 2026-11-14
+- Updated-head Userland Validation run #43558706411 completed with conclusion **success**. The `make test-shell` step passed, including the new `test-qemu-runner-invocation.sh`; its exact output was: `PASS: test-qemu invokes the mode-100644 QEMU runner through Bash.` Cargo metadata, workspace tests, release userland build, and expected-binary checks also passed.
+- Updated-head full image/boot run #43558706392 was still **in progress** at the time of this log update. The runner setup, dependency installation, Limine host utility build, and initial `/linux` integrity check had passed. No image, BIOS, UEFI, or release-artifact result is claimed for this run yet.
+- The invocation regression was also reproduced locally in an isolated temporary Git repository with the runner tracked as mode `100644`; the test passed.
+
+### Additional concrete audit findings for follow-up
+1. **AOSIN is not yet a real package payload system.** `src/aosin/aosin_core.c` ignores `payload_dir`, writes a fixed 1 KiB dummy payload, hardcodes the SHA-256 of an empty input, and its installer only writes package metadata. Inspection checks the magic value but does not validate the payload hash, format version, architecture, or a publisher signature. The C AOSIN sources are not included in the current Cargo workspace or current Makefile build.
+2. **The installed legacy `awepkg` helper is unsafe for untrusted packages.** `scripts/build-rootfs.sh` copies `scripts/awepkg.sh` into the root filesystem as `/usr/bin/awepkg`. Its `install` path extracts an unsigned tar archive, then copies the extracted `root/` tree into `/` while suppressing copy errors. It has no signature/trust-anchor verification or safe archive-path validation. Treat package installation as a critical security blocker; do not represent this as a production-safe package manager.
+3. **AYUI IPC requires a security redesign before production.** `AWEUI/src/state.rs` places the socket at `/tmp/aweui-ipc.sock`; `IpcServer::new` unconditionally removes the existing path; the server does not set a restrictive socket mode or authenticate peer credentials. The request API includes `LaunchCommand` and `PowerAction`. The current rootfs init launches `/usr/bin/aweui` directly from PID 1, so the compositor currently runs as root. Together these conditions create a local privilege-escalation risk if the socket is reachable by another local user.
+4. **The active AYUI implementation is narrower than the README implies.** `AWEUI/src/wayland.rs` initializes Smithay's Winit backend; its event loop handles keyboard events and maps absolute pointer motion to focus on the first toplevel, but does not implement normal pointer-seat motion/button handling. The separate C framebuffer desktop under `src/gui` is not built by the current Makefile. The README describes that C desktop and C core/AOSIN stack as part of the active product, while the current Makefile primarily builds the Rust workspace, Linux kernel, rootfs, initramfs, ISO, and disk image.
+5. **Documentation/build contract drift exists.** The README states that `make test` runs QEMU BIOS/UEFI checks, but the current Makefile's `test` target runs read-only, shell, and Rust tests only; QEMU is a separate `test-qemu` target. The README's stated default rootfs size also differs from the 512 MiB default in `scripts/build-rootfs.sh`.
+
+### Next priorities after the current boot run
+1. Complete the QEMU runner launch and inspect actual BIOS serial output; then verify UEFI separately. Keep boot assertions strict.
+2. Harden AYUI IPC: place the socket in a private runtime directory, use safe socket ownership/type checks, set restrictive permissions, authenticate peers, and remove or gate privileged commands until authorization exists. Run the desktop as an unprivileged session user.
+3. Disable unsafe unsigned `awepkg install` behavior until a real signed package format and trust-anchor management are implemented; add archive traversal and failure-atomicity tests.
+4. Replace the dummy AOSIN payload with a versioned, bounded package format that verifies payload hashes and cryptographic signatures before installation; integrate its build and tests explicitly.
+5. Reconcile the README with the actual build graph, or deliberately integrate the C desktop/core after reviewing duplicate Rust/C implementations.
+6. Continue the network platform and hardware support only after the boot, privilege boundary, and package trust foundations are verified.
