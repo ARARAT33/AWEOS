@@ -7,6 +7,11 @@ BIOS_LOG="${BUILD_DIR}/qemu-bios.log"
 UEFI_LOG="${BUILD_DIR}/qemu-uefi.log"
 TARGET_MODE="${2:-all}"
 
+case "${TARGET_MODE}" in
+    all|bios|uefi) ;;
+    *) echo "ERROR: unsupported QEMU target mode: ${TARGET_MODE}" >&2; exit 2 ;;
+esac
+
 test -s "${ISO_PATH}" || { echo "ERROR: ISO not found at ${ISO_PATH}" >&2; exit 1; }
 
 echo "=========================================="
@@ -75,18 +80,26 @@ if [ "${TARGET_MODE}" = "all" ] || [ "${TARGET_MODE}" = "bios" ]; then
 fi
 
 if [ "${TARGET_MODE}" = "all" ] || [ "${TARGET_MODE}" = "uefi" ]; then
-    UEFI_FIRMWARE=""
-    for candidate in         /usr/share/ovmf/OVMF.fd         /usr/share/OVMF/OVMF_CODE_4M.fd         /usr/share/OVMF/OVMF_CODE.fd; do
-        if [ -f "${candidate}" ]; then
-            UEFI_FIRMWARE="${candidate}"
-            break
-        fi
-    done
+    UEFI_FIRMWARE="${AWEOS_OVMF_FIRMWARE:-}"
+    if [ -z "${UEFI_FIRMWARE}" ]; then
+        for candidate in \
+            /usr/share/ovmf/OVMF.fd \
+            /usr/share/OVMF/OVMF_CODE_4M.fd \
+            /usr/share/OVMF/OVMF_CODE.fd; do
+            if [ -f "${candidate}" ]; then
+                UEFI_FIRMWARE="${candidate}"
+                break
+            fi
+        done
+    fi
 
-    if [ -n "${UEFI_FIRMWARE}" ]; then
-        test_boot "UEFI" "${UEFI_LOG}"             qemu-system-x86_64 -machine q35 -m 2048M -bios "${UEFI_FIRMWARE}"             -cdrom "${ISO_PATH}" -display none -serial stdio -no-reboot
+    if [ -n "${UEFI_FIRMWARE}" ] && [ -f "${UEFI_FIRMWARE}" ]; then
+        test_boot "UEFI" "${UEFI_LOG}" \
+            qemu-system-x86_64 -machine q35 -m 2048M -bios "${UEFI_FIRMWARE}" \
+            -cdrom "${ISO_PATH}" -display none -serial stdio -no-reboot
     else
-        echo "WARNING: OVMF firmware not found; UEFI boot test skipped."
+        echo "ERROR: OVMF firmware not found; UEFI boot test is required." >&2
+        exit 1
     fi
 fi
 
