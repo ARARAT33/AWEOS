@@ -97,6 +97,12 @@ jobs:
             echo "First make/script errors:"
             grep -nE 'ERROR:|Error [0-9]+|\*\*\*' image-build.log | head -n 40 || true
             echo
+            echo "BusyBox UAPI probe error (when the UAPI probe failed):"
+            cat build/busybox-uapi-probe-error.txt 2>/dev/null || true
+            echo
+            echo "UAPI headers install log tail (when headers_install failed):"
+            tail -n 20 build/busybox-uapi-headers-install.log 2>/dev/null || true
+            echo
             echo "BusyBox ISA attribution (when the ISA gate failed):"
             cat build/busybox-isa-attribution.txt 2>/dev/null || true
             echo
@@ -231,6 +237,8 @@ jobs:
             build/busybox-isa-report.txt
             build/busybox-isa-attribution.txt
             build/busybox-compiler-target-report.txt
+            build/busybox-uapi-probe-error.txt
+            build/busybox-uapi-headers-install.log
             build/image-build-failure-summary.txt
           if-no-files-found: ignore
           include-hidden-files: true

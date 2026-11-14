@@ -9,6 +9,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd -P)"
 source "$SCRIPT_DIR/lib/build-safety.sh"
+source "$SCRIPT_DIR/lib/install-uapi-headers.sh"
 
 BUILD_DIR="$(aweos_prepare_build_dir "${1:-build}" "$REPO_ROOT")"
 VERSION="1.38.0"
@@ -47,17 +48,25 @@ fi
 
 # BusyBox's default console-tools configuration builds kbd_mode, which
 # includes <linux/kd.h>. musl provides libc headers but not the Linux UAPI
-# development headers. Check this before downloading and compiling BusyBox so
-# a missing linux-libc-dev package produces an actionable error.
-# musl-gcc uses -nostdinc, so distro UAPI headers are not searched by
-# default. Add them after musl's own headers to avoid mixing glibc headers
-# into the target's libc include chain.
-# Prefer the Linux UAPI headers shipped in this repository's kernel tree;
-# they match the kernel being built and keep the bootstrap toolchain
-# independent of the runner's linux-libc-dev packaging. Distro paths remain
-# as fallbacks.
-UAPI_INCLUDE_FLAGS=(-idirafter "$REPO_ROOT/linux/include/uapi" \
-    -idirafter "$REPO_ROOT/linux/arch/x86/include/uapi" \
+# development headers.
+# The vendored kernel tree's raw include/uapi headers are kernel-internal:
+# they keep __user annotations and include <linux/compiler.h>, which does
+# not exist under include/uapi, and <linux/posix_types.h> needs the
+# generated asm/posix_types.h. Under musl-gcc's -nostdinc none of that is
+# compilable. Install the sanitized UAPI export with `make headers_install`
+# into the build directory (this leaves /linux untouched) and use it for
+# the probe and the BusyBox compile.
+UAPI_PREFIX="$BUILD_DIR/tools/uapi"
+UAPI_MARKER="$UAPI_PREFIX/.aweos-uapi-installed"
+if [ ! -f "$UAPI_MARKER" ]; then
+    echo "Installing sanitized Linux UAPI headers from the vendored kernel tree..."
+    aweos_install_uapi_headers "$REPO_ROOT/linux" "$BUILD_DIR/linux-uapi-build" \
+        "$UAPI_PREFIX" "$BUILD_DIR/busybox-uapi-headers-install.log" || exit 2
+    printf 'installed\n' > "$UAPI_MARKER"
+fi
+# The sanitized prefix is self-contained; the distro include dirs remain as
+# fallbacks only and are searched after the sanitized headers.
+UAPI_INCLUDE_FLAGS=(-idirafter "$UAPI_PREFIX/include" \
     -idirafter /usr/include -idirafter /usr/include/x86_64-linux-gnu)
 UAPI_PROBE_ERR="$BUILD_DIR/busybox-uapi-probe-error.txt"
 if ! printf '#include <linux/kd.h>\n' |

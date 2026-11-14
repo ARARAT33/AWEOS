@@ -33,6 +33,7 @@ for test_script in \
     test-busybox-baseline-config.sh \
     test-x86_64-baseline-cc.sh \
     test-musl-baseline-build.sh \
+    test-busybox-uapi-headers.sh \
     test-initramfs-root-discovery.sh \
     test-awepkg.sh \
     test-aosin-fail-closed.sh; do
