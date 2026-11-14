@@ -99,6 +99,7 @@ test-shell:
 	@bash ./scripts/test-build-iso-safety.sh
 	@bash ./scripts/test-rootfs-layout-validator.sh
 	@bash ./scripts/test-qemu-runner-invocation.sh
+	@bash ./scripts/test-qemu-boot-readiness.sh
 
 test-qemu: iso
 	# The runner is tracked without the executable bit; invoke it through Bash.
