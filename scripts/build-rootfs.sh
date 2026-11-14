@@ -221,7 +221,7 @@ elif grep -qw aweos.mode=headless /proc/cmdline 2>/dev/null; then
     MODE=headless
 fi
 
-echo "AWEOS BOOT SUCCESS: mode=${MODE}"
+echo "AWEOS ROOTFS READY: mode=${MODE}"
 
 case "${MODE}" in
     installer)
