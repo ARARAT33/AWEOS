@@ -46,8 +46,8 @@ test_boot() {
         return 1
     fi
 
-    grep -q "AWEOS BOOT SUCCESS: mode=" "${logfile}" || {
-        echo "FAIL: root filesystem never reached its boot hand-off marker in ${mode} mode." >&2
+    grep -q "AWEOS ROOTFS READY: mode=" "${logfile}" || {
+        echo "FAIL: root filesystem did not reach its init hand-off marker in ${mode} mode." >&2
         annotate_log_tail "${logfile}" "${mode}"
         return 1
     }
@@ -58,14 +58,13 @@ test_boot() {
         return 1
     fi
 
-    # The init script emits mode=aweui for the AYUI session (limine.conf passes
-    # aweos.mode=aweui) and mode=gui as the legacy default; both are the AYUI desktop.
-    if grep -qE "AWEOS BOOT SUCCESS: mode=(aweui|ayui|gnome|gui)" "${logfile}"; then
-        echo "SUCCESS: AWEOS ${mode} boot reached the configured desktop session."
-    elif grep -q "AWEUI Compositor initialized successfully" "${logfile}"; then
-        echo "SUCCESS: AWEOS ${mode} boot reached the AYUI compositor."
+    # Rootfs init is only the hand-off. Do not call that a desktop boot: the
+    # AYUI compositor must initialize its backend and submit its first frame.
+    if grep -q "AWEOS COMPOSITOR READY: session=ayui backend=winit first-frame=1" "${logfile}" ||
+       grep -q "AYUI DESKTOP READY" "${logfile}"; then
+        echo "SUCCESS: AWEOS ${mode} boot reached a running AYUI compositor."
     else
-        echo "FAIL: neither GNOME userspace nor AWEUI compositor reached running state in ${mode} mode." >&2
+        echo "FAIL: AYUI compositor did not submit its first frame in ${mode} mode; rootfs hand-off alone is not desktop readiness." >&2
         annotate_log_tail "${logfile}" "${mode}"
         return 1
     fi
