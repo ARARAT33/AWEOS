@@ -97,9 +97,13 @@ test-shell:
 	@bash ./scripts/test-transaction-fail-closed.sh
 	@bash ./scripts/test-storage-discovery.sh
 	@bash ./scripts/test-build-iso-safety.sh
+	@bash ./scripts/test-rootfs-layout-validator.sh
+	@bash ./scripts/test-qemu-runner-invocation.sh
+	@bash ./scripts/test-qemu-boot-readiness.sh
 
 test-qemu: iso
-	@./scripts/run-qemu-tests.sh $(BUILD_DIR)
+	# The runner is tracked without the executable bit; invoke it through Bash.
+	@bash ./scripts/run-qemu-tests.sh $(BUILD_DIR)
 
 verify-artifacts:
 	@set -euo pipefail; \

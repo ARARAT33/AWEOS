@@ -72,11 +72,41 @@ jobs:
       - name: Test Rust workspace
         run: cargo test --workspace
 
-      - name: Test safe hybrid ISO assembly and EFI partition arguments
-        run: bash scripts/test-build-iso-safety.sh
+      - name: Run shell and rootfs regression tests
+        run: make test-shell
 
       - name: Build AWEOS images
-        run: make image
+        run: |
+          set -o pipefail
+          make image 2>&1 | tee build-make-image.log
+
+      - name: Publish make-image failure diagnostics
+        if: failure()
+        run: |
+          echo '## make image failure tail' >> "$GITHUB_STEP_SUMMARY"
+          if [ -f build-make-image.log ]; then
+            tail -n 300 build-make-image.log >> "$GITHUB_STEP_SUMMARY"
+            # Emit the concrete failing output as run-page error annotations so the
+            # failure is readable without an authenticated log session.
+            grep -nE 'ERROR:|Error [0-9]+|FAILURE|No such file|Permission denied|not found' build-make-image.log | tail -n 8 | cut -c1-400 > /tmp/aweos-errors.txt
+            while IFS= read -r line; do
+              [ -n "$line" ] || continue
+              echo "::error::$line"
+            done < /tmp/aweos-errors.txt
+          else
+            echo 'build-make-image.log not found' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload make-image and QEMU logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aweos-build-failure-logs
+          path: |
+            build-make-image.log
+            build/qemu-bios.log
+            build/qemu-uefi.log
+          if-no-files-found: ignore
 
       - name: Verify /linux after build
         run: ./scripts/verify-linux-readonly.sh
