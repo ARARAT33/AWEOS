@@ -200,3 +200,16 @@
 3. Review and fix the critical package-manager and AYUI IPC issues recorded above before treating the current userspace as production-safe.
 4. Reduce duplicate Actions execution: both `push` and `pull_request` currently trigger the same validation workflows for a same-repository PR branch. Consider a concurrency policy or trigger adjustment after this boot run.
 5. Keep PR #53 draft and stacked on PR #28; no BIOS, UEFI, release-artifact, or full-desktop success is claimed until the latest-head workflows complete.
+
+
+### Commit trace for the 2026-11-14 boot-validation follow-up
+- `7c458de613` — emit AYUI compositor first-frame marker.
+- `82d4595119` — remove premature AYUI boot-success/services-online messages.
+- `e0720cf911` — distinguish rootfs readiness from desktop readiness.
+- `e88b71aac6` — mark initramfs fallback as recovery.
+- `81f07f7032` — relabel the GNOME pre-GDM service marker.
+- `e6f7cbf295` — require compositor readiness in the QEMU runner.
+- `09b906d660`, `0aeefee8d4`, `7c57e0b851` — add and correct the fake-QEMU readiness regression.
+- `e6c31d9458`, `dfd2d989e3` — fail closed for missing UEFI firmware and test both present/missing OVMF cases.
+- `8912fad3fb` — record the strict boot-validation design and test status.
+- Latest code tested by the queued workflows is `dfd2d989e3`; the current PR head is `8912fad3fb` because the final commit only updates this log.
