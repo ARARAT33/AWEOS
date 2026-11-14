@@ -161,3 +161,42 @@
 4. Replace the dummy AOSIN payload with a versioned, bounded package format that verifies payload hashes and cryptographic signatures before installation; integrate its build and tests explicitly.
 5. Reconcile the README with the actual build graph, or deliberately integrate the C desktop/core after reviewing duplicate Rust/C implementations.
 6. Continue the network platform and hardware support only after the boot, privilege boundary, and package trust foundations are verified.
+
+
+## 2026-11-14 follow-up — truthful AYUI and UEFI boot assertions
+
+### Why the boot assertion was tightened
+- Source inspection found that the prior QEMU runner treated `AWEOS BOOT SUCCESS: mode=...` as desktop success. The marker was printed by rootfs init before `exec /usr/bin/aweui`, so it proved only that init reached the hand-off, not that AYUI started.
+- The initramfs fallback also printed a generic `AWEOS BOOT SUCCESS` while dropping into a recovery shell. The QEMU runner did not accept that exact generic marker, but the wording was misleading and could confuse manual diagnosis.
+- The active Rust AYUI backend uses Smithay's Winit backend. A compositor readiness marker is now emitted only after the backend successfully submits its first frame. This is a compositor milestone, not proof that the full desktop shell, pointer handling, or multi-monitor features are complete.
+
+### Changes made on PR #53
+- `AWEUI/src/wayland.rs`: emit `AWEOS COMPOSITOR READY: session=ayui backend=winit first-frame=1` only after the first successful frame submission.
+- `AWEUI/src/main.rs`: replace the premature boot-success claim with a userland-starting message; remove the premature “services online” claim.
+- `scripts/build-rootfs.sh`: emit `AWEOS ROOTFS READY: mode=...` for the init hand-off, clearly distinct from compositor readiness.
+- `scripts/build-initramfs.sh`: label the missing-rootfs fallback as `AWEOS BOOT RECOVERY` and `AWEOS RECOVERY SHELL READY`, not boot success.
+- `scripts/build-rootfs-gnome.sh`: rename its pre-GDM marker to `AWEOS GNOME SERVICE STARTED`; it does not claim GNOME desktop readiness.
+- `scripts/run-qemu-tests.sh`: require both the rootfs hand-off marker and an AYUI compositor/desktop readiness marker. Rootfs-only boot no longer passes as a desktop boot.
+- `scripts/run-qemu-tests.sh`: reject unsupported target modes and fail the run if OVMF firmware is unavailable; UEFI can no longer be silently skipped. Added `AWEOS_OVMF_FIRMWARE` for an explicit firmware path.
+- `scripts/test-qemu-boot-readiness.sh` (new): fake-QEMU regression verifies that rootfs-only output fails, compositor first-frame output passes, a valid OVMF path runs the UEFI check, and a missing OVMF path fails closed.
+- `Makefile`: include the new boot-readiness regression in `make test-shell`.
+
+### Local validation
+- `bash -n` passed for the QEMU runner and its new regression test in an isolated local test harness.
+- The fake-QEMU regression passed: `PASS: QEMU boot validation requires compositor readiness and cannot skip UEFI firmware.`
+- These are local regression-harness results only. They do not prove a real kernel, BIOS, UEFI, or AYUI boot.
+
+### GitHub Actions status at this update
+- The earlier Userland Validation run #43558706411 passed on the pre-readiness-hardening commit and included the QEMU-runner permission regression.
+- Latest-code runs for head `dfd2d989e32f21f42ded0cfd0b58f31ea7850556` were queued:
+  - Userland Validation #43559417743 (pull_request) and #43559414990 (push).
+  - Full image/boot #43559417776 (pull_request) and #43559415041 (push).
+- Intermediate runs #43559324684 and #43559324643 were also queued for the previous code head `7c57e0b851c37343b11ddb4720737c56f162c828`.
+- Earlier full image run #43558706392 remained in progress on the older head `7f38d449e61050616b186930b2193a68c3b56da0`; it predates the stricter compositor/UEFI assertions and must not be used to claim desktop readiness.
+
+### Important limitations and next priorities
+1. The default minimal rootfs has no X11/Wayland display server, while the current AYUI code initializes only Smithay's Winit backend. The stricter QEMU test may therefore expose that AYUI cannot yet start on bare hardware/headless QEMU. If it fails, implement and test a real DRM/KMS/udev backend or explicitly keep the desktop milestone blocked; do not restore the weaker rootfs-only success check.
+2. A compositor first frame is not a complete desktop shell. Pointer-seat events, a rendered panel/launcher, application lifecycle, and multi-monitor support remain incomplete.
+3. Review and fix the critical package-manager and AYUI IPC issues recorded above before treating the current userspace as production-safe.
+4. Reduce duplicate Actions execution: both `push` and `pull_request` currently trigger the same validation workflows for a same-repository PR branch. Consider a concurrency policy or trigger adjustment after this boot run.
+5. Keep PR #53 draft and stacked on PR #28; no BIOS, UEFI, release-artifact, or full-desktop success is claimed until the latest-head workflows complete.
