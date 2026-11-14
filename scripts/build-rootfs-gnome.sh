@@ -105,7 +105,7 @@ Before=gdm3.service
 
 [Service]
 Type=oneshot
-ExecStart=/bin/sh -c 'echo "AWEOS BOOT SUCCESS: mode=gnome" > /dev/ttyS0 || true'
+ExecStart=/bin/sh -c 'echo "AWEOS GNOME SERVICE STARTED" > /dev/ttyS0 || true'
 RemainAfterExit=yes
 
 [Install]
