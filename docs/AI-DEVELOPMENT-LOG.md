@@ -92,3 +92,51 @@
 1. Read the `::error::` annotations on the next PR #53 image run page to identify the exact failing command inside `make image` or `make test-qemu`.
 2. Fix only the proven failure; keep the boot assertions strict.
 3. Keep PRs #27, #28, #51, #52, #43-#50 unmerged until their own gates pass; the integration path remains #27 -> #28 -> #53.
+
+
+## 2026-11-14 run — QEMU runner permission failure fixed
+
+### Latest PR #53 CI evidence inspected
+- PR #53 head before this fix: `facbf0e18cbd626656208f2b80a730dd96d09350`.
+- Userland Validation run #43442358277 completed with conclusion **success**.
+- Full image and boot run #43442358400 completed with conclusion **failure**. The job steps show that setup, Limine host utility build, `/linux` pre-check, Rust workspace tests, shell/rootfs regressions, image build, and post-build `/linux` check all passed.
+- The `Build AWEOS images` step completed successfully. The ISO was assembled and Limine BIOS stages were installed successfully. The image target then completed; the post-build `/linux` integrity check passed.
+- The next step, `Boot-test BIOS and UEFI ISO`, failed before QEMU started:
+  `/bin/bash: line 1: ./scripts/run-qemu-tests.sh: Permission denied`
+  `make: *** [Makefile:103: test-qemu] Error 126`
+- Therefore neither BIOS nor UEFI boot was actually tested in this run. This is a script invocation/mode failure, not evidence of a kernel boot failure.
+
+### Root cause
+- `scripts/run-qemu-tests.sh` is tracked in Git with mode `100644` (not executable).
+- The Makefile's `test-qemu` target attempted to execute it directly as `./scripts/run-qemu-tests.sh`.
+- This is the same class of failure previously found in the optional GNOME rootfs builder and validator scripts: a non-executable shell script must be invoked through Bash.
+
+### Changes made on the PR #53 branch
+- `Makefile`: changed the QEMU test recipe to `bash ./scripts/run-qemu-tests.sh $(BUILD_DIR)` and documented why explicit Bash invocation is required.
+- `Makefile`: added `scripts/test-qemu-runner-invocation.sh` to `make test-shell`.
+- `scripts/test-qemu-runner-invocation.sh` (new): checks that the QEMU runner is tracked as mode `100644` and that the Makefile invokes it through Bash. This prevents the same permission regression from silently returning.
+- No production kernel, initramfs, installer, partitioning, updater, or disk-write behavior was changed. No files under `/linux` were modified.
+
+### Commits
+- `e7d7a61a8b42b970499773255cf40aeaf8ef8fff` — invoke QEMU boot runner through Bash.
+- `ed8006be5e700a3f5971b11f103d3e06617d1237` — add regression guard for the invocation.
+
+### Validation status
+- PR #53 Userland Validation run #43442358277: **PASS** on the pre-fix head.
+- PR #53 full image/boot run #43442358400: image build and post-build `/linux` check **PASS**; boot-test step **FAIL** before QEMU launch due to the permission error above.
+- The new fix has been committed to the same PR branch. Its fresh CI checks have not yet completed, so the new regression test and BIOS/UEFI boot results are **pending**.
+- No local kernel, ISO, or QEMU build was run in this connector-only environment.
+
+### Remaining issues
+1. Confirm the new invocation regression passes in `make test-shell`.
+2. Confirm the QEMU runner launches after the permission fix.
+3. Inspect BIOS serial output and determine whether the expected boot marker and AYUI compositor are reached.
+4. Run UEFI boot separately; do not infer it from BIOS.
+5. Verify release artifacts and checksums only after the boot matrix passes.
+
+### Next run priorities
+1. Review fresh PR #53 Userland Validation and full image/boot runs on the updated head.
+2. If BIOS fails after QEMU launches, use the serial log and error annotations to diagnose the actual boot path.
+3. Run and record UEFI independently.
+4. Keep PR #53 stacked on PR #28 and do not merge unverified stack components.
+5. Continue preserving the `/linux` read-only integrity check.
