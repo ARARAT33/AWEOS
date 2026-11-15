@@ -56,6 +56,15 @@ trap cleanup EXIT
 # x86-64-v1/qemu64-safe code must not contain AVX VEX/EVEX mnemonics or
 # common post-baseline extensions. verr and verw are legacy instructions,
 # not VEX instructions, and are therefore intentionally excluded.
+# tzcnt is deliberately NOT rejected: its encoding (F3 0F BC, "rep bsf") is
+# the BSF opcode with a rep prefix. On CPUs without BMI1, including the
+# qemu64 model used by the boot tests, the rep prefix is ignored and the
+# instruction executes as BSF, so it cannot #UD there. LLVM emits this
+# encoding for count_trailing_zeros even on the x86-64-v1 baseline
+# (including Rust's precompiled std, e.g. backtrace/OnceCell code), pairing
+# it with an explicit zero-input check whenever the zero result is defined.
+# This is the only encoding-level exception; lzcnt stays rejected to keep
+# the gate narrow, and every other listed mnemonic still fails closed.
 objdump -d -Mintel "$image" | awk '
 /^[[:space:]]*[[:xdigit:]]+[[:space:]]+<[^>]+>:/ {
     current_symbol = $0
@@ -72,7 +81,7 @@ objdump -d -Mintel "$image" | awk '
     }
     mnemonic = tolower(fields[i])
     if ((mnemonic ~ /^v/ && mnemonic != "verr" && mnemonic != "verw") ||
-        mnemonic ~ /^(andn|bextr|blsi|blsmsk|blsr|bzhi|mulx|pdep|pext|rorx|sarx|shlx|shrx|tzcnt|popcnt|lzcnt|movbe|crc32|adcx|adox|rdrand|rdseed|clflushopt|clwb|addsubpd|addsubps|haddpd|haddps|hsubpd|hsubps|lddqu|movddup|movshdup|movsldup|pabsb|pabsw|pabsd|palignr|phaddw|phaddd|phaddsw|phsubw|phsubd|phsubsw|pmaddubsw|pmulhrsw|pshufb|psignb|psignw|psignd|blendpd|blendps|blendvpd|blendvps|dpps|dppd|extractps|insertps|movntdqa|mpsadbw|packusdw|pblendvb|pblendw|pcmpeqq|pinsrb|pinsrd|pinsrq|pmovsxbw|pmovsxbd|pmovsxbq|pmovsxwd|pmovsxwq|pmovsxdq|pmovzxbw|pmovzxbd|pmovzxbq|pmovzxwd|pmovzxwq|pmovzxdq|pmulld|ptest|roundsd|roundss|roundpd|roundps|pcmpestri|pcmpestrm|pcmpistri|pcmpistrm|pcmpgtq)$/) {
+        mnemonic ~ /^(andn|bextr|blsi|blsmsk|blsr|bzhi|mulx|pdep|pext|rorx|sarx|shlx|shrx|popcnt|lzcnt|movbe|crc32|adcx|adox|rdrand|rdseed|clflushopt|clwb|addsubpd|addsubps|haddpd|haddps|hsubpd|hsubps|lddqu|movddup|movshdup|movsldup|pabsb|pabsw|pabsd|palignr|phaddw|phaddd|phaddsw|phsubw|phsubd|phsubsw|pmaddubsw|pmulhrsw|pshufb|psignb|psignw|psignd|blendpd|blendps|blendvpd|blendvps|dpps|dppd|extractps|insertps|movntdqa|mpsadbw|packusdw|pblendvb|pblendw|pcmpeqq|pinsrb|pinsrd|pinsrq|pmovsxbw|pmovsxbd|pmovsxbq|pmovsxwd|pmovsxwq|pmovsxdq|pmovzxbw|pmovzxbd|pmovzxbq|pmovzxwd|pmovzxwq|pmovzxdq|pmulld|ptest|roundsd|roundss|roundpd|roundps|pcmpestri|pcmpestrm|pcmpistri|pcmpistrm|pcmpgtq)$/) {
         if (current_symbol != last_symbol && current_symbol != "") {
             print current_symbol
             last_symbol = current_symbol

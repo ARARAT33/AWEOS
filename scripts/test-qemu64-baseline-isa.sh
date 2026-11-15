@@ -31,10 +31,21 @@ ASM
 
 cat >"$workdir/bmi1.S" <<'ASM'
 .text
-.globl aweos_bmi1_fixture
-aweos_bmi1_fixture:
-    # TZCNT rax, rbx (BMI1).
+.globl aweos_tzcnt_fixture
+aweos_tzcnt_fixture:
+    # TZCNT rax, rbx (F3 0F BC: rep-prefixed BSF encoding; executes as BSF
+    # on CPUs without BMI1, so it must be accepted by the checker).
     .byte 0xf3, 0x48, 0x0f, 0xbc, 0xc3
+    ret
+ASM
+
+cat >"$workdir/lzcnt.S" <<'ASM'
+.text
+.globl aweos_lzcnt_fixture
+aweos_lzcnt_fixture:
+    # LZCNT rax, rbx (F3 0F BD) stays rejected: the gate allows only the
+    # narrow tzcnt encoding exception.
+    .byte 0xf3, 0x48, 0x0f, 0xbd, 0xc3
     ret
 ASM
 
@@ -50,6 +61,7 @@ ASM
 cc -c "$workdir/safe.S" -o "$workdir/safe.o"
 cc -c "$workdir/avx.S" -o "$workdir/avx.o"
 cc -c "$workdir/bmi1.S" -o "$workdir/bmi1.o"
+cc -c "$workdir/lzcnt.S" -o "$workdir/lzcnt.o"
 cc -c "$workdir/bmi2.S" -o "$workdir/bmi2.o"
 
 # With no report path configured, the checker must not create a stray
@@ -68,11 +80,16 @@ grep -Eqi 'vmovdqa|avx' "$workdir/avx.out"
 # The first error line must name the offending symbol for CI annotations.
 grep -Eq 'aweos_avx_fixture' "$workdir/avx.out"
 
-if bash "$checker" "$workdir/bmi1.o" >"$workdir/bmi1.out" 2>&1; then
-    echo "ERROR: qemu64 ISA checker accepted TZCNT/BMI1." >&2
+# tzcnt (rep bsf) must be accepted: it decodes as BSF without BMI1.
+bash "$checker" "$workdir/bmi1.o" >"$workdir/bmi1.out" 2>&1
+grep -q 'PASS' "$workdir/bmi1.out"
+
+# lzcnt must still be rejected fail-closed.
+if bash "$checker" "$workdir/lzcnt.o" >"$workdir/lzcnt.out" 2>&1; then
+    echo "ERROR: qemu64 ISA checker accepted LZCNT." >&2
     exit 1
 fi
-grep -Eqi 'tzcnt|bmi' "$workdir/bmi1.out"
+grep -Eqi 'lzcnt|bmi' "$workdir/lzcnt.out"
 
 if bash "$checker" "$workdir/bmi2.o" >"$workdir/bmi2.out" 2>&1; then
     echo "ERROR: qemu64 ISA checker accepted SHRX/BMI2." >&2
