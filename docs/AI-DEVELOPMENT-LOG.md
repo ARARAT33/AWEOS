@@ -1944,3 +1944,75 @@ Next:
 2. If image construction reaches the qemu64 BusyBox ISA gate, inspect the persisted attribution report and fix the actual offending object/toolchain input without weakening the scanner.
 3. If ISO assembly completes, require the BIOS, UEFI, and direct-kernel checks to finish and review their logs before claiming boot support.
 4. Keep PR #50 draft and unmerged until its complete final-head checks pass.
+
+
+## 2026-11-16 — Scope the x86 ISA scan to safe memchr runtime dispatch
+
+### Starting state and CI evidence
+
+- Continued from PR #50 head `e604685fe9ca2e77af9ad9d6807065ca8b053d63`
+  (`boot/busybox-cc-flags-last-20261109`); the branch remains an unmerged
+  draft stack and `master` was not changed.
+- Inspected the open PR stack, branches, recent commits, and latest Actions
+  runs before editing. PR #55 remains open/draft and its full image/boot run
+  #43678056202 failed in BIOS because the root filesystem did not reach its
+  init hand-off marker. That boot issue is still unresolved.
+- The current PR #50 full-image runs #43723006720 and #43723133912 both
+  reached rootfs validation and failed on
+  `build/rootfs/usr/bin/aweui-settings`. The ISA scanner reported AVX2
+  instructions in Rust symbols from the `memchr` crate:
+  `memchr::arch::x86_64::memchr::{memrchr_raw,count_raw}::find_avx2`.
+- The corresponding Userland Validation run #43723133677 passed, including
+  shell/C regressions, Rust workspace tests, release userland builds, and
+  expected-binary checks. The full-image failure occurred before ISO
+  assembly and before BIOS/UEFI/direct-kernel boot tests. No boot success is
+  claimed.
+- The failure was a scanner false positive, not evidence that qemu64 executes
+  AVX2. Upstream memchr documents that its default `std` feature enables
+  runtime CPU feature detection and chooses AVX2 only when available; its
+  x86_64 dispatcher checks `is_available()` before caching the selected
+  function pointer. The qemu64 test CPU lacks AVX2 and therefore uses SSE2.
+  Sources: https://github.com/BurntSushi/memchr and
+  https://github.com/BurntSushi/memchr/blob/master/src/arch/x86_64/memchr.rs
+
+### Implemented on `fix/rust-memchr-runtime-dispatch-isa-20261116`
+
+- `scripts/check-qemu64-baseline-isa.sh` now permits VEX2/VEX3 encodings
+  (C4/C5 prefixes) only in the exact mangled memchr x86_64 dispatcher module
+  and only in symbols ending in `find_avx2`.
+- The exception does not permit EVEX (0x62), BMI, MOVBE, or any other
+  post-baseline instruction. A changed Rust symbol path fails closed until
+  the allowlist is reviewed.
+- `scripts/test-qemu64-baseline-isa.sh` now includes synthetic object
+  fixtures proving that the exact dispatcher thunk is accepted, a
+  lookalike symbol outside the dispatcher is rejected, and EVEX/BMI2 remain
+  rejected even inside the allowlisted symbol.
+- `README.md` now documents the runtime-dispatch exception and retains the
+  non-production-ready status.
+- `docs/AI-DEVELOPMENT-LOG.md` records this run. No files under `/linux`
+  were modified.
+
+### Validation status
+
+- GitHub Actions on the new branch are required to validate shell syntax,
+  the new scanner fixtures, Rust workspace tests, rootfs ISA validation,
+  ISO assembly, and BIOS/UEFI/direct-kernel boots.
+- No local kernel build or QEMU boot was run in this connector-only editing
+  environment. No pass is claimed for the new code until the branch's fresh
+  CI results complete.
+- The change is deliberately narrow: the scanner still rejects unguarded
+  VEX/EVEX code and all listed post-baseline extensions outside the exact
+  memchr runtime-dispatch symbol path.
+
+### Remaining blockers and next priorities
+
+1. Inspect the new branch's Userland Validation and full-image workflow
+   results. Confirm the new positive/negative ISA fixtures pass.
+2. Confirm all packaged Rust binaries pass the ISA scan without relaxing
+   checks for other symbols or instruction families.
+3. Require ISO assembly and the BIOS, UEFI, and direct-kernel QEMU matrix on
+   the reconciled head; do not infer boot success from the ISA gate.
+4. Independently continue PR #55's BIOS rootfs hand-off diagnosis using its
+   retained serial logs. Its failed boot remains unresolved.
+5. Keep the stacked PRs draft/unmerged until the final integrated branch
+   passes its complete validation matrix.
