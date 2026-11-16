@@ -34,6 +34,7 @@ chmod 0755 "$FAKE_BIN/qemu-system-x86_64"
 # A rootfs hand-off marker alone must never be treated as a successful desktop boot.
 printf '%s\n' 'AWEOS ROOTFS READY: mode=aweui' > "$TEMP_ROOT/rootfs-only.log"
 if PATH="$FAKE_BIN:$PATH" AWEOS_QEMU_FAKE_LOG="$TEMP_ROOT/rootfs-only.log" \
+    AWEOS_QEMU_ARGS_LOG="$TEMP_ROOT/qemu-rootfs-only.args" \
     bash "$SCRIPT_DIR/run-qemu-tests.sh" "$BUILD_DIR" bios > "$TEMP_ROOT/rootfs-only.out" 2>&1; then
     echo "ERROR: QEMU boot test accepted rootfs hand-off without compositor readiness." >&2
     exit 1
