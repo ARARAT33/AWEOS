@@ -109,11 +109,18 @@ jobs:
           set -euo pipefail
           for mode in bios uefi; do
             logfile="build/qemu-$mode.log"
+            debuglog="build/qemu-$mode-debug.log"
             if [ -s "$logfile" ]; then
               echo "## QEMU $mode serial log (last 200 lines)" >> "$GITHUB_STEP_SUMMARY"
               tail -n 200 "$logfile" >> "$GITHUB_STEP_SUMMARY"
             else
-              echo "No QEMU $mode serial log was produced." >> "$GITHUB_STEP_SUMMARY"
+              echo "No QEMU $mode serial output was captured." >> "$GITHUB_STEP_SUMMARY"
+            fi
+            if [ -s "$debuglog" ]; then
+              echo "## QEMU $mode emulator debug trace (last 200 lines)" >> "$GITHUB_STEP_SUMMARY"
+              tail -n 200 "$debuglog" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "No QEMU $mode emulator debug trace was produced." >> "$GITHUB_STEP_SUMMARY"
             fi
           done
 
@@ -126,6 +133,8 @@ jobs:
             build-make-image.log
             build/qemu-bios.log
             build/qemu-uefi.log
+            build/qemu-bios-debug.log
+            build/qemu-uefi-debug.log
           if-no-files-found: ignore
 
       - name: Verify /linux after QEMU tests
