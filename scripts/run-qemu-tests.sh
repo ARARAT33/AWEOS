@@ -34,7 +34,7 @@ test_boot() {
     local logfile="$2"
     local mode_lc="${mode,,}"
     local debuglog="${BUILD_DIR}/qemu-${mode_lc}-debug.log"
-    local debug_flags="${AWEOS_QEMU_DEBUG_FLAGS:-guest_errors,cpu_reset,int}"
+    local debug_flags="${AWEOS_QEMU_DEBUG_FLAGS:-guest_errors,cpu_reset}"
     shift 2
 
     echo "Testing AWEOS ${mode} boot..."
