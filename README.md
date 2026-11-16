@@ -4,7 +4,7 @@ AWEOS is an x86_64 Linux-based operating-system project with its own boot
 integration, root filesystem, initramfs, Rust-based AYUI desktop work, system
 utilities, package-management experiments, and C installer/updater components.
 
-> **Development status — 2026-11-08: not production-ready.** The repository has
+> **Development status — 2026-11-16: not production-ready.** The repository has
 > working component tests and an image-build pipeline, but full BIOS/UEFI
 > end-to-end boot and real-hardware validation are not yet established. The
 > latest qemu64 trace identifies an AVX instruction in the host-provided BusyBox
@@ -39,8 +39,12 @@ utilities, package-management experiments, and C installer/updater components.
   source archive, statically linked against a pinned from-source musl 1.2.5
   built with the same enforced x86-64 baseline flags;
   the build does not copy an ISA-optimized BusyBox from the host runner. Rootfs
-  validation disassembles packaged ELF binaries and rejects detected AVX/AVX2/
-  AVX-512, BMI, and other post-baseline instructions. The initramfs validates
+  validation disassembles packaged ELF binaries and rejects unguarded AVX/
+  AVX2/AVX-512, BMI, and other post-baseline instructions. A narrow exception
+  permits VEX2/VEX3 instructions only inside memchr's x86_64 runtime-dispatch
+  thunks, which are selected only after CPU/OS-state detection; qemu64 takes
+  the SSE2 path. EVEX, BMI, MOVBE, and all other post-baseline code remain
+  rejected. The initramfs validates
   AWEOS identity before
   switching root. It probes ext4 with `ro,noload`; live sessions use a tmpfs
   overlay. Persistent root writes require the explicit
