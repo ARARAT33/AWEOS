@@ -282,7 +282,10 @@
 ### Implemented on `fix/qemu-serial-debug-diagnostics-20261116`
 
 - `scripts/run-qemu-tests.sh` now asks QEMU to write a separate emulator
-  trace using `-d guest_errors,cpu_reset,int -D build/qemu-{bios,uefi}-debug.log`.
+  trace using `-d guest_errors,cpu_reset -D build/qemu-{bios,uefi}-debug.log`. The
+  flags remain configurable through `AWEOS_QEMU_DEBUG_FLAGS`, so `int` can
+  be enabled for a focused diagnostic run without producing interrupt-level
+  traces on every normal boot.
   The flags are configurable through `AWEOS_QEMU_DEBUG_FLAGS`.
 - On failure, the runner emits tails from both the guest serial output and
   the QEMU emulator trace. The two channels remain separate so host-side
