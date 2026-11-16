@@ -52,8 +52,8 @@ grep -Fq 'SUCCESS: AWEOS BIOS boot reached a running AYUI compositor.' "$TEMP_RO
 grep -Fxq -- '-D' "$TEMP_ROOT/qemu-bios.args"
 grep -Fxq -- "$BUILD_DIR/qemu-bios-debug.log" "$TEMP_ROOT/qemu-bios.args"
 grep -Fxq -- '-d' "$TEMP_ROOT/qemu-bios.args"
-grep -Fxq -- 'guest_errors,cpu_reset,int' "$TEMP_ROOT/qemu-bios.args"
-grep -Fq 'fake QEMU debug trace flags=guest_errors,cpu_reset,int' "$BUILD_DIR/qemu-bios-debug.log"
+grep -Fxq -- 'guest_errors,cpu_reset' "$TEMP_ROOT/qemu-bios.args"
+grep -Fq 'fake QEMU debug trace flags=guest_errors,cpu_reset' "$BUILD_DIR/qemu-bios-debug.log"
 
 # A present OVMF image must run the UEFI path with the same readiness checks.
 printf x > "$TEMP_ROOT/OVMF.fd"
