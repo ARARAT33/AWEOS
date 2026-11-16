@@ -4,11 +4,10 @@ AWEOS is an x86_64 Linux-based operating-system project with its own boot
 integration, root filesystem, initramfs, Rust-based AYUI desktop work, system
 utilities, package-management experiments, and C installer/updater components.
 
-> **Development status — 2026-11-08: not production-ready.** The repository has
+> **Development status — 2026-11-16: not production-ready.** The repository has
 > working component tests and an image-build pipeline, but full BIOS/UEFI
-> end-to-end boot and real-hardware validation are not yet established. The
-> latest qemu64 trace identifies an AVX instruction in the host-provided BusyBox
-> binary as a userspace invalid-opcode fault after the kernel starts. Draft PR
+> end-to-end boot and real-hardware validation are not yet established. An earlier qemu64 trace identified an AVX instruction in the host-provided
+> BusyBox binary as a userspace invalid-opcode fault after the kernel starts. Draft PR
 > #46 replaces that host binary with a pinned static x86-64 baseline build and
 > adds ELF ISA checks. Its first full image build then exposed a missing Linux
 > UAPI header (`linux/kd.h`) while compiling BusyBox's `kbd_mode` applet. The
@@ -20,7 +19,7 @@ utilities, package-management experiments, and C installer/updater components.
 > in BusyBox's optional `tc` applet because the current Linux UAPI no longer
 > exports legacy CBQ types (`TCA_CBQ_*`). AWEOS's required bootstrap applet set
 > does not include `tc`; PR #48 now disables that unsupported optional applet
-> while retaining the other BusyBox networking utilities. The latest full-image builds on that head completed the pinned BusyBox 1.38.0 static build but then failed AWEOS's qemu64 baseline ISA scan: BusyBox's default-on `CONFIG_SHA1_HWACCEL`/`CONFIG_SHA256_HWACCEL` implementations are hand-written x86-64 assembly using SHA-NI/SSSE3/SSE4.1 instructions (pshufb, palignr, pinsrd, sha256rnds2, ...) that `-march=x86-64` cannot restrict, so they must be disabled for the bootstrap binary. The stacked branch `boot/busybox-sha-hwaccel-baseline-20261108` disables both hardware-accelerated hashing paths (keeping the portable generic hashing applets) and teaches the ISA checker to print a mnemonic histogram. Its latest userland workflow passed, but the 2026-11-08 full image run (42492061559) still failed the qemu64 ISA scan: the linked BusyBox contained VEX/AVX, BMI, and MOVBE instructions even after the SHA acceleration options were disabled. ISO assembly and BIOS/UEFI/direct-kernel tests were therefore not reached. The follow-up branch `boot/busybox-cc-flags-last-20261109` adds a compiler wrapper that appends x86-64-v1 restrictions after all flags supplied by BusyBox's build rules, plus a regression test for flag precedence and compiler error propagation. Subsequent full image runs completed the pinned BusyBox static build but still failed the qemu64 ISA scan with VEX/AVX, BMI, and MOVBE instructions linked in from the runner distribution musl-toolchain archives, which are built for x86-64-v3; the branch now builds a pinned from-source musl 1.2.5 under the same enforced baseline policy so the bootstrap link no longer consumes those prebuilt archives. A fresh image build and boot matrix remain pending. Do not
+> while retaining the other BusyBox networking utilities. The latest full-image builds on that head completed the pinned BusyBox 1.38.0 static build but then failed AWEOS's qemu64 baseline ISA scan: BusyBox's default-on `CONFIG_SHA1_HWACCEL`/`CONFIG_SHA256_HWACCEL` implementations are hand-written x86-64 assembly using SHA-NI/SSSE3/SSE4.1 instructions (pshufb, palignr, pinsrd, sha256rnds2, ...) that `-march=x86-64` cannot restrict, so they must be disabled for the bootstrap binary. The stacked branch `boot/busybox-sha-hwaccel-baseline-20261108` disables both hardware-accelerated hashing paths (keeping the portable generic hashing applets) and teaches the ISA checker to print a mnemonic histogram. Its latest userland workflow passed, but the 2026-11-08 full image run (42492061559) still failed the qemu64 ISA scan: the linked BusyBox contained VEX/AVX, BMI, and MOVBE instructions even after the SHA acceleration options were disabled. ISO assembly and BIOS/UEFI/direct-kernel tests were therefore not reached. The follow-up branch `boot/busybox-cc-flags-last-20261109` adds a compiler wrapper that appends x86-64-v1 restrictions after all flags supplied by BusyBox's build rules, plus a regression test for flag precedence and compiler error propagation. Subsequent full image runs completed the pinned BusyBox static build but still failed the qemu64 ISA scan with VEX/AVX, BMI, and MOVBE instructions linked in from the runner distribution musl-toolchain archives, which are built for x86-64-v3; the branch now builds a pinned from-source musl 1.2.5 under the same enforced baseline policy so the bootstrap link no longer consumes those prebuilt archives. A fresh image build and boot matrix remain pending. The 2026-11-15 PR #50 image run then reached rootfs validation but the qemu64 scanner rejected memchr's guarded AVX2 runtime-dispatch thunks; PR #56 narrows the exception to those exact dispatcher symbols and requires fresh CI before ISO or boot success is claimed. Do not
 > use the installer/updater to modify a disk containing valuable data. Both
 > the C transaction path and the Rust GUI installer now fail closed: the
 > previous Rust flow automatically selected the first disk and repartitioned
@@ -39,8 +38,12 @@ utilities, package-management experiments, and C installer/updater components.
   source archive, statically linked against a pinned from-source musl 1.2.5
   built with the same enforced x86-64 baseline flags;
   the build does not copy an ISA-optimized BusyBox from the host runner. Rootfs
-  validation disassembles packaged ELF binaries and rejects detected AVX/AVX2/
-  AVX-512, BMI, and other post-baseline instructions. The initramfs validates
+  validation disassembles packaged ELF binaries and rejects unguarded AVX/
+  AVX2/AVX-512, BMI, and other post-baseline instructions. A narrow exception
+  permits VEX2/VEX3 instructions only inside memchr's x86_64 runtime-dispatch
+  thunks, which are selected only after CPU/OS-state detection; qemu64 takes
+  the SSE2 path. EVEX, BMI, MOVBE, and all other post-baseline code remain
+  rejected. The initramfs validates
   AWEOS identity before
   switching root. It probes ext4 with `ro,noload`; live sessions use a tmpfs
   overlay. Persistent root writes require the explicit

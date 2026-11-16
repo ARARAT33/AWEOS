@@ -29,6 +29,55 @@ aweos_avx_fixture:
     ret
 ASM
 
+cat >"$workdir/memchr-dispatch.S" <<'ASM'
+.text
+# This exact Rust-v0 symbol path models memchr's private x86_64 runtime
+# dispatcher thunk. The production crate checks AVX2 availability before
+# storing/calling this target-feature function pointer.
+.globl _RNvNvNtNtNtCsdUDvdapExkK_6memchr4arch6x86_646memchr11memrchr_raw9find_avx2
+_RNvNvNtNtNtCsdUDvdapExkK_6memchr4arch6x86_646memchr11memrchr_raw9find_avx2:
+    # VEX2 VMOVDQA xmm0, xmm0.
+    .byte 0xc5, 0xf9, 0x6f, 0xc0
+    ret
+ASM
+
+cat >"$workdir/memchr-lookalike.S" <<'ASM'
+.text
+# A similar-looking AVX2 implementation path is not the dispatcher module
+# and must not inherit the runtime-dispatch exception.
+.globl _RNvNvNtNtNtCsdUDvdapExkK_6memchr4arch6x86_644avx24memchr11memrchr_raw9find_avx2
+_RNvNvNtNtNtCsdUDvdapExkK_6memchr4arch6x86_644avx24memchr11memrchr_raw9find_avx2:
+    .byte 0xc5, 0xf9, 0x6f, 0xc0
+    ret
+ASM
+
+cat >"$workdir/memchr-suffix.S" <<'ASM'
+.text
+# The allowlist requires the exact find_avx2 symbol suffix.
+.globl _RNvNvNtNtNtCsdUDvdapExkK_6memchr4arch6x86_646memchr11memrchr_raw9find_avx2_extra
+_RNvNvNtNtNtCsdUDvdapExkK_6memchr4arch6x86_646memchr11memrchr_raw9find_avx2_extra:
+    .byte 0xc5, 0xf9, 0x6f, 0xc0
+    ret
+ASM
+
+cat >"$workdir/memchr-evex.S" <<'ASM'
+.text
+.globl _RNvNvNtNtNtCsdUDvdapExkK_6memchr4arch6x86_646memchr11memrchr_raw9find_avx2
+_RNvNvNtNtNtCsdUDvdapExkK_6memchr4arch6x86_646memchr11memrchr_raw9find_avx2:
+    # EVEX VPXORD zmm0, zmm0, zmm0 must not be allowlisted.
+    .byte 0x62, 0xf1, 0x7d, 0x48, 0xef, 0xc0
+    ret
+ASM
+
+cat >"$workdir/memchr-bmi2.S" <<'ASM'
+.text
+.globl _RNvNvNtNtNtCsdUDvdapExkK_6memchr4arch6x86_646memchr11memrchr_raw9find_avx2
+_RNvNvNtNtNtCsdUDvdapExkK_6memchr4arch6x86_646memchr11memrchr_raw9find_avx2:
+    # SHRX r64, r/m64, r64 remains rejected even in an allowlisted symbol.
+    .byte 0xc4, 0xe2, 0xfb, 0xf7, 0xca
+    ret
+ASM
+
 cat >"$workdir/bmi1.S" <<'ASM'
 .text
 .globl aweos_tzcnt_fixture
@@ -60,6 +109,11 @@ ASM
 
 cc -c "$workdir/safe.S" -o "$workdir/safe.o"
 cc -c "$workdir/avx.S" -o "$workdir/avx.o"
+cc -c "$workdir/memchr-dispatch.S" -o "$workdir/memchr-dispatch.o"
+cc -c "$workdir/memchr-lookalike.S" -o "$workdir/memchr-lookalike.o"
+cc -c "$workdir/memchr-suffix.S" -o "$workdir/memchr-suffix.o"
+cc -c "$workdir/memchr-evex.S" -o "$workdir/memchr-evex.o"
+cc -c "$workdir/memchr-bmi2.S" -o "$workdir/memchr-bmi2.o"
 cc -c "$workdir/bmi1.S" -o "$workdir/bmi1.o"
 cc -c "$workdir/lzcnt.S" -o "$workdir/lzcnt.o"
 cc -c "$workdir/bmi2.S" -o "$workdir/bmi2.o"
@@ -79,6 +133,38 @@ fi
 grep -Eqi 'vmovdqa|avx' "$workdir/avx.out"
 # The first error line must name the offending symbol for CI annotations.
 grep -Eq 'aweos_avx_fixture' "$workdir/avx.out"
+
+# Only VEX2/VEX3 instructions in memchr's exact runtime-dispatch thunk are
+# permitted. The source-backed dispatcher performs CPU/OS-state detection;
+# qemu64 therefore takes the SSE2 path and never calls this AVX2 thunk.
+bash "$checker" "$workdir/memchr-dispatch.o" >"$workdir/memchr-dispatch.out" 2>&1
+grep -q 'PASS' "$workdir/memchr-dispatch.out"
+soft_memchr="$(AWEOS_ISA_SOFT=1 bash "$checker" "$workdir/memchr-dispatch.o")"
+grep -q 'AWEOS_ISA_OFFENDERS=0' <<<"$soft_memchr"
+
+# The allowlist must not match a lookalike path outside memchr's dispatcher.
+if bash "$checker" "$workdir/memchr-lookalike.o" >"$workdir/memchr-lookalike.out" 2>&1; then
+    echo "ERROR: qemu64 ISA checker accepted an AVX2 lookalike outside the dispatcher." >&2
+    exit 1
+fi
+grep -q 'find_avx2' "$workdir/memchr-lookalike.out"
+if bash "$checker" "$workdir/memchr-suffix.o" >"$workdir/memchr-suffix.out" 2>&1; then
+    echo "ERROR: qemu64 ISA checker accepted a symbol with an extra suffix." >&2
+    exit 1
+fi
+grep -q 'find_avx2_extra' "$workdir/memchr-suffix.out"
+
+# EVEX/AVX-512 and BMI2 remain rejected even inside the allowlisted symbol.
+if bash "$checker" "$workdir/memchr-evex.o" >"$workdir/memchr-evex.out" 2>&1; then
+    echo "ERROR: qemu64 ISA checker accepted EVEX inside the memchr dispatcher." >&2
+    exit 1
+fi
+grep -qi 'vpxord' "$workdir/memchr-evex.out"
+if bash "$checker" "$workdir/memchr-bmi2.o" >"$workdir/memchr-bmi2.out" 2>&1; then
+    echo "ERROR: qemu64 ISA checker accepted BMI2 inside the memchr dispatcher." >&2
+    exit 1
+fi
+grep -qi 'shrx' "$workdir/memchr-bmi2.out"
 
 # tzcnt (rep bsf) must be accepted: it decodes as BSF without BMI1.
 bash "$checker" "$workdir/bmi1.o" >"$workdir/bmi1.out" 2>&1
@@ -142,4 +228,4 @@ else
     exit 1
 fi
 
-echo "PASS: qemu64 ISA checker accepts baseline code, rejects AVX, BMI1, and BMI2, persists reports, and supports soft archive attribution."
+echo "PASS: qemu64 ISA checker accepts baseline and guarded memchr dispatch code, rejects unguarded AVX, EVEX, BMI1 and BMI2, persists reports, and supports soft archive attribution."
