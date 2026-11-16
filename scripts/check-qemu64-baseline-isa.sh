@@ -86,7 +86,7 @@ objdump -d -Mintel "$image" | awk '
     mnemonic = tolower(fields[i])
     first_byte = tolower(fields[1])
     is_vex = (mnemonic ~ /^v/ && mnemonic != "verr" && mnemonic != "verw")
-    is_memchr_avx2_dispatch = (current_symbol ~ /_6memchr4arch6x86_646memchr.*find_avx2/)
+    is_memchr_avx2_dispatch = (current_symbol ~ /_6memchr4arch6x86_646memchr.*find_avx2>:/)
     # VEX2/VEX3 use C5/C4 prefixes. EVEX uses 62 and is never allowlisted.
     if (is_vex && is_memchr_avx2_dispatch &&
         (first_byte == "c4" || first_byte == "c5")) {
