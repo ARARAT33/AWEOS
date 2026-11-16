@@ -299,6 +299,18 @@
 - No kernel source, installer, disk, partition, or user-data behavior was
   changed. No files under `/linux` were modified.
 
+### Regression follow-up
+
+- The first Userland Validation attempts on intermediate heads
+  `3f5b456bb6` and `7fff4d4e33` failed in the new fake-QEMU readiness test
+  before reaching Rust validation. The fake QEMU fixture now requires an
+  argument-log path, but the rootfs-only negative case did not set that
+  variable.
+- Commit `e633b34354` supplies the missing path for that invocation. The
+  latest-head Userland and full-image workflows must confirm the regression
+  now passes; the earlier failures are retained as evidence and are not
+  reported as passes.
+
 ### Validation status
 
 - The source edits and workflow wiring are committed to the isolated
