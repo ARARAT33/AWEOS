@@ -51,6 +51,15 @@ _RNvNvNtNtNtCsdUDvdapExkK_6memchr4arch6x86_644avx24memchr11memrchr_raw9find_avx2
     ret
 ASM
 
+cat >"$workdir/memchr-suffix.S" <<'ASM'
+.text
+# The allowlist requires the exact find_avx2 symbol suffix.
+.globl _RNvNvNtNtNtCsdUDvdapExkK_6memchr4arch6x86_646memchr11memrchr_raw9find_avx2_extra
+_RNvNvNtNtNtCsdUDvdapExkK_6memchr4arch6x86_646memchr11memrchr_raw9find_avx2_extra:
+    .byte 0xc5, 0xf9, 0x6f, 0xc0
+    ret
+ASM
+
 cat >"$workdir/memchr-evex.S" <<'ASM'
 .text
 .globl _RNvNvNtNtNtCsdUDvdapExkK_6memchr4arch6x86_646memchr11memrchr_raw9find_avx2
@@ -102,6 +111,7 @@ cc -c "$workdir/safe.S" -o "$workdir/safe.o"
 cc -c "$workdir/avx.S" -o "$workdir/avx.o"
 cc -c "$workdir/memchr-dispatch.S" -o "$workdir/memchr-dispatch.o"
 cc -c "$workdir/memchr-lookalike.S" -o "$workdir/memchr-lookalike.o"
+cc -c "$workdir/memchr-suffix.S" -o "$workdir/memchr-suffix.o"
 cc -c "$workdir/memchr-evex.S" -o "$workdir/memchr-evex.o"
 cc -c "$workdir/memchr-bmi2.S" -o "$workdir/memchr-bmi2.o"
 cc -c "$workdir/bmi1.S" -o "$workdir/bmi1.o"
@@ -138,6 +148,11 @@ if bash "$checker" "$workdir/memchr-lookalike.o" >"$workdir/memchr-lookalike.out
     exit 1
 fi
 grep -q 'find_avx2' "$workdir/memchr-lookalike.out"
+if bash "$checker" "$workdir/memchr-suffix.o" >"$workdir/memchr-suffix.out" 2>&1; then
+    echo "ERROR: qemu64 ISA checker accepted a symbol with an extra suffix." >&2
+    exit 1
+fi
+grep -q 'find_avx2_extra' "$workdir/memchr-suffix.out"
 
 # EVEX/AVX-512 and BMI2 remain rejected even inside the allowlisted symbol.
 if bash "$checker" "$workdir/memchr-evex.o" >"$workdir/memchr-evex.out" 2>&1; then
