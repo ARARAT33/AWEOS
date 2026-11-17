@@ -259,3 +259,77 @@
 2. If the kernel-config verifier fails, inspect the actual final .config and Kconfig dependencies; do not weaken the built-in-driver requirement.
 3. If rootfs hand-off still fails, inspect the uploaded BIOS serial log and then run UEFI independently.
 4. Once boot is reproducible, address AYUI IPC authorization and the unsigned package-installation path with focused tests.
+
+
+## 2026-11-16 follow-up — Capture QEMU CPU/reset diagnostics for empty BIOS serial output
+
+### Evidence inspected
+
+- Continued from PR #55 head `e0b0d019984cc3322cfd7781aea684c0255928a2`.
+- Inspected failed full-image/boot run #43678056202 and downloaded artifact
+  #14146879118 (`aweos-build-and-boot-diagnostics.zip`).
+- The artifact contains the completed image-build log and
+  `build/qemu-bios.log`; the BIOS serial log is exactly **0 bytes**.
+- The image build itself completed: kernel build, rootfs layout validation,
+  initramfs creation, hybrid ISO assembly, and post-build `/linux`
+  read-only verification passed.
+- The BIOS QEMU test then failed because the rootfs init hand-off marker was
+  absent. The job log shows the QEMU invocation returned without serial
+  output; the existing artifact cannot distinguish a boot-selection issue,
+  an early CPU reset/triple fault, or a serial-output initialization problem.
+  No kernel panic or rootfs mount failure is confirmed from this evidence.
+
+### Implemented on `fix/qemu-serial-debug-diagnostics-20261116`
+
+- `scripts/run-qemu-tests.sh` now asks QEMU to write a separate emulator
+  trace using `-d guest_errors,cpu_reset -D build/qemu-{bios,uefi}-debug.log`. The
+  flags remain configurable through `AWEOS_QEMU_DEBUG_FLAGS`, so `int` can
+  be enabled for a focused diagnostic run without producing interrupt-level
+  traces on every normal boot.
+  The flags are configurable through `AWEOS_QEMU_DEBUG_FLAGS`.
+- On failure, the runner emits tails from both the guest serial output and
+  the QEMU emulator trace. The two channels remain separate so host-side
+  diagnostics cannot be mistaken for guest boot output.
+- `scripts/test-qemu-boot-readiness.sh` now uses a fake QEMU executable to
+  verify that BIOS and UEFI runs receive the expected debug arguments and
+  create their separate trace files, while retaining the compositor
+  first-frame readiness requirement and mandatory OVMF check.
+- `.github/workflows/build-aweos-x86_64.yml` includes both debug traces in
+  the failure summary and uploads them as workflow artifacts.
+- No kernel source, installer, disk, partition, or user-data behavior was
+  changed. No files under `/linux` were modified.
+
+### Regression follow-up
+
+- The first Userland Validation attempts on intermediate heads
+  `3f5b456bb6` and `7fff4d4e33` failed in the new fake-QEMU readiness test
+  before reaching Rust validation. The fake QEMU fixture now requires an
+  argument-log path, but the rootfs-only negative case did not set that
+  variable.
+- Commit `e633b34354` supplies the missing path for that invocation. The
+  latest-head Userland and full-image workflows must confirm the regression
+  now passes; the earlier failures are retained as evidence and are not
+  reported as passes.
+
+### Validation status
+
+- The source edits and workflow wiring are committed to the isolated
+  follow-up branch. Fresh shell/C regression and full image/BIOS/UEFI
+  workflows are required; no new CI pass is claimed yet.
+- This connector-only run did not execute QEMU locally. The next Actions
+  artifact must be inspected to determine whether the emulator trace
+  records a CPU reset, exception, boot-device failure, or no guest activity.
+
+### Next priorities
+
+1. Inspect the new PR's Userland Validation and full image/boot results.
+2. Download the next BIOS diagnostic artifact and inspect
+   `qemu-bios-debug.log` alongside the serial log before changing kernel,
+   Limine, or initramfs behavior.
+3. If BIOS boots far enough to emit serial output, identify the first
+   failing stage and verify `/dev/sr0`, ISO9660, loop, and rootfs image
+   discovery rather than weakening readiness markers.
+4. Run UEFI independently after the BIOS trace is understood; require the
+   compositor first-frame marker for desktop readiness.
+5. Keep PR #55 and this dependent PR draft/unmerged until the full boot matrix
+   passes on the reconciled head.

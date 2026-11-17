@@ -25,20 +25,24 @@ annotate_log_tail() {
     [ -f "${logfile}" ] || return 0
     tail -n 8 "${logfile}" | while IFS= read -r line; do
         [ -n "${line}" ] || continue
-        echo "::error::AWEOS ${label} boot serial tail: ${line}"
+        echo "::error::AWEOS ${label} diagnostic tail: ${line}"
     done
 }
 
 test_boot() {
     local mode="$1"
     local logfile="$2"
+    local mode_lc="${mode,,}"
+    local debuglog="${BUILD_DIR}/qemu-${mode_lc}-debug.log"
+    local debug_flags="${AWEOS_QEMU_DEBUG_FLAGS:-guest_errors,cpu_reset}"
     shift 2
 
     echo "Testing AWEOS ${mode} boot..."
-    rm -f "${logfile}"
+    echo "QEMU debug trace: ${debuglog} (flags: ${debug_flags})"
+    rm -f "${logfile}" "${debuglog}"
 
     set +e
-    timeout 100s "$@" >"${logfile}" 2>&1
+    timeout 100s "$@" -d "${debug_flags}" -D "${debuglog}" >"${logfile}" 2>&1
     local rc=$?
     set -e
 
@@ -47,19 +51,22 @@ test_boot() {
     # timeout(124) is expected because AWEUI is intentionally a long-running compositor.
     if [ "${rc}" -ne 0 ] && [ "${rc}" -ne 124 ]; then
         echo "FAIL: QEMU exited with status ${rc} during ${mode} boot." >&2
-        annotate_log_tail "${logfile}" "${mode}"
+        annotate_log_tail "${logfile}" "${mode} serial"
+        annotate_log_tail "${debuglog}" "${mode} QEMU debug"
         return 1
     fi
 
     grep -q "AWEOS ROOTFS READY: mode=" "${logfile}" || {
         echo "FAIL: root filesystem did not reach its init hand-off marker in ${mode} mode." >&2
-        annotate_log_tail "${logfile}" "${mode}"
+        annotate_log_tail "${logfile}" "${mode} serial"
+        annotate_log_tail "${debuglog}" "${mode} QEMU debug"
         return 1
     }
 
     if grep -qiE "kernel panic|unable to mount root fs|VFS: Cannot open root device" "${logfile}"; then
         echo "FAIL: kernel/root-filesystem failure detected in ${mode} log." >&2
-        annotate_log_tail "${logfile}" "${mode}"
+        annotate_log_tail "${logfile}" "${mode} serial"
+        annotate_log_tail "${debuglog}" "${mode} QEMU debug"
         return 1
     fi
 
@@ -70,7 +77,8 @@ test_boot() {
         echo "SUCCESS: AWEOS ${mode} boot reached a running AYUI compositor."
     else
         echo "FAIL: AYUI compositor did not submit its first frame in ${mode} mode; rootfs hand-off alone is not desktop readiness." >&2
-        annotate_log_tail "${logfile}" "${mode}"
+        annotate_log_tail "${logfile}" "${mode} serial"
+        annotate_log_tail "${debuglog}" "${mode} QEMU debug"
         return 1
     fi
 }
