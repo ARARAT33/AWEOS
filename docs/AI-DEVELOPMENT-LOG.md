@@ -1600,3 +1600,347 @@ Next:
 3. If boot faults recur, capture the faulting instruction with the existing tagged instruction-trace machinery before changing anything else.
 4. Keep the stacked PR chain (#43 through this branch) unmerged until the base chain is reconciled and fresh required checks pass.
 5. Preserve `/linux` read-only verification and the fail-closed, non-destructive installer/updater invariants.
+
+
+## 2026-11-09 — Enforce BusyBox x86-64 baseline flags last
+
+### Repository and CI inspection
+
+- The default `master` branch is still at commit `0939488f5261b04c9c3af150e5e4dc8888896a9f` (2026-09-25); the active development work is on an unmerged stack. Do not treat the default branch as containing the November boot work.
+- Inspected the open stack: PR #49 (draft) is based on PR #48 (draft), which is based on PR #47; PR #47 is based on PR #46. All remain unmerged. The new work is based on PR #49's head `7e7bb459770b37ade7590dcc55c517122017397e`, not on `master`.
+- Latest PR #49 userland run `42492061640` passed all 13 steps, including shell/C regressions, Rust workspace tests, release builds, installer no-unattended-write verification, and AYUI's Xvfb compositor smoke test.
+- Latest full image run `42492061559` failed at the real pinned BusyBox build's qemu64 ISA scan. The BusyBox configuration helper confirmed both `CONFIG_SHA1_HWACCEL` and `CONFIG_SHA256_HWACCEL` were disabled, and the static link completed, but the final ELF still contained VEX/AVX mnemonics (`vmovdqa`, `vmovaps`, `vpxor`, etc.), BMI instructions (`tzcnt`, `blsi`), and `movbe`. The ISO and BIOS/UEFI/direct-kernel boot tests were skipped because image creation stopped at this gate.
+- The previous PR #48 image run also failed at the same ISA gate after resolving the UAPI headers and `tc` incompatibility. The latest result therefore does not support claiming that the BusyBox baseline is fixed.
+
+### Implemented on `boot/busybox-cc-flags-last-20261109`
+
+- Added `scripts/cc-x86_64-baseline.sh`, a compiler wrapper that appends the AWEOS x86-64-v1 target policy after every argument passed by BusyBox's build system. This addresses the observed gap in the previous approach: placing flags in the `CC` value did not guarantee they were the final target options once BusyBox supplied its own compile flags.
+- The enforced policy selects `-march=x86-64 -mtune=generic` and explicitly disables AVX/AVX2/AVX-512F, BMI1/BMI2, MOVBE, POPCNT, LZCNT, SSE3/SSSE3/SSE4.1/SSE4.2, AES, PCLMUL, RDRAND, RDSEED, and ADX.
+- The same wrapper is now used by the `<linux/kd.h>` musl UAPI preflight and by every BusyBox compile/link invocation. The actual `CC` command also preserves both `-idirafter` Linux UAPI include directories, so the earlier `linux/kd.h` fix remains in force while the final ISA policy is appended last.
+- Added `scripts/test-x86_64-baseline-cc.sh`. It uses a fake compiler to verify that the baseline options are the final arguments even when conflicting `-march=native`, `-mavx2`, and `-mbmi2` flags are supplied; it also verifies compiler exit-code propagation and fail-closed handling of a missing compiler.
+- Wired the new regression into `scripts/run-test-shell.sh`.
+- Updated README status with the exact latest CI failure and the fact that boot tests were not reached.
+- No files under `/linux` were changed. No installer, partition, disk, bootloader, updater, or user-data behavior was changed.
+
+### Files changed
+
+- `scripts/cc-x86_64-baseline.sh` (new)
+- `scripts/test-x86_64-baseline-cc.sh` (new)
+- `scripts/build-busybox-baseline.sh`
+- `scripts/run-test-shell.sh`
+- `README.md`
+- `docs/AI-DEVELOPMENT-LOG.md`
+
+### Validation
+
+- The parent PR #49 head's userland CI passed, but that run does not validate this follow-up.
+- This branch's compiler-wrapper regression, full `make test-shell`, Rust tests, BusyBox static build, qemu64 ELF scan, ISO build, and BIOS/UEFI/direct-kernel boot tests have not yet run. No pass is claimed.
+- The local environment in the prior run lacked a working GCC/musl-gcc toolchain; GitHub Actions with the real Ubuntu toolchain remains the authoritative build test.
+- `/linux` remains outside the change set by design; CI must continue to run `scripts/verify-linux-readonly.sh`.
+
+### Unresolved issues and next priorities
+
+1. Run the new branch's userland workflow and confirm the compiler-wrapper regression passes.
+2. Run the full image workflow and inspect the actual BusyBox compiler commands and ISA scan. If post-baseline instructions remain, identify the offending object/toolchain component; do not weaken the scanner or widen the qemu64 CPU model.
+3. Require a successful static BusyBox build, complete required applet check, qemu64 ISA scan, ISO assembly, and BIOS/UEFI/direct-kernel QEMU matrix before claiming image/boot success.
+4. Reconcile the stacked PR bases only after fresh checks pass on the final head; do not merge an unverified stack.
+5. Continue preserving the read-only `/linux` boundary and fail-closed installer/updater guarantees.
+
+
+## 2026-11-09 — Diagnose the remaining BusyBox x86-64 baseline violation
+
+### Fresh CI evidence
+
+- Full image/boot run `42565058549` on PR #50 head `9f887e25bd692c973235b60e4ba4bf2067b84ab9` completed the shell/C/rootfs/session/QEMU-runner regressions, `/linux` read-only verification, and Cargo workspace tests successfully.
+- The real pinned BusyBox 1.38.0 static build completed, but `check-qemu64-baseline-isa.sh` rejected the resulting ELF. The diagnostic reported VEX/AVX instructions (including `vpxor`, `vmovdqa`, `vmovaps`), BMI instructions (`tzcnt`, `blsi`, `sarx`), and `movbe`.
+- ISO assembly and BIOS/UEFI/direct-kernel QEMU boot tests were skipped because the BusyBox ISA gate failed. No image or boot success is claimed.
+- The same commit's userland validation run `42565058648` passed. This does not validate the real BusyBox image build.
+
+### Implemented on `boot/busybox-cc-flags-last-20261109`
+
+- Extended `scripts/test-x86_64-baseline-cc.sh` to exercise an installed real musl compiler, deliberately pass hostile `-march=native -mavx2 -mbmi2` options, compile a probe object through the wrapper, and run the actual object through the qemu64 ISA scanner.
+- The real-compiler test also inspects GCC's effective `-Q --help=target` state and requires AVX, BMI, MOVBE, POPCNT, LZCNT, post-baseline SSE, AES, PCLMUL, RDRAND, RDSEED, and ADX to be disabled while baseline SSE2 remains enabled. It skips only in test environments without the musl compiler; the image workflow installs `musl-tools` and the BusyBox build itself still requires the compiler.
+- `scripts/build-busybox-baseline.sh` now writes `build/busybox-compiler-target-report.txt` and fails before the BusyBox source build if the real compiler does not report the expected target feature state.
+- `scripts/check-qemu64-baseline-isa.sh` now includes the enclosing symbol label with rejected instruction lines, so the next CI failure can identify which function contains the non-baseline code.
+- No files under `/linux` were changed. Installer, disk, partition, bootloader deployment, updater, and user-data behavior remain unchanged.
+
+### Files changed in this run
+
+- `scripts/test-x86_64-baseline-cc.sh`
+- `scripts/check-qemu64-baseline-isa.sh`
+- `scripts/build-busybox-baseline.sh`
+- `docs/AI-DEVELOPMENT-LOG.md`
+
+### Validation status
+
+- The source changes have been committed to the existing PR #50 branch in three small commits. The new real-compiler probe, target-report gate, and symbol-aware scanner have not yet been validated by a fresh GitHub Actions run.
+- The previous run's passing shell/C tests, Cargo tests, and `/linux` integrity check are evidence for the prior head only; do not carry those results forward as validation of the new commits.
+- No local musl toolchain is available in this environment, so no local BusyBox build or local musl compiler result is claimed.
+
+### Next priorities
+
+1. Inspect the fresh PR #50 userland run and require the real compiler probe to pass on the image runner.
+2. Inspect the fresh full image run. Confirm the effective target report explicitly disables the required extensions.
+3. If the BusyBox ELF still fails, use the newly emitted symbol labels and verbose instruction context to locate the offending function; determine whether it is compiler-generated code, an assembly object, or a linked library before changing build flags.
+4. Do not weaken the qemu64 ISA scanner or widen the CPU model to hide the incompatibility.
+5. Only after the BusyBox static build, required applet check, ISA scan, ISO assembly, and BIOS/UEFI/direct-kernel boot matrix pass on the final reconciled head should the stacked PRs be considered for merge.
+
+
+### CI correction — remove an ambiguous TZCNT probe instruction (2026-11-09)
+
+- Follow-up full-image run `42567483733` stopped in `make test-shell` before image building. The new real-compiler probe itself produced one `tzcnt` mnemonic from `__builtin_ctzll`; the symbol-aware scanner correctly exposed the probe function, but the test was not isolating the intended AVX/BMI2 override behavior.
+- GCC can encode a nonzero-input count-trailing-zeros operation using the REP-prefixed BSF encoding, which modern `objdump` names `tzcnt`. On CPUs without BMI1 that encoding executes as BSF; the probe explicitly guarded against zero. The current scanner intentionally remains conservative and rejects the mnemonic, so the probe should not manufacture it.
+- Replaced the probe's `__builtin_ctzll` expression with low-bit extraction and a variable shift. These patterns still exercise AVX/BMI code generation under the hostile flags without intentionally requesting the ambiguous TZCNT/BSF encoding.
+- This run did not reach the BusyBox build. The separate prior BusyBox failure remains unresolved: its report included AVX/VEX instructions, `blsi`, `sarx`, and `movbe` in addition to `tzcnt`. No conclusion about the actual BusyBox binary can be drawn from the probe-only failure.
+- The `/linux` read-only verification step still passed after the shell-test failure. ISO assembly and all boot tests were skipped.
+- The corrected probe has not yet been validated by a fresh workflow run. Keep PR #50 in draft until the new test, BusyBox build, ISA scan, ISO, and BIOS/UEFI/direct-kernel boot checks pass.
+## 2026-11-09  -  Attribute the remaining BusyBox qemu64 ISA violation with persistent CI evidence
+
+### Repository and CI inspection
+
+- The active stack is unchanged: PR #50 (draft) is based on PR #49 (draft); PR #47/#48/#49 and their bases remain unmerged; `master` is still at `0939488` (2026-09-25). This run continues on the existing PR #50 branch head `2dad984547e4290d5c9fcd4e70d3af4a9eab07bc` without force pushes.
+- PR #50's userland run `42567776056` passed. The full image run `42567776075` failed at the BusyBox qemu64 ISA gate before ISO assembly or any boot test, with mnemonics `vmovdqa(61), vmovaps(80), vcvtsi2sd(15), movbe(22), vpermpd(2), vinserti128(4), tzcnt(5), blsi(2), ...` in the linked ELF.
+- Decisive observation: the new pre-build effective-target gate passed on this run, which proves the wrapper produces a correct x86-64-v1 target state for the invocations it compiles. The remaining violating instructions therefore come either from linked inputs the wrapper never compiles (prebuilt musl `libc.a`, `libgcc.a`, crt objects on the runner) or from invocations that bypass the wrapper. The previous CI evidence could not distinguish these cases: the symbol-labeled scan report was deleted by the checker's EXIT trap and the raw job log is not readable through the available tooling.
+- No change to the BusyBox result is claimed; the failure remains unresolved until the attribution evidence and a green image run exist.
+
+### Implemented on `boot/busybox-cc-flags-last-20261109`
+
+- `scripts/check-qemu64-baseline-isa.sh`:
+  - `AWEOS_ISA_REPORT_OUT=<path>` persists the full symbol-labeled report file; the fail-closed verdict and exit codes are unchanged.
+  - The first ERROR line now also names the top six offending symbols, so the single-line CI annotation identifies the actual functions without downloading logs.
+  - New `AWEOS_ISA_SOFT=1` diagnostic mode never fails: it prints machine-readable `AWEOS_ISA_OFFENDERS=<count>` and `AWEOS_ISA_SYMBOLS=<names>` and exits 0. In soft mode the checker also accepts `ar` archives so linked static-library inputs can be scanned; strict mode still rejects non-ELF inputs.
+- `scripts/build-busybox-baseline.sh`: when the final BusyBox ELF fails the ISA scan, the build now persists the report to `build/busybox-isa-report.txt` and writes an attribution to `build/busybox-isa-attribution.txt` by soft-scanning every linked input: all BusyBox `built-in.a` archives (falling back to all non-`scripts/` objects if kbuild archives are absent), the prebuilt musl `libc.a` (located via the compiler or standard musl paths), `libgcc.a`, and the crt objects. It prints a `DIAGNOSIS:` section naming exactly which inputs are dirty, then still exits non-zero: packaging remains fail-closed.
+- `.github/workflows/build-aweos-x86_64.yml`: the image-build failure summary now inlines the attribution file, and the failure artifact upload includes the BusyBox ISA report, attribution, compiler target report, and failure summary.
+- `scripts/test-qemu64-baseline-isa.sh`: regressions for report persistence (both failing and passing inputs), symbol names on the error line, soft-mode offender counts and symbols, soft-mode archive scanning, strict-mode archive rejection, and soft-mode exit status.
+- No files under `/linux` were changed. No installer, disk, partition, bootloader, updater, or user-data behavior changed. The qemu64 ISA scanner was not weakened and the qemu64 CPU model was not widened.
+
+### Files changed
+
+- `scripts/check-qemu64-baseline-isa.sh`
+- `scripts/build-busybox-baseline.sh`
+- `scripts/test-qemu64-baseline-isa.sh`
+- `.github/workflows/build-aweos-x86_64.yml`
+- `docs/AI-DEVELOPMENT-LOG.md`
+
+### Validation status
+
+- The edited scripts were line-by-line reviewed, but this environment provides no usable shell (`bash -n` is unavailable here) and no musl toolchain, compiler, or binutils, so no local syntax run, BusyBox build, or checker execution is claimed. GitHub Actions remains the authoritative validator.
+- No workflow run has validated this head yet. The expected outcome of the next run is: userland passes; the image build fails (expected) at the ISA gate, but now with a `DIAGNOSIS:` section, persisted symbol report, and artifacts naming the offending linked input. If the dirty input is a prebuilt musl/libgcc archive, the correct fix is building those components from source under the same baseline policy, not flag changes and not scanner weakening.
+
+### Unresolved issues and next priorities
+
+1. Read the new attribution evidence from the next CI run and fix the actual source of the violation (primary hypothesis: prebuilt musl `libc.a` or `libgcc.a` from the runner's `musl-tools` package).
+2. If toolchain archives are confirmed as the source, add a pinned from-source musl build under the enforced x86-64-v1 policy so the bootstrap binary no longer depends on distro-built archives.
+3. Keep PR #50 in draft and the stacked chain unmerged until the static BusyBox build, required applet check, qemu64 ISA scan, ISO assembly, and BIOS/UEFI/direct-kernel boot matrix all pass on a reconciled head.
+4. Preserve the fail-closed installer/updater invariants and the read-only `/linux` boundary in every subsequent change.
+
+## 2026-11-10 — Repair PR #50 BusyBox build-script regressions
+
+### Repository and CI inspection
+
+- Continued on the existing draft PR #50 branch `boot/busybox-cc-flags-last-20261109`, based on head `04232014125fea586f7dbd5a82f5d15f9f92f4ea`; the stacked PR chain remains unmerged.
+- Latest full-image run `42634171192` and userland run `42634171131` both stopped in the shell regression gate. The exact failure was `bash -n`: `scripts/build-busybox-baseline.sh: line 272: unexpected EOF while looking for matching '"'`.
+- The failing step ran before Rust tests, image assembly, ISO generation, or BIOS/UEFI/direct-kernel boot tests. The `/linux` read-only integrity check passed.
+
+### Implemented on this branch
+
+- Removed the extra trailing quote from the temporary BusyBox checksum filename assignment, restoring valid shell syntax.
+- Corrected the `getconf` key from the misspelled `_NPROCESSORS_ONLO` to Linux's `_NPROCESSORS_ONLN`, so automatic build parallelism is detected instead of always falling back to two jobs.
+- Fixed a false-positive required-applet check. The previous code compared each applet against itself, so missing BusyBox commands could never be detected. Extracted the check into `scripts/check-busybox-applets.sh`; it now reads the actual binary's `--list` output and fails closed on missing applets or a failed `--list` command.
+- Extended `scripts/test-busybox-baseline-config.sh` with fake-BusyBox regressions for complete applet lists, missing applets, and `--list` execution failure. The existing `make test-shell` runner syntax-checks every `scripts/*.sh` file and runs this regression script.
+
+### Files changed
+
+- `scripts/build-busybox-baseline.sh`
+- `scripts/check-busybox-applets.sh` (new)
+- `scripts/test-busybox-baseline-config.sh`
+- `docs/AI-DEVELOPMENT-LOG.md`
+
+### Validation status
+
+- Changes are committed to the existing PR #50 branch; this entry does not claim that tests passed.
+- Fresh GitHub Actions results are required to verify shell syntax, the BusyBox applet regression, Rust/userland checks, the real BusyBox build, qemu64 ISA validation, ISO assembly, and the BIOS/UEFI/direct-kernel boot matrix.
+- No files under `/linux` were modified. No installer, partition, disk, updater, or user-data behavior was changed.
+
+### Next priorities
+
+1. Inspect fresh PR #50 userland and full-image workflow runs; confirm the shell and applet regressions pass.
+2. Continue from the first real build failure after the shell gate. Use the persisted ISA report and linked-input attribution rather than weakening the x86-64 baseline scanner.
+3. Keep PR #50 and its stacked predecessors in draft/unmerged state until the final reconciled head passes the required build and boot matrix.
+
+## 2026-11-10 follow-up — Keep the ISA checker report output opt-in
+
+- A post-commit review found that `AWEOS_ISA_REPORT_OUT` defaulted to the literal `-`, while the EXIT cleanup treated every non-empty value as a destination path. Normal checker invocations could therefore create a stray file named `-` in the caller's working directory.
+- Changed the unset default to an empty string. Report persistence remains enabled only when an explicit output path is supplied; fail-closed scan behavior is unchanged.
+- Extended `scripts/test-qemu64-baseline-isa.sh` to run the checker with no report path from an isolated directory and assert that no `-` file is created. Existing explicit report-persistence tests remain.
+- Validation: this follow-up is committed to the PR #50 branch. Fresh GitHub Actions results are required; no pass is claimed until the updated shell/ISA tests and image pipeline complete.
+
+### CI checkpoint — 2026-11-10
+
+- On current PR #50 head `82f0fd36d0b945e84cbcad4b69a957eb86f3cfbc`, the full image workflow `42759603318` has passed the shell/C/rootfs/session/QEMU-runner regression step, the `/linux` read-only boundary check, and `cargo test --workspace`. `make image` is still running; ISO and boot results are not yet available.
+- PR #50 userland workflow `42759603359` has passed shell/C safety tests, repository-boundary verification, Cargo metadata, and `cargo test --workspace`; release binary compilation and its remaining checks are still running.
+- The separate Linux-sync PR #51 now has a passing staged-subtree regression workflow (`42759726417`) and a passing userland workflow (`42759718078`). Its full image workflow `42759726735` has passed the repository boundary and Rust workspace tests and is still building images.
+- PR #51's first userland run exposed missing native linker dependencies (`-linput`, `-lxkbcommon`). Installing `libinput-dev` and `libxkbcommon-dev` in both CI workflows fixed that failure on the latest head.
+- No ISO, BIOS/UEFI boot, physical-hardware, or production-readiness claim is made until the current image and boot jobs finish successfully.
+
+### CI completion update — 2026-11-10
+
+- PR #50 userland run `42759603359` completed successfully on code commit `82f0fd36d0b945e84cbcad4b69a957eb86f3cfbc`: shell/C safety regressions, repository boundary, Cargo metadata, workspace tests, release binaries, expected-binary checks, installer no-write checks, and AYUI Xvfb smoke checks passed.
+- PR #50 full image run `42759603318` has passed shell/C/rootfs/session/QEMU-runner regressions, `/linux` integrity, and Rust workspace tests. Its image build is still running; no ISO or boot result is claimed yet.
+- PR #51's latest userland run `42759726522` and Linux index-subtree regression run `42759726417` completed successfully. Its full image run `42759726735` has passed Rust workspace tests and is still in the image-build stage.
+- The later PR #50 commit `5b12b10` only updates this development log; the tested source code is unchanged from `82f0fd3`.
+
+## 2026-11-10 — Replace the distribution musl link with a pinned from-source baseline build
+
+### Repository and CI inspection
+
+- Continued on the draft PR #50 branch `boot/busybox-cc-flags-last-20261109`
+  from head `2909e5e`; the stacked PR chain (#43-#50) remains unmerged and no
+  boot success is claimed.
+- The latest full-image run `42760114712` on that head failed the qemu64 ISA
+  gate again: the pinned static BusyBox ELF still contained AVX/VEX mnemonics
+  (vmovdqa(61), vmovaps(80), vcvtsi2sd(15), vinserti128, vpermpd, ...), BMI
+  (blsi), tzcnt, and MOVBE(22). The userland workflow passed on the same head.
+- The compiler wrapper itself is verified by the in-tree regressions (flag
+  precedence, hostile -march=native/-mavx2/-mbmi2 override, exit-code
+  propagation) and by the earlier real-compiler probe run, and the effective
+  GCC target-state check passed before the build. The violating instructions
+  therefore come from the prebuilt archives consumed by the static link. The
+  mnemonic histogram (AVX + BMI/BMI2 + MOVBE, no AVX-512) matches an
+  x86-64-v3-built distribution libc, i.e. the runner's `musl-tools` libc.a and
+  crt objects on the current Ubuntu runner images. This confirms the primary
+  hypothesis recorded in the previous entry, and the fix planned there is now
+  implemented.
+- The separate Linux-sync PR #51 (based on master, outside this stack) passed
+  its userland and index-subtree regression workflows, but its full-image run
+  `42759726735` failed at the "Build AWEOS images" step with exit code 2. That
+  failure is not yet diagnosed and is independent of this branch.
+
+### Implemented
+
+- `scripts/build-musl-baseline.sh` (new): downloads the pinned musl 1.2.5
+  release from musl.libc.org, verifies its SHA-256 digest
+  (`a9a118bbe84d8764da0ea0d28b3ab3fae8477fc7e4085d90102b8596fc7c75e4`,
+  cross-checked against the Debian musl 1.2.5-1 upload record and the
+  Buildroot/musl-cross-make hash records), compiles musl through the same
+  `cc-x86_64-baseline.sh` policy wrapper used for BusyBox (with
+  `AWEOS_MUSL_CC=$HOSTCC`), installs it under `build/tools/musl`, verifies the
+  musl-gcc wrapper, libc.a, and libc headers, and records a version+digest
+  marker so a completed build is reused idempotently. A regression-test hook
+  (`AWEOS_MUSL_TEST_TARBALL` / `AWEOS_MUSL_TEST_SHA256`) exists only for the
+  synthetic-tree tests; production builds always download and verify the
+  pinned upstream archive.
+- `scripts/build-busybox-baseline.sh`: the bootstrap link now defaults to the
+  from-source baseline musl (`build/tools/musl/bin/musl-gcc`); the explicit
+  `MUSL_CC` override is retained for diagnostics but the ISA scan still
+  fail-closes the final ELF either way. The ISA attribution labels no longer
+  call the toolchain inputs "prebuilt", and the from-source libc directory was
+  added to the fallback search list.
+- `scripts/test-musl-baseline-build.sh` (new): offline regressions using a
+  synthetic musl source tree: a missing required tool fails closed; a test
+  tarball without a checksum fails closed; a checksum mismatch fails closed; a
+  verified tarball builds and installs the wrapper, libc.a, headers, and the
+  pinned marker; and a completed build is reused from cache without
+  re-downloading.
+- `scripts/run-test-shell.sh`: the new regression runs in the `make test-shell`
+  suite (after the compiler-policy regression).
+- `README.md`: the development-status note and the bootstrap-pipeline
+  description now record the from-source musl link and the pending fresh image
+  build and boot matrix.
+
+### Files changed
+
+- `scripts/build-musl-baseline.sh` (new)
+- `scripts/build-busybox-baseline.sh`
+- `scripts/test-musl-baseline-build.sh` (new)
+- `scripts/run-test-shell.sh`
+- `README.md`
+- `docs/AI-DEVELOPMENT-LOG.md`
+
+### Validation status
+
+- This environment provides no usable shell, compiler, or network for local
+  verification; GitHub Actions remains the authoritative validator. The suite
+  driver syntax-checks every `scripts/*.sh` with `bash -n` before running the
+  regressions.
+- No pass is claimed. The new regressions, the real pinned musl build, the
+  pinned BusyBox build, the required-applet check, the qemu64 ISA scan, ISO
+  assembly, and the BIOS/UEFI/direct-kernel QEMU boot matrix must all pass on
+  this head before PR #50 can leave draft.
+- If the ISA scan still fails after this change, the persisted attribution
+  file should now name the remaining dirty linked input; the leading candidate
+  would be the distribution `libgcc.a`. The correct next fix is building that
+  component from source under the same baseline policy, never weakening the
+  scanner or the qemu64 CPU model.
+
+### Unresolved issues and next priorities
+
+1. Inspect the fresh userland and full-image workflows on this head: confirm
+   the from-source musl build completes and whether the BusyBox ELF now passes
+   the qemu64 baseline ISA scan.
+2. Diagnose PR #51's full-image "Build AWEOS images" exit-code-2 failure on
+   the master-based branch; it is independent of this stack.
+3. If the attribution names libgcc.a as dirty, add a baseline-built libgcc
+   from source under the same policy.
+4. Keep PR #50 and its stacked predecessors unmerged until a reconciled head
+   passes the full image and boot matrix.
+
+## 2026-11-10 follow-up — Fix the musl baseline regression fake PATH
+
+- The first fresh userland run on this branch (`42832353614`) failed in the
+  shell regression gate at `scripts/test-musl-baseline-build.sh`: the
+  missing-tool case runs `build-musl-baseline.sh` under a restricted fake
+  `PATH`, but the fake bin directory did not include `dirname` (an external
+  command used by the script's own `SCRIPT_DIR` resolution), so the script
+  exited with "dirname: command not found" before reaching the expected
+  "curl is required" fail-closed message.
+- Commit `142ecf75` extends the fake bin directory to include the coreutils
+  the script and the build-safety helpers actually call (`env`, `dirname`,
+  `basename`, `sort`, `head`, `tail`, `cut`, `tr`, `install` in addition to
+  the previous set); `curl` remains deliberately absent.
+- Fresh userland and full-image workflows on head `142ecf7` were started
+  (`42832699332`, `42832699975`) and were still running when this entry was
+  written. No pass is claimed; results must be read from those runs.
+
+
+## 2026-11-13 — Fix the synthetic musl-gcc test fixture's Makefile escaping
+
+### Inspection and exact CI evidence
+- Inspected PR #50 (`boot/busybox-cc-flags-last-20261109`) at head `3782aa2c71a70873e66d446dd6f1a17fce6d546d`.
+- Latest Userland Validation run `43244290674` failed in `make test-shell`, specifically `scripts/test-musl-baseline-build.sh`; the full image run `43244290455` failed at the same pre-image regression step. The BusyBox/musl build, ISO assembly, and boot matrix were not reached on that head.
+- The failing assertion was the expected `REALGCC:-cc}` in the synthetic installed `musl-gcc` wrapper. The production `scripts/build-musl-baseline.sh` already re-emits the closing brace and validates the installed wrapper with `sh -n`.
+- Reproduced the failure with GNU Make: the test's generated Makefile used single-dollar shell references (`${REALGCC...}` and `$@`). Make consumed them while parsing the recipe, producing `exec "" "install"` rather than a shell wrapper. This is a regression-fixture quoting defect, not evidence that the production sed rewrite is broken.
+
+### Implemented
+- Escaped the shell variables as `$${REALGCC...}` and `$$@` in the synthetic Makefile recipe so GNU Make passes literal dollar signs to the generated shell script.
+- Strengthened the post-install assertion to check the complete expected command line: `exec "${REALGCC:-cc}" "$@"`.
+- No production toolchain behavior, kernel source, bootloader, installer, disk, or user-data behavior was changed. No files under `/linux` were modified.
+
+### Validation
+- Local GNU Make reproduction: **PASS** — the old recipe generated `exec "" "install"`; the escaped recipe generates the intended literal `exec "${REALGCC:-bash /nonexistent/cc-x86_64-baseline.sh}" "$@"` before the production rewrite.
+- The fix is committed to the existing PR #50 branch. Fresh Userland Validation and full image/boot CI on the new head are required; no pass is claimed until those runs complete.
+
+### Remaining issues and next priorities
+1. Confirm the musl baseline regression passes on the new PR #50 head.
+2. Continue the real pinned musl + BusyBox static build and qemu64 ISA scan; attribute any remaining non-baseline object rather than weakening the ISA gate.
+3. Require ISO assembly and BIOS/UEFI/direct-kernel QEMU results on the final head.
+4. Reconcile the stacked PR chain only after fresh required checks pass. Preserve the `/linux` read-only invariant and keep unverified changes unmerged.
+
+
+## 2026-11-13 — CI follow-up after Makefile dollar escaping
+
+### Intermediate validation and correction
+- The first two intermediate heads (`f173d632` and `568a695b`) still failed `test-musl-baseline-build.sh`. Reinspection of the commit diff showed that the strengthened assertion had landed, but the synthetic Makefile recipe itself had not yet received the required doubled dollar signs. The later `50327763` commit was empty and did not change the file; it is retained in history and was not force-pushed or rewritten.
+- Corrected the actual recipe in commit `6269a28ca67af0075bcc3b867eefd59098408fe4`: the test Makefile now uses `$${REALGCC...}` and `$$@`, which GNU Make reduces to literal shell references in the generated wrapper.
+- Replayed the exact Makefile expansion and production sed rewrite locally; `sh -n` and the full `exec "${REALGCC:-cc}" "$@"` assertion both passed.
+
+### Fresh CI on the corrected code head
+- Userland run [#43370593991](https://github.com/ARARAT33/AWEOS/actions/runs/43370593991): shell/C transaction safety tests **PASS**; repository-boundary verification **PASS**; Cargo metadata **PASS**; Rust workspace tests **PASS**. Release-binary build was still running at the last poll.
+- Full image run [#43370594125](https://github.com/ARARAT33/AWEOS/actions/runs/43370594125): shell, C, rootfs, session, and QEMU-runner regression suite **PASS**; `/linux` integrity check **PASS**; Rust workspace tests **PASS**. `Build AWEOS images` was still running at the last poll.
+- The specific musl fixture regression is part of the passing shell regression step, so the Makefile escaping defect is now covered by fresh GitHub Actions evidence. ISO assembly and BIOS/UEFI/direct-kernel boot results remain pending; no image or boot success is claimed yet.
+
+### Next priorities
+1. Read the final Userland and full-image conclusions on the corrected head.
+2. If image construction reaches the qemu64 BusyBox ISA gate, inspect the persisted attribution report and fix the actual offending object/toolchain input without weakening the scanner.
+3. If ISO assembly completes, require the BIOS, UEFI, and direct-kernel checks to finish and review their logs before claiming boot support.
+4. Keep PR #50 draft and unmerged until its complete final-head checks pass.

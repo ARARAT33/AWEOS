@@ -20,7 +20,7 @@ utilities, package-management experiments, and C installer/updater components.
 > in BusyBox's optional `tc` applet because the current Linux UAPI no longer
 > exports legacy CBQ types (`TCA_CBQ_*`). AWEOS's required bootstrap applet set
 > does not include `tc`; PR #48 now disables that unsupported optional applet
-> while retaining the other BusyBox networking utilities. The latest full-image builds on that head completed the pinned BusyBox 1.38.0 static build but then failed AWEOS's qemu64 baseline ISA scan: BusyBox's default-on `CONFIG_SHA1_HWACCEL`/`CONFIG_SHA256_HWACCEL` implementations are hand-written x86-64 assembly using SHA-NI/SSSE3/SSE4.1 instructions (pshufb, palignr, pinsrd, sha256rnds2, ...) that `-march=x86-64` cannot restrict, so they must be disabled for the bootstrap binary. The stacked branch `boot/busybox-sha-hwaccel-baseline-20261108` now disables both hardware-accelerated hashing paths (keeping the portable generic hashing applets) and teaches the ISA checker to print a mnemonic histogram in its first error line. A fresh image build and BIOS/UEFI/direct-kernel boot results are still pending. Do not
+> while retaining the other BusyBox networking utilities. The latest full-image builds on that head completed the pinned BusyBox 1.38.0 static build but then failed AWEOS's qemu64 baseline ISA scan: BusyBox's default-on `CONFIG_SHA1_HWACCEL`/`CONFIG_SHA256_HWACCEL` implementations are hand-written x86-64 assembly using SHA-NI/SSSE3/SSE4.1 instructions (pshufb, palignr, pinsrd, sha256rnds2, ...) that `-march=x86-64` cannot restrict, so they must be disabled for the bootstrap binary. The stacked branch `boot/busybox-sha-hwaccel-baseline-20261108` disables both hardware-accelerated hashing paths (keeping the portable generic hashing applets) and teaches the ISA checker to print a mnemonic histogram. Its latest userland workflow passed, but the 2026-11-08 full image run (42492061559) still failed the qemu64 ISA scan: the linked BusyBox contained VEX/AVX, BMI, and MOVBE instructions even after the SHA acceleration options were disabled. ISO assembly and BIOS/UEFI/direct-kernel tests were therefore not reached. The follow-up branch `boot/busybox-cc-flags-last-20261109` adds a compiler wrapper that appends x86-64-v1 restrictions after all flags supplied by BusyBox's build rules, plus a regression test for flag precedence and compiler error propagation. Subsequent full image runs completed the pinned BusyBox static build but still failed the qemu64 ISA scan with VEX/AVX, BMI, and MOVBE instructions linked in from the runner distribution musl-toolchain archives, which are built for x86-64-v3; the branch now builds a pinned from-source musl 1.2.5 under the same enforced baseline policy so the bootstrap link no longer consumes those prebuilt archives. A fresh image build and boot matrix remain pending. Do not
 > use the installer/updater to modify a disk containing valuable data. Both
 > the C transaction path and the Rust GUI installer now fail closed: the
 > previous Rust flow automatically selected the first disk and repartitioned
@@ -36,7 +36,8 @@ utilities, package-management experiments, and C installer/updater components.
   `build/linux-x86_64/`. Limine is used for BIOS/UEFI hybrid ISO assembly.
 - **Initramfs and root filesystem:** the image pipeline builds an ext4 root
   image and a BusyBox initramfs. BusyBox is built from a SHA-256-pinned upstream
-  source archive with static musl linking and explicit x86-64 baseline flags;
+  source archive, statically linked against a pinned from-source musl 1.2.5
+  built with the same enforced x86-64 baseline flags;
   the build does not copy an ISA-optimized BusyBox from the host runner. Rootfs
   validation disassembles packaged ELF binaries and rejects detected AVX/AVX2/
   AVX-512, BMI, and other post-baseline instructions. The initramfs validates
@@ -113,8 +114,9 @@ The full image and QEMU targets require the host dependencies installed by
 [the x86_64 GitHub Actions workflow](.github/workflows/build-aweos-x86_64.yml),
 including a Limine host utility, QEMU, OVMF, xorriso, the musl toolchain
 (`musl-tools`/`musl-gcc`), Linux UAPI development headers
-(`linux-libc-dev`), cpio, and ext4 tools. The build downloads and verifies
-its pinned BusyBox source archive; a host BusyBox executable is not required.
+(`linux-libc-dev`), cpio, and ext4 tools. The build downloads, verifies, and compiles its pinned BusyBox and musl
+source archives; host BusyBox and distribution musl-toolchain binaries are
+not used.
 
 ## Architecture
 
