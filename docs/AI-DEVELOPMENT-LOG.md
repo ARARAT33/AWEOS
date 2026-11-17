@@ -383,3 +383,12 @@
 3. Inspect the newest QEMU serial and emulator traces before changing the kernel, Limine, or initramfs.
 4. Complete the AYUI privilege split so the compositor and application session run as an unprivileged user; keep privileged operations behind a narrowly scoped broker.
 5. Continue the package-manager fail-closed work only after the boot pipeline's current failure is understood.
+
+
+### QEMU artifact inspection follow-up — 2026-11-17
+- Downloaded and inspected artifact #14198007121 from full-image run #43803675055 (PR #57 head).
+- The image-build log confirms the kernel, rootfs, initramfs, hybrid ISO, and Limine BIOS installation completed; the post-build `/linux` read-only check passed.
+- `build/qemu-bios.log` is 0 bytes. `build/qemu-bios-debug.log` is 2,713 bytes and records two CPU-reset snapshots at the BIOS reset vector (`CS=f000:EIP=fff0`), followed by `Triple fault`.
+- The trace was collected with `guest_errors,cpu_reset`, not the interrupt/exception trace flag. It therefore confirms a very early reset/triple-fault path but does not identify the first exception vector, failing instruction, or prove that the Linux kernel started. No rootfs or AYUI failure is established by this artifact.
+- Next diagnostic should be a bounded BIOS-only retry with `AWEOS_QEMU_DEBUG_FLAGS=guest_errors,cpu_reset,int`; keep the existing rootfs and compositor readiness assertions strict. Do not change kernel or initramfs behavior based only on the empty serial log.
+- The rootfs init script creates `/run/user/0` with mode 0700 before launching AYUI, so the new dedicated `/run/user/0/aweui` IPC directory has a valid private runtime parent in the current root-session boot model.
