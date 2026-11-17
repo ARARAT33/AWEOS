@@ -3,7 +3,7 @@ use std::fs;
 use std::io::{self, Read, Write};
 use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -330,6 +330,7 @@ pub fn send_ipc_request(socket_path: &str, request: IpcRequest) -> Result<IpcRes
 mod tests {
     use super::*;
     use std::os::unix::fs::symlink;
+    use std::path::PathBuf;
 
     fn private_test_dir(label: &str) -> PathBuf {
         let directory = std::env::temp_dir().join(format!(
@@ -486,6 +487,30 @@ mod tests {
 
         let _ = fs::remove_file(&link);
         let _ = fs::remove_dir_all(&target);
+    }
+
+    #[test]
+    fn bind_creates_a_private_socket_directory_below_runtime_dir() {
+        let runtime_dir = private_test_dir("runtime-base");
+        let socket_path = resolve_socket_path(
+            Some(runtime_dir.to_str().unwrap()),
+            Uid::effective().as_raw(),
+        );
+        let socket_parent = Path::new(&socket_path).parent().unwrap();
+        assert!(!socket_parent.exists());
+
+        let server = IpcServer::new(&socket_path);
+        let listener = server.bind().expect("dedicated IPC directory should be created");
+        let directory_mode =
+            fs::symlink_metadata(socket_parent).unwrap().permissions().mode() & 0o777;
+        let socket_mode =
+            fs::symlink_metadata(&socket_path).unwrap().permissions().mode() & 0o777;
+
+        assert_eq!(directory_mode, 0o700);
+        assert_eq!(socket_mode, 0o600);
+
+        drop(listener);
+        let _ = fs::remove_dir_all(&runtime_dir);
     }
 
     #[test]
