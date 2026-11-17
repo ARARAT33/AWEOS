@@ -213,3 +213,49 @@
 - `e6c31d9458`, `dfd2d989e3` — fail closed for missing UEFI firmware and test both present/missing OVMF cases.
 - `8912fad3fb` — record the strict boot-validation design and test status.
 - Latest code tested by the queued workflows is `dfd2d989e3`; the current PR head is `8912fad3fb` because the final commit only updates this log.
+
+
+## 2026-11-15 run — Optical rootfs discovery and boot diagnostics
+
+### Repository and CI state inspected
+- Continued from PR #54 integration head 63b06170134b41bd3e6a3a677feeaa9d22c1bbad on stack/rootfs-iso-ci-hardening-20261112; default master remains at 0939488f5261b04c9c3af150e5e4dc8888896a9f.
+- PR #54 remains open and draft. Its latest inspected checks were:
+  - Full image/boot run #43607134518: kernel build, rootfs validation, initramfs build, ISO assembly, and post-build /linux integrity check passed; BIOS boot failed before the rootfs hand-off marker.
+  - Userland run #43607134538: passed.
+  - Core archive/preservation run #43607134519: passed.
+- The failed BIOS job's QEMU log was empty, so the failure cannot yet be called a confirmed kernel panic or confirmed rootfs mount failure. The previous workflow attempted to upload QEMU logs before QEMU ran, so a later boot failure produced no downloadable serial-log artifact.
+
+### Source-level boot-path finding
+- The live ISO stores rootfs.img under /boot/rootfs.img and the initramfs locates it by mounting the optical device and then loop-mounting the ext4 image.
+- The kernel configuration enabled SCSI and ISO9660 but did not explicitly enable CONFIG_BLK_DEV_SR. That SCSI CD-ROM driver is required for the optical device path and is not available to the initramfs if it is only built as a module.
+- The initramfs also performed a one-shot device scan after a fixed one-second sleep. This could miss asynchronously discovered optical/storage devices.
+- These are concrete configuration/discovery gaps consistent with the observed missing rootfs marker; the next QEMU run must verify whether they explain the failure.
+
+### Changes on fix/qemu-optical-rootfs-discovery-20261115
+- scripts/config-kernel.sh: reapply AWEOS-required kernel settings even when an existing .config is present; explicitly build CONFIG_CDROM and CONFIG_BLK_DEV_SR into the kernel.
+- scripts/verify-kernel-config.sh (new): fail closed unless boot-critical initramfs, ext4, ISO9660, loop, SCSI CD-ROM, SATA/AHCI, and block-device options are built in (=y).
+- scripts/test-kernel-config-requirements.sh (new): verifies valid built-in settings pass and missing, module-only, or absent configuration fails.
+- Makefile: include the kernel-config regression in make test-shell.
+- scripts/build-initramfs.sh: retry direct and optical-media discovery for up to 15 seconds; validate the mounted rootfs has /sbin/init; mount the ISO's rootfs image read-only as an OverlayFS lower layer.
+- Bootloader/x86_64/limine-ci.conf (new): enable Limine serial/verbose output, kernel log output, early serial console, and synchronous SCSI discovery for CI diagnostics.
+- .github/workflows/build-aweos-x86_64.yml: build the CI image with the diagnostic Limine profile and upload build/QEMU logs after the boot-test step, including when QEMU fails.
+- No files under /linux were modified. No installer partitioning, disk-write, updater, or user-data behavior was changed.
+
+### Validation status
+- The repository connector was used to inspect and edit the remote branch; this environment did not run a local kernel build or QEMU boot.
+- The new shell regression and full CI image/BIOS/UEFI boot matrix are pending GitHub Actions on the new branch.
+- No BIOS, UEFI, or full AYUI boot success is claimed.
+
+### Remaining critical issues
+1. Confirm that CONFIG_BLK_DEV_SR=y survives the real kernel's olddefconfig and that QEMU discovers /dev/sr0.
+2. Inspect the newly retained serial logs if BIOS or UEFI still fails; diagnose the first failing boot stage rather than weakening the marker assertions.
+3. Harden AYUI IPC: the current socket is in /tmp, stale paths are unconditionally removed, peer credentials are not authenticated, and privileged command/power actions are exposed.
+4. Disable or replace the legacy unsigned awepkg install path: it extracts untrusted tar archives and copies payload files into / without signature verification or safe path validation.
+5. Replace the dummy AOSIN payload/empty-input hash with a versioned, bounded, integrity-checked and signed package format before claiming package-manager readiness.
+6. Keep PR #54 and its dependent stack draft until fresh BIOS and UEFI boot checks pass.
+
+### Next run priorities
+1. Review the new branch's Userland Validation, Core Data Preservation, and full image/boot workflow results.
+2. If the kernel-config verifier fails, inspect the actual final .config and Kconfig dependencies; do not weaken the built-in-driver requirement.
+3. If rootfs hand-off still fails, inspect the uploaded BIOS serial log and then run UEFI independently.
+4. Once boot is reproducible, address AYUI IPC authorization and the unsigned package-installation path with focused tests.

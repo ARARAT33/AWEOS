@@ -78,7 +78,7 @@ jobs:
       - name: Build AWEOS images
         run: |
           set -o pipefail
-          make image 2>&1 | tee build-make-image.log
+          AWEOS_LIMINE_CONFIG=Bootloader/x86_64/limine-ci.conf make image 2>&1 | tee build-make-image.log
 
       - name: Publish make-image failure diagnostics
         if: failure()
@@ -97,22 +97,36 @@ jobs:
             echo 'build-make-image.log not found' >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      - name: Upload make-image and QEMU logs
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: aweos-build-failure-logs
-          path: |
-            build-make-image.log
-            build/qemu-bios.log
-            build/qemu-uefi.log
-          if-no-files-found: ignore
-
       - name: Verify /linux after build
         run: ./scripts/verify-linux-readonly.sh
 
       - name: Boot-test BIOS and UEFI ISO
         run: make test-qemu
+
+      - name: Publish QEMU boot failure diagnostics
+        if: failure()
+        run: |
+          set -euo pipefail
+          for mode in bios uefi; do
+            logfile="build/qemu-$mode.log"
+            if [ -s "$logfile" ]; then
+              echo "## QEMU $mode serial log (last 200 lines)" >> "$GITHUB_STEP_SUMMARY"
+              tail -n 200 "$logfile" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "No QEMU $mode serial log was produced." >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
+
+      - name: Upload build and QEMU diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aweos-build-and-boot-diagnostics
+          path: |
+            build-make-image.log
+            build/qemu-bios.log
+            build/qemu-uefi.log
+          if-no-files-found: ignore
 
       - name: Verify /linux after QEMU tests
         run: ./scripts/verify-linux-readonly.sh

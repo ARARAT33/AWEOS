@@ -72,47 +72,58 @@ ROOTFS_LIVE=0
 NEW_ROOT="/mnt/rootfs"
 
 echo "Locating AWEOS root filesystem..."
-sleep 1
+echo "Waiting for block-device discovery (up to 15 seconds)..."
+attempt=0
+while [ "$ROOTFS_MOUNTED" -eq 0 ] && [ "$attempt" -lt 15 ]; do
+    attempt=$((attempt + 1))
 
-# 1. Check direct block devices for ext4 rootfs (e.g. disk/USB partitions or virtio disk)
-for dev in /dev/vda /dev/vda1 /dev/vda2 /dev/sda /dev/sda1 /dev/sda2 /dev/nvme0n1p1 /dev/nvme0n1p2 /dev/sdb /dev/sdb1; do
-    if [ -b "$dev" ]; then
-        echo "Attempting to mount rootfs from $dev..."
-        if mount -t ext4 -o rw "$dev" "$NEW_ROOT" 2>/dev/null; then
-            if [ -x "$NEW_ROOT/sbin/init" ] || [ -x "$NEW_ROOT/bin/sh" ]; then
-                echo "Found valid AWEOS rootfs on $dev!"
-                ROOTFS_MOUNTED=1
-                break
-            else
+    # 1. Check direct ext4 rootfs devices (disk/USB/virtio/NVMe).
+    for dev in /dev/vda /dev/vda1 /dev/vda2 /dev/sda /dev/sda1 /dev/sda2 /dev/sdb /dev/sdb1 /dev/sdc /dev/sdc1 /dev/nvme0n1p1 /dev/nvme0n1p2; do
+        if [ -b "$dev" ]; then
+            echo "Attempting to mount rootfs from $dev..."
+            if mount -t ext4 -o rw "$dev" "$NEW_ROOT" 2>/dev/null; then
+                if [ -x "$NEW_ROOT/sbin/init" ]; then
+                    echo "Found valid AWEOS rootfs on $dev!"
+                    ROOTFS_MOUNTED=1
+                    break
+                fi
                 umount "$NEW_ROOT" 2>/dev/null || true
             fi
         fi
+    done
+
+    # 2. Search optical/boot media for the rootfs image embedded in the ISO.
+    if [ "$ROOTFS_MOUNTED" -eq 0 ]; then
+        mkdir -p /mnt/boot
+        for dev in /dev/sr0 /dev/sr1 /dev/cdrom /dev/vda /dev/sda /dev/sda1 /dev/sdb /dev/sdb1 /dev/sdc; do
+            if [ -b "$dev" ]; then
+                umount /mnt/boot 2>/dev/null || true
+                if mount -t iso9660 -o ro "$dev" /mnt/boot 2>/dev/null || mount -t vfat -o ro "$dev" /mnt/boot 2>/dev/null || mount -t ext4 -o ro "$dev" /mnt/boot 2>/dev/null; then
+                    if [ -f "/mnt/boot/rootfs.img" ] || [ -f "/mnt/boot/boot/rootfs.img" ]; then
+                        IMG="/mnt/boot/rootfs.img"
+                        [ -f "$IMG" ] || IMG="/mnt/boot/boot/rootfs.img"
+                        echo "Found rootfs image at $IMG! Mounting read-only loopback..."
+                        if mount -t ext4 -o loop,ro "$IMG" "$NEW_ROOT" 2>/dev/null; then
+                            if [ -x "$NEW_ROOT/sbin/init" ]; then
+                                echo "Successfully mounted loopback rootfs from boot media!"
+                                ROOTFS_MOUNTED=1
+                                ROOTFS_LIVE=1
+                                break
+                            fi
+                            umount "$NEW_ROOT" 2>/dev/null || true
+                        fi
+                    fi
+                    umount /mnt/boot 2>/dev/null || true
+                fi
+            fi
+        done
+    fi
+
+    if [ "$ROOTFS_MOUNTED" -eq 0 ] && [ "$attempt" -lt 15 ]; then
+        echo "Rootfs not visible yet; retrying device discovery (${attempt}/15)..."
+        sleep 1
     fi
 done
-
-# 2. Check ISO / boot media loopback rootfs.img if not mounted yet
-if [ "$ROOTFS_MOUNTED" -eq 0 ]; then
-    echo "Searching boot media for rootfs.img..."
-    mkdir -p /mnt/boot
-    for dev in /dev/sr0 /dev/sr1 /dev/cdrom /dev/vda /dev/sda /dev/sda1 /dev/sdb /dev/sdb1; do
-        if [ -b "$dev" ]; then
-            if mount -t iso9660 -o ro "$dev" /mnt/boot 2>/dev/null || mount -t vfat -o ro "$dev" /mnt/boot 2>/dev/null || mount -t ext4 -o ro "$dev" /mnt/boot 2>/dev/null; then
-                if [ -f "/mnt/boot/rootfs.img" ] || [ -f "/mnt/boot/boot/rootfs.img" ]; then
-                    IMG="/mnt/boot/rootfs.img"
-                    [ -f "$IMG" ] || IMG="/mnt/boot/boot/rootfs.img"
-                    echo "Found rootfs image at $IMG! Mounting loopback..."
-                    if mount -t ext4 -o loop "$IMG" "$NEW_ROOT" 2>/dev/null; then
-                        echo "Successfully mounted loopback rootfs from ISO!"
-                        ROOTFS_MOUNTED=1
-                        ROOTFS_LIVE=1
-                        break
-                    fi
-                fi
-                umount /mnt/boot 2>/dev/null || true
-            fi
-        fi
-    done
-fi
 
 if [ "$ROOTFS_MOUNTED" -eq 1 ] && [ -x "$NEW_ROOT/sbin/init" ]; then
     echo "Transitioning to AWEOS persistent root filesystem via switch_root..."

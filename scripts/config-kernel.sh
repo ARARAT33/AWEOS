@@ -6,15 +6,14 @@ KERNEL_BUILD_DIR="${2:-build/linux-x86_64}"
 
 mkdir -p "${KERNEL_BUILD_DIR}"
 
-if [ -f "${KERNEL_BUILD_DIR}/.config" ]; then
-    echo "Kernel configuration ${KERNEL_BUILD_DIR}/.config already exists, skipping re-config."
-    exit 0
+if [ ! -f "${KERNEL_BUILD_DIR}/.config" ]; then
+    echo "Generating the x86_64 base configuration in ${KERNEL_BUILD_DIR}..."
+    make -C "${KERNEL_SRC}" O="${KERNEL_BUILD_DIR}" x86_64_defconfig
+else
+    echo "Reapplying required AWEOS kernel options to existing configuration ${KERNEL_BUILD_DIR}/.config..."
 fi
 
 echo "Configuring Linux kernel out-of-tree in ${KERNEL_BUILD_DIR}..."
-
-# Generate base defconfig out-of-tree
-make -C "${KERNEL_SRC}" O="${KERNEL_BUILD_DIR}" x86_64_defconfig
 
 CONFIG_TOOL="${KERNEL_SRC}/scripts/config --file ${KERNEL_BUILD_DIR}/.config"
 
@@ -63,6 +62,10 @@ ${CONFIG_TOOL} --enable CONFIG_ATA_PIIX
 ${CONFIG_TOOL} --enable CONFIG_BLK_DEV_NVME
 ${CONFIG_TOOL} --enable CONFIG_SCSI
 ${CONFIG_TOOL} --enable CONFIG_BLK_DEV_SD
+# The live ISO stores rootfs.img on optical media. The initramfs must have
+# the CD-ROM block driver built in; modules are not available at this stage.
+${CONFIG_TOOL} --enable CONFIG_CDROM
+${CONFIG_TOOL} --enable CONFIG_BLK_DEV_SR
 
 # USB & Input
 ${CONFIG_TOOL} --enable CONFIG_USB_SUPPORT
@@ -120,4 +123,5 @@ ${CONFIG_TOOL} --enable CONFIG_UNIX
 ${CONFIG_TOOL} --enable CONFIG_PACKET
 
 make -C "${KERNEL_SRC}" O="${KERNEL_BUILD_DIR}" olddefconfig
+bash "$(dirname "$0")/verify-kernel-config.sh" "${KERNEL_BUILD_DIR}/.config"
 echo "Kernel configuration complete in ${KERNEL_BUILD_DIR}/.config"
