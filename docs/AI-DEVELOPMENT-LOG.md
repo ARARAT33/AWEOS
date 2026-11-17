@@ -392,3 +392,9 @@
 - The trace was collected with `guest_errors,cpu_reset`, not the interrupt/exception trace flag. It therefore confirms a very early reset/triple-fault path but does not identify the first exception vector, failing instruction, or prove that the Linux kernel started. No rootfs or AYUI failure is established by this artifact.
 - Next diagnostic should be a bounded BIOS-only retry with `AWEOS_QEMU_DEBUG_FLAGS=guest_errors,cpu_reset,int`; keep the existing rootfs and compositor readiness assertions strict. Do not change kernel or initramfs behavior based only on the empty serial log.
 - The rootfs init script creates `/run/user/0` with mode 0700 before launching AYUI, so the new dedicated `/run/user/0/aweui` IPC directory has a valid private runtime parent in the current root-session boot model.
+
+
+### Additional regression coverage — 2026-11-17
+- Added `bind_creates_a_private_socket_directory_below_runtime_dir` to exercise the exact production layout (`$XDG_RUNTIME_DIR/aweui/aweui-ipc.sock`): the parent runtime directory must already be private, the dedicated child is created as 0700, and the socket is 0600.
+- Moved the test-only `PathBuf` import into the test module to avoid a production-build unused-import warning.
+- Code commit: `36e2c23f153ed74425a87dee33d7f93518472989`. Fresh Actions checks for this exact code head are pending; earlier in-progress runs target the preceding code commit and are not validation of this added test.
