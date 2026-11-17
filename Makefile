@@ -47,10 +47,10 @@ kernel: verify-linux
 
 rootfs: rust-build
 	@AWEOS_DESKTOP=${AWEOS_DESKTOP:-ayui} ./scripts/build-rootfs.sh $(BUILD_DIR)
-	@./scripts/validate-rootfs-layout.sh $(BUILD_DIR)
+	@bash ./scripts/validate-rootfs-layout.sh $(BUILD_DIR)
 
 validate-rootfs:
-	@./scripts/validate-rootfs-layout.sh $(BUILD_DIR)
+	@bash ./scripts/validate-rootfs-layout.sh $(BUILD_DIR)
 
 initramfs: rootfs
 	@./scripts/build-initramfs.sh $(BUILD_DIR)
@@ -94,9 +94,16 @@ test-shell:
 	for script in $(SHELL_SCRIPTS); do \
 		bash -n "$$script"; \
 	done
+	@bash ./scripts/test-transaction-fail-closed.sh
+	@bash ./scripts/test-storage-discovery.sh
+	@bash ./scripts/test-build-iso-safety.sh
+	@bash ./scripts/test-rootfs-layout-validator.sh
+	@bash ./scripts/test-qemu-runner-invocation.sh
+	@bash ./scripts/test-qemu-boot-readiness.sh
 
 test-qemu: iso
-	@./scripts/run-qemu-tests.sh $(BUILD_DIR)
+	# The runner is tracked without the executable bit; invoke it through Bash.
+	@bash ./scripts/run-qemu-tests.sh $(BUILD_DIR)
 
 verify-artifacts:
 	@set -euo pipefail; \

@@ -160,6 +160,7 @@ pub fn run(ui: Arc<Mutex<AweuiState>>) -> Result<(), Box<dyn std::error::Error>>
     let keyboard = state.seat.add_keyboard(Default::default(), 200, 200)?;
     let start = Instant::now();
     let mut clients = Vec::new();
+    let mut first_frame_submitted = false;
 
     loop {
         let status = winit.dispatch_new_events(|event| match event {
@@ -206,6 +207,10 @@ pub fn run(ui: Arc<Mutex<AweuiState>>) -> Result<(), Box<dyn std::error::Error>>
             display.flush_clients()?;
         }
         backend.submit(Some(&[damage]))?;
+        if !first_frame_submitted {
+            println!("AWEOS COMPOSITOR READY: session=ayui backend=winit first-frame=1");
+            first_frame_submitted = true;
+        }
 
         if state.ui.lock().map(|ui| !ui.running).unwrap_or(true) { break; }
     }

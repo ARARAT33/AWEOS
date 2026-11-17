@@ -128,10 +128,10 @@ if [ "$ROOTFS_MOUNTED" -eq 1 ] && [ -x "$NEW_ROOT/sbin/init" ]; then
     exec switch_root "$NEW_ROOT" /sbin/init
 fi
 
-echo "WARNING: Could not mount persistent rootfs. Falling back to initramfs root."
+echo "WARNING: Could not mount persistent rootfs. Falling back to initramfs recovery shell."
 cat << 'MARKERS'
-AWEOS BOOT SUCCESS
-AWEOS TERMINAL READY
+AWEOS BOOT RECOVERY: persistent rootfs unavailable
+AWEOS RECOVERY SHELL READY
 MARKERS
 
 exec cttyhack /bin/sh
