@@ -398,3 +398,9 @@
 - Added `bind_creates_a_private_socket_directory_below_runtime_dir` to exercise the exact production layout (`$XDG_RUNTIME_DIR/aweui/aweui-ipc.sock`): the parent runtime directory must already be private, the dedicated child is created as 0700, and the socket is 0600.
 - Moved the test-only `PathBuf` import into the test module to avoid a production-build unused-import warning.
 - Code commit: `36e2c23f153ed74425a87dee33d7f93518472989`. Fresh Actions checks for this exact code head are pending; earlier in-progress runs target the preceding code commit and are not validation of this added test.
+
+
+### CI completion snapshot — 2026-11-17
+- Userland Validation run #44020963247 on code commit `24ac4b11e35c2ef17f7730e3730e8b4721b18fae`: **PASS**. Inspected the completed job log: shell/C transaction safety, repository boundary, Cargo metadata, `cargo test --workspace`, release builds, and all expected userland binary checks passed. The AYUI IPC regression tests (including stale/live socket distinction, path checks, permissions, and peer UID check) passed in that run.
+- Full image/boot run #44020963263 on the same code commit: kernel build, Rust workspace tests, and shell/rootfs regression steps had passed at the last poll; image assembly and BIOS/UEFI boot were still in progress. This is not a full image or boot pass.
+- A further regression was added on commit `36e2c23f153ed74425a87dee33d7f93518472989` to test creation of the dedicated runtime child directory used by the production socket path. Fresh Userland and full-image runs #44021270099/#44021270057 (plus duplicate push/PR-triggered runs #44021276128/#44021276106) were still in progress at the last poll. The successful run above does not include this additional test, so the exact latest head remains unvalidated.
