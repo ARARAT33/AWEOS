@@ -9,8 +9,8 @@
 #   AWEOS_ISA_SOFT=1            diagnostic mode that never fails: prints
 #                               AWEOS_ISA_OFFENDERS=<count> and
 #                                AWEOS_ISA_SYMBOLS=<top distinct symbols>, then
-#                               exits 0. ar archives are also accepted in
-#                               this mode so linked static-library inputs can
+#                                exits 0. ar archives are also accepted in
+#                                this mode so linked static-library inputs can
 #                                be scanned for attribution.
 set -euo pipefail
 
@@ -56,15 +56,31 @@ trap cleanup EXIT
 # x86-64-v1/qemu64-safe code must not contain AVX VEX/EVEX mnemonics or
 # common post-baseline extensions. verr and verw are legacy instructions,
 # not VEX instructions, and are therefore intentionally excluded.
-# tzcnt is deliberately NOT rejected: its encoding (F3 0F BC, "rep bsf") is
-# the BSF opcode with a rep prefix. On CPUs without BMI1, including the
-# qemu64 model used by the boot tests, the rep prefix is ignored and the
-# instruction executes as BSF, so it cannot #UD there. LLVM emits this
-# encoding for count_trailing_zeros even on the x86-64-v1 baseline
-# (including Rust's precompiled std, e.g. backtrace/OnceCell code), pairing
-# it with an explicit zero-input check whenever the zero result is defined.
-# This is the only encoding-level exception; lzcnt stays rejected to keep
-# the gate narrow, and every other listed mnemonic still fails closed.
+#
+# Exception 1 (encoding level): tzcnt is deliberately NOT rejected. Its
+# encoding (F3 0F BC, "rep bsf") is the BSF opcode with a rep prefix. On
+# CPUs without BMI1, including the qemu64 model used by the boot tests, the
+# rep prefix is ignored and the instruction executes as BSF, so it cannot
+# #UD there. LLVM emits this encoding for count_trailing_zeros even on the
+# x86-64-v1 baseline (including Rust's precompiled std, e.g. backtrace/
+# OnceCell code), pairing it with an explicit zero-input check whenever the
+# zero result is defined. lzcnt stays rejected to keep the gate narrow.
+#
+# Exception 2 (runtime dispatch): Rust's precompiled std embeds the memchr
+# crate's SIMD kernels (mangled crate path 6memchr4arch6x86_64, e.g.
+# memchr::arch::x86_64::memchr::memrchr_raw::find_avx2). These functions are
+# compiled with #[target_feature(enable = "avx2")] and are reachable ONLY
+# through is_x86_feature_detected! runtime dispatch inside the precompiled
+# std. On CPUs without AVX2/SSSE3, including qemu64, the dispatcher never
+# enters these kernels, so their instructions cannot #UD there. This code
+# lives inside the precompiled std, so no build flag (-C target-cpu,
+# RUSTFLAGS, -Z build-std) can remove it; rejecting it would ban every Rust
+# userland binary. The exception is narrow: only symbols whose mangled names
+# contain BOTH the memchr arch path (6memchr4arch6x86_64) AND an
+# avx2/ssse3/sse42 kernel marker. AVX-512 kernels, memchr symbols without a
+# kernel marker, every other crate, and all from-source code still fail
+# closed. The qemu64 boot test with its instruction trace remains the
+# dynamic backstop for this exception.
 objdump -d -Mintel "$image" | awk '
 /^[[:space:]]*[[:xdigit:]]+[[:space:]]+<[^>]+>:/ {
     current_symbol = $0
@@ -80,6 +96,10 @@ objdump -d -Mintel "$image" | awk '
         i++
     }
     mnemonic = tolower(fields[i])
+    if (current_symbol ~ /6memchr4arch6x86_64/ &&
+        current_symbol ~ /(avx2|ssse3|sse42)/) {
+        next
+    }
     if ((mnemonic ~ /^v/ && mnemonic != "verr" && mnemonic != "verw") ||
         mnemonic ~ /^(andn|bextr|blsi|blsmsk|blsr|bzhi|mulx|pdep|pext|rorx|sarx|shlx|shrx|popcnt|lzcnt|movbe|crc32|adcx|adox|rdrand|rdseed|clflushopt|clwb|addsubpd|addsubps|haddpd|haddps|hsubpd|hsubps|lddqu|movddup|movshdup|movsldup|pabsb|pabsw|pabsd|palignr|phaddw|phaddd|phaddsw|phsubw|phsubd|phsubsw|pmaddubsw|pmulhrsw|pshufb|psignb|psignw|psignd|blendpd|blendps|blendvpd|blendvps|dpps|dppd|extractps|insertps|movntdqa|mpsadbw|packusdw|pblendvb|pblendw|pcmpeqq|pinsrb|pinsrd|pinsrq|pmovsxbw|pmovsxbd|pmovsxbq|pmovsxwd|pmovsxwq|pmovsxdq|pmovzxbw|pmovzxbd|pmovzxbq|pmovzxwd|pmovzxwq|pmovzxdq|pmulld|ptest|roundsd|roundss|roundpd|roundps|pcmpestri|pcmpestrm|pcmpistri|pcmpistrm|pcmpgtq)$/) {
         if (current_symbol != last_symbol && current_symbol != "") {

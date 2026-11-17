@@ -58,11 +58,55 @@ aweos_bmi2_fixture:
     ret
 ASM
 
+cat >"$workdir/stdmemchr.S" <<'ASM'
+.text
+.globl _ZN6memchr4arch6x86_646memchr11memrchr_raw9find_avx2E
+_ZN6memchr4arch6x86_646memchr11memrchr_raw9find_avx2E:
+    # VEX-encoded VMOVDQA inside a Rust std memchr runtime-dispatched AVX2
+    # kernel. The kernel is entered only behind is_x86_feature_detected!
+    # ("avx2"), so it cannot execute on qemu64 and must be accepted.
+    .byte 0xc5, 0xf9, 0x6f, 0x05, 0x00, 0x00, 0x00, 0x00
+    ret
+ASM
+
+cat >"$workdir/stdmemchr-nokernel.S" <<'ASM'
+.text
+.globl _ZN6memchr4arch6x86_646memchr6detectE
+_ZN6memchr4arch6x86_646memchr6detectE:
+    # Same VEX bytes in a memchr arch symbol WITHOUT an avx2/ssse3/sse42
+    # kernel marker: the narrow exception must not apply, fail closed.
+    .byte 0xc5, 0xf9, 0x6f, 0x05, 0x00, 0x00, 0x00, 0x00
+    ret
+ASM
+
+cat >"$workdir/stdmemchr-avx512.S" <<'ASM'
+.text
+.globl _ZN6memchr4arch6x86_646memchr9find_avx512E
+_ZN6memchr4arch6x86_646memchr9find_avx512E:
+    # VEX/EVEX bytes under an avx512 kernel name: AVX-512 stays rejected
+    # even inside the memchr arch path, fail closed.
+    .byte 0xc5, 0xf9, 0x6f, 0x05, 0x00, 0x00, 0x00, 0x00
+    ret
+ASM
+
+cat >"$workdir/othercrate-avx.S" <<'ASM'
+.text
+.globl _ZN9othercrate4arch6x86_6410find_avx2E
+_ZN9othercrate4arch6x86_6410find_avx2E:
+    # Same VEX bytes outside the memchr arch path: fail closed.
+    .byte 0xc5, 0xf9, 0x6f, 0x05, 0x00, 0x00, 0x00, 0x00
+    ret
+ASM
+
 cc -c "$workdir/safe.S" -o "$workdir/safe.o"
 cc -c "$workdir/avx.S" -o "$workdir/avx.o"
 cc -c "$workdir/bmi1.S" -o "$workdir/bmi1.o"
 cc -c "$workdir/lzcnt.S" -o "$workdir/lzcnt.o"
 cc -c "$workdir/bmi2.S" -o "$workdir/bmi2.o"
+cc -c "$workdir/stdmemchr.S" -o "$workdir/stdmemchr.o"
+cc -c "$workdir/stdmemchr-nokernel.S" -o "$workdir/stdmemchr-nokernel.o"
+cc -c "$workdir/stdmemchr-avx512.S" -o "$workdir/stdmemchr-avx512.o"
+cc -c "$workdir/othercrate-avx.S" -o "$workdir/othercrate-avx.o"
 
 # With no report path configured, the checker must not create a stray
 # file named "-" in its caller's working directory.
@@ -96,6 +140,32 @@ if bash "$checker" "$workdir/bmi2.o" >"$workdir/bmi2.out" 2>&1; then
     exit 1
 fi
 grep -Eqi 'shrx|bmi' "$workdir/bmi2.out"
+
+# The Rust std memchr runtime-dispatched AVX2 kernel must be accepted: it
+# is entered only behind is_x86_feature_detected!("avx2") and therefore
+# cannot execute on qemu64.
+bash "$checker" "$workdir/stdmemchr.o" >"$workdir/stdmemchr.out" 2>&1
+grep -q 'PASS' "$workdir/stdmemchr.out"
+
+# The exception must stay narrow: memchr arch symbols without a kernel
+# marker, avx512 kernel names, and any other crate still fail closed.
+if bash "$checker" "$workdir/stdmemchr-nokernel.o" >"$workdir/stdmemchr-nokernel.out" 2>&1; then
+    echo "ERROR: qemu64 ISA checker accepted a memchr symbol without a kernel marker." >&2
+    exit 1
+fi
+grep -Eqi 'vmovdqa|avx' "$workdir/stdmemchr-nokernel.out"
+
+if bash "$checker" "$workdir/stdmemchr-avx512.o" >"$workdir/stdmemchr-avx512.out" 2>&1; then
+    echo "ERROR: qemu64 ISA checker accepted an avx512 kernel name." >&2
+    exit 1
+fi
+grep -Eqi 'vmovdqa|avx' "$workdir/stdmemchr-avx512.out"
+
+if bash "$checker" "$workdir/othercrate-avx.o" >"$workdir/othercrate-avx.out" 2>&1; then
+    echo "ERROR: qemu64 ISA checker accepted AVX outside the memchr arch path." >&2
+    exit 1
+fi
+grep -Eqi 'vmovdqa|avx' "$workdir/othercrate-avx.out"
 
 # The full symbol-labeled report must be persisted when requested, without
 # changing the fail-closed verdict.
@@ -142,4 +212,4 @@ else
     exit 1
 fi
 
-echo "PASS: qemu64 ISA checker accepts baseline code, rejects AVX, BMI1, and BMI2, persists reports, and supports soft archive attribution."
+echo "PASS: qemu64 ISA checker accepts baseline code and std memchr runtime-gated kernels, rejects AVX, BMI, lzcnt, avx512, and non-kernel symbols, persists reports, and supports soft archive attribution."
