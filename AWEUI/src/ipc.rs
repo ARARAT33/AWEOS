@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::io::{Read, Write};
-use std::os::unix::fs::PermissionsExt;
+use std::io::{self, Read, Write};
+use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -33,46 +33,124 @@ pub enum IpcResponse {
     Error(String),
 }
 
-/// Resolve the AYUI IPC socket path without touching process state.
+/// Resolve the AYUI IPC socket below a per-user private runtime subdirectory.
 ///
-/// The socket must never live in a world-writable directory when a private
-/// runtime directory is available: /tmp sockets are reachable by every local
-/// user, which previously exposed privileged LaunchCommand and PowerAction
-/// requests to any local process.
+/// The parent XDG runtime directory is expected to exist with the XDG
+/// specification's owner-only permissions. A dedicated child directory keeps
+/// the socket private without changing permissions on an existing directory.
 pub fn resolve_socket_path(runtime_dir: Option<&str>, uid: u32) -> String {
-    if let Some(dir) = runtime_dir {
-        if !dir.is_empty() {
-            return format!("{dir}/aweui-ipc.sock");
+    if let Some(dir) = runtime_dir.filter(|value| !value.is_empty()) {
+        let path = Path::new(dir);
+        if path.is_absolute() {
+            return path
+                .join("aweui")
+                .join("aweui-ipc.sock")
+                .to_string_lossy()
+                .into_owned();
         }
     }
-    format!("/run/user/{uid}/aweui-ipc.sock")
+
+    format!("/run/user/{uid}/aweui/aweui-ipc.sock")
 }
 
-/// Default socket path for this process, preferring XDG_RUNTIME_DIR.
+/// Default socket path for this process, preferring a valid absolute
+/// XDG_RUNTIME_DIR. The directory itself is validated again before binding.
 pub fn default_socket_path() -> String {
     let runtime_dir = std::env::var("XDG_RUNTIME_DIR").ok();
-    resolve_socket_path(runtime_dir.as_deref(), Uid::current().as_raw())
+    resolve_socket_path(runtime_dir.as_deref(), Uid::effective().as_raw())
 }
 
-/// Remove a stale socket only when the existing path really is a socket.
+/// Validate a directory without following a symlink.
 ///
-/// A blind remove_file would delete an unrelated regular file or directory
-/// placed at the socket path by a local attacker. Fail closed instead.
-fn remove_stale_socket(socket_path: &str) -> std::io::Result<()> {
-    match fs::symlink_metadata(socket_path) {
-        Ok(meta) => {
-            if meta.file_type().is_socket() {
-                fs::remove_file(socket_path)?;
-            } else {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::AlreadyExists,
-                    format!("refusing to remove non-socket path: {socket_path}"),
-                ));
+/// Runtime directories must belong to the effective user, be writable and
+/// searchable by that user, and expose no permissions to group/other users.
+fn validate_private_directory(path: &Path) -> io::Result<()> {
+    let metadata = fs::symlink_metadata(path)?;
+    let mode = metadata.permissions().mode();
+
+    if !metadata.file_type().is_dir() {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!("IPC runtime path is not a real directory: {}", path.display()),
+        ));
+    }
+    if metadata.uid() != Uid::effective().as_raw() {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!("IPC runtime directory has the wrong owner: {}", path.display()),
+        ));
+    }
+    if mode & 0o077 != 0 || mode & 0o700 != 0o700 {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!(
+                "IPC runtime directory must be owner-only (0700): {}",
+                path.display()
+            ),
+        ));
+    }
+
+    Ok(())
+}
+
+/// Prepare only the dedicated socket directory. Never chmod an existing
+/// XDG_RUNTIME_DIR, /run, /tmp, or another caller-supplied parent directory.
+fn prepare_socket_parent(socket_path: &Path) -> io::Result<()> {
+    let parent = socket_path.parent().filter(|path| !path.as_os_str().is_empty())
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "IPC socket path has no parent"))?;
+
+    match fs::symlink_metadata(parent) {
+        Ok(_) => validate_private_directory(parent),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            let runtime_dir = parent.parent().ok_or_else(|| {
+                io::Error::new(io::ErrorKind::InvalidInput, "IPC runtime directory has no parent")
+            })?;
+            validate_private_directory(runtime_dir)?;
+
+            match fs::create_dir(parent) {
+                Ok(()) => {
+                    if let Err(error) = fs::set_permissions(parent, fs::Permissions::from_mode(0o700)) {
+                        let _ = fs::remove_dir(parent);
+                        return Err(error);
+                    }
+                    validate_private_directory(parent)
+                }
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                    validate_private_directory(parent)
+                }
+                Err(error) => Err(error),
             }
-            Ok(())
         }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(e),
+        Err(error) => Err(error),
+    }
+}
+
+/// Remove a stale socket, but never unlink a live listener or a non-socket
+/// object. This avoids both destructive path cleanup and active-socket
+/// replacement by a second AYUI process.
+fn remove_stale_socket(socket_path: &str) -> io::Result<()> {
+    match fs::symlink_metadata(socket_path) {
+        Ok(metadata) if metadata.file_type().is_socket() => {
+            match UnixStream::connect(socket_path) {
+                Ok(_connection) => Err(io::Error::new(
+                    io::ErrorKind::AddrInUse,
+                    format!("AYUI IPC socket already has a live listener: {socket_path}"),
+                )),
+                Err(error)
+                    if error.kind() == io::ErrorKind::ConnectionRefused
+                        || error.kind() == io::ErrorKind::NotFound =>
+                {
+                    fs::remove_file(socket_path)
+                }
+                Err(error) => Err(error),
+            }
+        }
+        Ok(_) => Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            format!("refusing to replace a non-socket IPC path: {socket_path}"),
+        )),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
     }
 }
 
@@ -81,39 +159,54 @@ pub struct IpcServer {
 }
 
 impl IpcServer {
-    /// Prepare the socket location and record the path.
-    ///
-    /// The parent runtime directory is created with mode 0700 so only the
-    /// session user can even see the socket. A non-socket object already
-    /// occupying the path is never deleted; construction fails closed.
+    /// Record the socket path. Filesystem changes are deferred to bind(), where
+    /// failures can be returned to the listener instead of being ignored.
     pub fn new(socket_path: &str) -> Self {
-        if let Some(parent) = Path::new(socket_path).parent() {
-            if !parent.as_os_str().is_empty() {
-                let _ = fs::create_dir_all(parent);
-                let _ = fs::set_permissions(parent, fs::Permissions::from_mode(0o700));
-            }
+        Self {
+            socket_path: socket_path.to_string(),
         }
-        if let Err(error) = remove_stale_socket(socket_path) {
-            eprintln!("AYUI IPC stale-socket cleanup refused: {error}");
-        }
-        Self { socket_path: socket_path.to_string() }
     }
 
-    /// Bind the listening socket and restrict it to the session user.
-    pub fn bind(&self) -> std::io::Result<UnixListener> {
+    /// Bind only inside an owner-controlled 0700 directory and expose the
+    /// socket itself as 0600. All setup errors fail closed.
+    pub fn bind(&self) -> io::Result<UnixListener> {
+        let socket_path = Path::new(&self.socket_path);
+        prepare_socket_parent(socket_path)?;
+        remove_stale_socket(&self.socket_path)?;
+
         let listener = UnixListener::bind(&self.socket_path)?;
-        let _ = fs::set_permissions(&self.socket_path, fs::Permissions::from_mode(0o600));
+        if let Err(error) =
+            fs::set_permissions(&self.socket_path, fs::Permissions::from_mode(0o600))
+        {
+            drop(listener);
+            let _ = fs::remove_file(&self.socket_path);
+            return Err(error);
+        }
+
+        let metadata = match fs::symlink_metadata(&self.socket_path) {
+            Ok(metadata) => metadata,
+            Err(error) => {
+                drop(listener);
+                let _ = fs::remove_file(&self.socket_path);
+                return Err(error);
+            }
+        };
+        if !metadata.file_type().is_socket() || metadata.uid() != Uid::effective().as_raw() {
+            drop(listener);
+            let _ = fs::remove_file(&self.socket_path);
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "bound AYUI IPC socket failed its ownership/type check",
+            ));
+        }
+
         Ok(listener)
     }
 
-    /// Accept connections only from processes running as the same user.
-    ///
-    /// The socket permissions already exclude other users, but the peer
-    /// credential check also rejects same-uid spoofing via inherited fds and
-    /// documents the trust boundary in code instead of comments.
+    /// Authenticate the connecting process using Linux SO_PEERCRED.
     fn peer_is_same_uid(stream: &UnixStream) -> bool {
         getsockopt(stream, PeerCredentials)
-            .map(|creds| creds.uid == Uid::current().as_raw())
+            .map(|credentials| credentials.uid() == Uid::effective().as_raw())
             .unwrap_or(false)
     }
 
@@ -123,29 +216,59 @@ impl IpcServer {
             let server = IpcServer { socket_path };
             let listener = match server.bind() {
                 Ok(listener) => listener,
-                Err(error) => { eprintln!("AYUI IPC bind failed: {error}"); return; }
+                Err(error) => {
+                    eprintln!("AYUI IPC bind failed: {error}");
+                    return;
+                }
             };
-            for mut stream in listener.incoming().flatten() {
+
+            for incoming in listener.incoming() {
+                let mut stream = match incoming {
+                    Ok(stream) => stream,
+                    Err(error) => {
+                        eprintln!("AYUI IPC accept failed: {error}");
+                        continue;
+                    }
+                };
+
                 if !Self::peer_is_same_uid(&stream) {
                     eprintln!("AYUI IPC rejected connection from a different uid");
                     continue;
                 }
-                let mut buf = [0u8; 8192];
-                let Ok(n) = stream.read(&mut buf) else { continue };
-                if n == 0 { continue; }
-                let Ok(req) = serde_json::from_slice::<IpcRequest>(&buf[..n]) else { continue };
-                let response = Self::handle_request(req, &state_handler);
-                if let Ok(bytes) = serde_json::to_vec(&response) { let _ = stream.write_all(&bytes); }
+
+                let mut buffer = [0u8; 8192];
+                let Ok(length) = stream.read(&mut buffer) else {
+                    continue;
+                };
+                if length == 0 {
+                    continue;
+                }
+
+                let Ok(request) = serde_json::from_slice::<IpcRequest>(&buffer[..length]) else {
+                    continue;
+                };
+                let response = Self::handle_request(request, &state_handler);
+                if let Ok(bytes) = serde_json::to_vec(&response) {
+                    let _ = stream.write_all(&bytes);
+                }
             }
         });
     }
 
-    fn handle_request(req: IpcRequest, state_arc: &Arc<Mutex<crate::state::AweuiState>>) -> IpcResponse {
+    fn handle_request(
+        request: IpcRequest,
+        state_arc: &Arc<Mutex<crate::state::AweuiState>>,
+    ) -> IpcResponse {
         let mut state = state_arc.lock().unwrap();
-        match req {
+        match request {
             IpcRequest::GetStatus => IpcResponse::Success("AYUI Active".into()),
             IpcRequest::GetWorkspaces => IpcResponse::Workspaces(
-                state.workspaces.workspaces.iter().map(|w| w.name.clone()).collect()
+                state
+                    .workspaces
+                    .workspaces
+                    .iter()
+                    .map(|workspace| workspace.name.clone())
+                    .collect(),
             ),
             IpcRequest::SwitchWorkspace(index) => {
                 state.workspaces.switch_to(index);
@@ -153,19 +276,29 @@ impl IpcServer {
             }
             IpcRequest::LaunchApp(app) => match state.session.launch_app(&app) {
                 Ok(()) => IpcResponse::Success(format!("Launched {app}")),
-                Err(e) => IpcResponse::Error(e),
+                Err(error) => IpcResponse::Error(error),
             },
-            IpcRequest::LaunchCommand(command) => match state.session.launch_command(&command) {
-                Ok(()) => IpcResponse::Success("Command launched".into()),
-                Err(e) => IpcResponse::Error(e),
-            },
-            IpcRequest::PowerAction(action) => match crate::session::SessionManager::power_action(&action) {
-                Ok(()) => IpcResponse::Success(format!("Power action: {action}")),
-                Err(e) => IpcResponse::Error(e),
-            },
-            IpcRequest::GetConfig => IpcResponse::Config(toml::to_string_pretty(&state.config).unwrap_or_default()),
+            IpcRequest::LaunchCommand(command) => {
+                match state.session.launch_command(&command) {
+                    Ok(()) => IpcResponse::Success("Command launched".into()),
+                    Err(error) => IpcResponse::Error(error),
+                }
+            }
+            IpcRequest::PowerAction(action) => {
+                match crate::session::SessionManager::power_action(&action) {
+                    Ok(()) => IpcResponse::Success(format!("Power action: {action}")),
+                    Err(error) => IpcResponse::Error(error),
+                }
+            }
+            IpcRequest::GetConfig => IpcResponse::Config(
+                toml::to_string_pretty(&state.config).unwrap_or_default(),
+            ),
             IpcRequest::SetConfig(config) => match toml::from_str(&config) {
-                Ok(cfg) => { state.config = cfg; let _ = state.config.save(); IpcResponse::Success("Configuration updated".into()) }
+                Ok(config) => {
+                    state.config = config;
+                    let _ = state.config.save();
+                    IpcResponse::Success("Configuration updated".into())
+                }
                 Err(_) => IpcResponse::Error("Invalid configuration syntax".into()),
             },
             IpcRequest::ToggleControlCenter => {
@@ -180,71 +313,194 @@ impl IpcServer {
     }
 }
 
-pub fn send_ipc_request(socket_path: &str, req: IpcRequest) -> Result<IpcResponse, String> {
-    let mut stream = UnixStream::connect(socket_path).map_err(|e| e.to_string())?;
-    let bytes = serde_json::to_vec(&req).map_err(|e| e.to_string())?;
-    stream.write_all(&bytes).map_err(|e| e.to_string())?;
-    let mut buf = [0u8; 8192];
-    let n = stream.read(&mut buf).map_err(|e| e.to_string())?;
-    serde_json::from_slice(&buf[..n]).map_err(|e| e.to_string())
+pub fn send_ipc_request(socket_path: &str, request: IpcRequest) -> Result<IpcResponse, String> {
+    let mut stream = UnixStream::connect(socket_path).map_err(|error| error.to_string())?;
+    let bytes = serde_json::to_vec(&request).map_err(|error| error.to_string())?;
+    stream.write_all(&bytes).map_err(|error| error.to_string())?;
+
+    let mut buffer = [0u8; 8192];
+    let length = stream.read(&mut buffer).map_err(|error| error.to_string())?;
+    if length == 0 {
+        return Err("AYUI IPC server closed the connection without a response".into());
+    }
+    serde_json::from_slice(&buffer[..length]).map_err(|error| error.to_string())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::fs::symlink;
 
-    #[test]
-    fn socket_path_prefers_explicit_runtime_dir() {
-        let path = resolve_socket_path(Some("/run/user/1000"), 0);
-        assert_eq!(path, "/run/user/1000/aweui-ipc.sock");
+    fn private_test_dir(label: &str) -> PathBuf {
+        let directory = std::env::temp_dir().join(format!(
+            "aweui-ipc-{label}-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&directory);
+        fs::create_dir_all(&directory).unwrap();
+        fs::set_permissions(&directory, fs::Permissions::from_mode(0o700)).unwrap();
+        directory
     }
 
     #[test]
-    fn socket_path_falls_back_to_uid_directory() {
+    fn socket_path_uses_private_runtime_subdirectory() {
+        let path = resolve_socket_path(Some("/run/user/1000"), 1000);
+        assert_eq!(path, "/run/user/1000/aweui/aweui-ipc.sock");
+    }
+
+    #[test]
+    fn socket_path_falls_back_to_uid_runtime_directory() {
         let path = resolve_socket_path(None, 1001);
-        assert_eq!(path, "/run/user/1001/aweui-ipc.sock");
+        assert_eq!(path, "/run/user/1001/aweui/aweui-ipc.sock");
     }
 
     #[test]
-    fn socket_path_ignores_empty_runtime_dir() {
-        let path = resolve_socket_path(Some(""), 1002);
-        assert_eq!(path, "/run/user/1002/aweui-ipc.sock");
+    fn socket_path_ignores_empty_or_relative_runtime_directory() {
+        assert_eq!(
+            resolve_socket_path(Some(""), 1002),
+            "/run/user/1002/aweui/aweui-ipc.sock"
+        );
+        assert_eq!(
+            resolve_socket_path(Some("relative/runtime"), 1003),
+            "/run/user/1003/aweui/aweui-ipc.sock"
+        );
     }
 
     #[test]
-    fn stale_socket_is_removed_before_bind() {
-        let dir = std::env::temp_dir().join(format!("aweui-ipc-test-{}", std::process::id()));
-        fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("stale.sock");
-        // Create a genuine stale socket, then confirm new() clears it.
-        let _listener = UnixListener::bind(&path).unwrap();
-        assert!(path.exists());
-        let _server = IpcServer::new(path.to_str().unwrap());
-        assert!(!path.exists());
-        let _ = fs::remove_dir_all(&dir);
-    }
+    fn bind_removes_a_stale_socket_but_not_a_live_listener() {
+        let directory = private_test_dir("stale");
+        let path = directory.join("aweui-ipc.sock");
+        let stale_listener = UnixListener::bind(&path).unwrap();
+        drop(stale_listener);
 
-    #[test]
-    fn non_socket_path_is_never_removed() {
-        let dir = std::env::temp_dir().join(format!("aweui-ipc-file-{}", std::process::id()));
-        fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("victim.sock");
-        fs::write(&path, b"not a socket").unwrap();
-        let _server = IpcServer::new(path.to_str().unwrap());
-        // Fail-closed: an unrelated file at the socket path must survive.
-        assert!(path.exists(), "IpcServer must not delete a non-socket path");
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn bind_sets_owner_only_permissions() {
-        let dir = std::env::temp_dir().join(format!("aweui-ipc-bind-{}", std::process::id()));
-        fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("bind.sock");
         let server = IpcServer::new(path.to_str().unwrap());
-        let _listener = server.bind().expect("bind must succeed on a clean path");
-        let mode = fs::metadata(&path).unwrap().permissions().mode();
-        assert_eq!(mode & 0o777, 0o600, "socket must be owner-only");
-        let _ = fs::remove_dir_all(&dir);
+        let listener = server.bind().expect("stale socket should be reclaimed");
+        assert!(fs::symlink_metadata(&path).unwrap().file_type().is_socket());
+        drop(listener);
+        let _ = fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn bind_refuses_to_replace_a_live_listener() {
+        let directory = private_test_dir("active");
+        let path = directory.join("aweui-ipc.sock");
+        let active_listener = UnixListener::bind(&path).unwrap();
+        let server = IpcServer::new(path.to_str().unwrap());
+
+        let error = match server.bind() {
+            Ok(listener) => {
+                drop(listener);
+                panic!("a second AYUI listener must not replace the active socket");
+            }
+            Err(error) => error,
+        };
+        assert_eq!(error.kind(), io::ErrorKind::AddrInUse);
+        assert!(UnixStream::connect(&path).is_ok());
+
+        drop(active_listener);
+        let _ = fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn bind_never_removes_a_non_socket_path() {
+        let directory = private_test_dir("regular-file");
+        let path = directory.join("aweui-ipc.sock");
+        fs::write(&path, b"not a socket").unwrap();
+        let server = IpcServer::new(path.to_str().unwrap());
+
+        let error = match server.bind() {
+            Ok(listener) => {
+                drop(listener);
+                panic!("a regular file must not be replaced by the IPC socket");
+            }
+            Err(error) => error,
+        };
+        assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
+        assert_eq!(fs::read(&path).unwrap(), b"not a socket");
+
+        let _ = fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn bind_sets_owner_only_socket_permissions() {
+        let directory = private_test_dir("permissions");
+        let path = directory.join("aweui-ipc.sock");
+        let server = IpcServer::new(path.to_str().unwrap());
+        let listener = server.bind().expect("private runtime directory should bind");
+
+        let socket_mode = fs::symlink_metadata(&path).unwrap().permissions().mode() & 0o777;
+        let directory_mode = fs::symlink_metadata(&directory).unwrap().permissions().mode() & 0o777;
+        assert_eq!(socket_mode, 0o600);
+        assert_eq!(directory_mode, 0o700);
+
+        drop(listener);
+        let _ = fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn bind_rejects_a_non_private_directory_without_changing_it() {
+        let directory = std::env::temp_dir().join(format!(
+            "aweui-ipc-unsafe-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&directory);
+        fs::create_dir_all(&directory).unwrap();
+        fs::set_permissions(&directory, fs::Permissions::from_mode(0o755)).unwrap();
+        let path = directory.join("aweui-ipc.sock");
+        let server = IpcServer::new(path.to_str().unwrap());
+
+        let error = match server.bind() {
+            Ok(listener) => {
+                drop(listener);
+                panic!("world-readable runtime directory must be rejected");
+            }
+            Err(error) => error,
+        };
+        assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+        let mode = fs::symlink_metadata(&directory).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o755, "existing directory permissions must not be changed");
+
+        let _ = fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn bind_rejects_a_symlink_runtime_directory() {
+        let target = private_test_dir("symlink-target");
+        let link = std::env::temp_dir().join(format!(
+            "aweui-ipc-symlink-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_file(&link);
+        symlink(&target, &link).unwrap();
+        let path = link.join("aweui-ipc.sock");
+        let server = IpcServer::new(path.to_str().unwrap());
+
+        let error = match server.bind() {
+            Ok(listener) => {
+                drop(listener);
+                panic!("symlink runtime directory must be rejected");
+            }
+            Err(error) => error,
+        };
+        assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+
+        let _ = fs::remove_file(&link);
+        let _ = fs::remove_dir_all(&target);
+    }
+
+    #[test]
+    fn peer_credentials_accept_the_current_effective_uid() {
+        let directory = private_test_dir("peer-credentials");
+        let path = directory.join("aweui-ipc.sock");
+        let listener = UnixListener::bind(&path).unwrap();
+        let client = UnixStream::connect(&path).unwrap();
+        let (server_stream, _) = listener.accept().unwrap();
+
+        assert!(IpcServer::peer_is_same_uid(&server_stream));
+
+        drop(client);
+        drop(server_stream);
+        drop(listener);
+        let _ = fs::remove_dir_all(&directory);
     }
 }
