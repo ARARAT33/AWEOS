@@ -451,3 +451,9 @@
 2. If userland passes, retarget PR #58 to `master` because its former PR #57 base is already integrated, then keep it open until review and relevant checks are complete.
 3. Address the Linux sync leftover-worktree failure in its existing PR/workflow stack; add a regression for ignored and untracked leftovers inside the disposable CI checkout.
 4. Continue the BIOS instruction/interrupt trace only after verifying the new IPC tests; do not treat an empty serial log as evidence of a kernel/rootfs failure.
+
+
+### IPC helper test correction — 2026-11-18
+- The first updated-head Userland Validation run #44237442383 failed at `cargo test --workspace`. The new shared `resolve_socket_path` helper was correctly moved into `aweui-framework`, but existing compositor-side regression tests still referenced it through the local `ipc` module.
+- Re-exported both `default_socket_path` and `resolve_socket_path` from `AWEUI/src/ipc.rs`. This keeps the compositor and bundled clients on the same implementation while preserving the existing compositor test call sites.
+- The failure is recorded as a failure; a fresh exact-head Userland Validation run is required. The full image workflow on the preceding head was still in progress at the last inspection and is not a validation result for this correction.
