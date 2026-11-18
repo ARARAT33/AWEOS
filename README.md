@@ -1,6 +1,8 @@
-# AWEOS Architecture & Complete OS Stack Documentation
+# AWEOS — Architecture and product status
 
-> **Current default desktop:** AYUI native desktop; Ubuntu Noble GNOME is the secondary graphical environment. AWEOS supplies its own Linux kernel build, Limine boot path, native utilities and OS integration; GNOME is the actual desktop session.
+> **Verified status (2026-11-18):** AWEOS is an x86_64 Linux-based OS project using the upstream Linux kernel and Limine. The repository can build kernel/rootfs/ISO artifacts, but the inspected CI has not yet demonstrated a successful BIOS/UEFI boot into a ready AYUI desktop. AYUI is an in-progress Rust/Smithay desktop; the alternate GNOME profile is based on Ubuntu Noble. AWEOS is not yet a fully independent kernel, production desktop, package ecosystem or distributed network platform.
+
+See docs/IMPLEMENTATION-STATUS.md for the verified/partial/not-implemented breakdown and current blockers.
 
 ## Current desktop and boot profiles
 
@@ -31,21 +33,13 @@ The current scripts/awepkg.sh utility supports read-only list and info queries a
 
 The C code under src/aosin/ is a legacy format prototype; it is not part of the active Cargo workspace or the default image build and must not be treated as a production package manager. The .asp, .asa and .aosin names are design/prototype labels, not verified production package formats.
 
-## AYUI Nativ## AYUI desktop
+## AYUI desktop
 
 The active image uses the Rust AYUI application under AWEUI/ and the Rust system applications under APPS/SYSTEM/. AYUI currently uses Smithay's Winit backend and is not yet validated as a bare-metal DRM/KMS desktop. The older C code under src/gui/ is a prototype and is not part of the current Cargo workspace/image build.
 
-## Safe OS System Updater (`src/updater/`)
-- **`aweos-update`**: Staged, atomic OS update tool validating candidate ISO images, staging rootfs updates, preserving `/home` user data, and managing boot target switching.
+## Legacy C tool prototypes
 
-## Standalone Graphical Installer (`src/installer/`)
-- **`aweos-installer`**: Interactive GUI and CLI installer supporting dual-boot installation, full-disk replacement (with explicit destructive confirmation), and BIOS/UEFI boot setup.
-
-## WLIN Cross-OS Installation Tool (`src/wlin/`)
-- **Cross-Platform Installer**: USB-less installation tool for Windows and Linux hosts.
-- **Windows Backend (`wlin.exe`)**: Compiled natively via MinGW-w64 (`x86_64-w64-mingw32-gcc`) with Win32 GUI controls (`CreateWindowEx`).
-- **Linux Backend (`wlin`)**: Native C Linux application.
-- **USB-Less Boot Staging**: Validates AWEOS ISO, stages kernel/initramfs onto boot staging partition, configures EFI/Limine boot path, and prepares computer to reboot directly into AWEOS installer.
+The C sources under src/updater/, src/installer/ and src/wlin/ contain historical prototypes and are not built by the active root Makefile or included in the current Cargo workspace image. The transaction engine intentionally refuses target-volume deployment. Do not treat the updater, graphical installer or USB-less migration flow as operational until their complete backends and destructive-operation tests are implemented.
 
 ## Current build system
 
