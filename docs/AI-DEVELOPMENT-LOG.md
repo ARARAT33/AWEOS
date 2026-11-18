@@ -367,3 +367,11 @@
 2. Run the full image workflow and inspect qemu-bios-initial-debug.log plus qemu-bios-debug.log from the bounded interrupt retry.
 3. Use the first interrupt/exception record to identify the failing boot stage before changing Limine, ISO layout, kernel config or initramfs.
 4. Keep the rootfs hand-off and AYUI first-frame markers strict; do not convert a QEMU timeout or empty serial log into a pass.
+
+
+### QEMU matrix correction — run UEFI independently of BIOS result
+- The current runner's all-mode path exits immediately when BIOS fails, so the workflow's combined "BIOS and UEFI" step did not actually exercise UEFI after the observed BIOS triple fault.
+- Split the workflow into independently reported BIOS and UEFI steps. Both run after a successful image build and /linux integrity check; UEFI uses an always-condition so a BIOS failure does not suppress it.
+- The bounded interrupt retry now runs only when the BIOS step itself failed, not merely when UEFI failed.
+- The post-QEMU /linux integrity check now runs even after a boot-test failure.
+- Extended the workflow regression to assert that BIOS and UEFI are separate steps and that the retry is tied to the BIOS result.
