@@ -333,3 +333,40 @@
    compositor first-frame marker for desktop readiness.
 5. Keep PR #55 and this dependent PR draft/unmerged until the full boot matrix
    passes on the reconciled head.
+
+
+## 2026-11-18 run — Disable unsafe package install/remove until trust and rollback exist
+
+### Evidence inspected
+- scripts/awepkg.sh was copied into the minimal rootfs as the package manager command.
+- Its previous install path extracted an unverified tar archive into /tmp, copied files into / with cp -rf, ignored copy errors with || true, and then printed a success message.
+- Its previous remove path trusted a metadata file as an ownership manifest and deleted listed absolute paths. There was no signature verification, archive traversal validation, atomic staging, package ownership database or rollback.
+- The C src/aosin/ prototype is not part of the active Cargo workspace or the root Makefile's image build. It must not be represented as a production package manager.
+
+### Changes on fix/awepkg-fail-closed-20261118
+- Reworked scripts/awepkg.sh to keep only read-only list and info operations.
+- Removed startup directory creation so even read-only commands do not mutate the package database.
+- Added strict package-name validation for info, preventing path traversal through the metadata filename.
+- Disabled install and remove with explicit errors explaining the missing trust, safe extraction, ownership and rollback components. They return non-zero before extracting, copying, deleting or creating metadata.
+- Added an environment-overridable database path for isolated tests without changing the production default.
+- Added scripts/test-awepkg-fail-closed.sh and wired it into make test-shell.
+- Updated README and added docs/IMPLEMENTATION-STATUS.md to distinguish verified functionality from prototypes and unimplemented production capabilities.
+
+### Files changed
+- scripts/awepkg.sh
+- scripts/test-awepkg-fail-closed.sh
+- Makefile
+- README.md
+- docs/IMPLEMENTATION-STATUS.md
+- docs/AI-DEVELOPMENT-LOG.md
+
+### Validation status
+- Fresh Userland Validation and full image checks are required for the exact PR head. No test pass is claimed yet.
+- The test asserts that read-only queries work, path traversal is rejected, install/remove fail, no payload is copied, and package metadata remains untouched.
+- No package archive was installed or removed and no system root filesystem was modified during this run.
+
+### Next priorities
+1. Inspect the exact-head shell regression and Cargo/CI results.
+2. Keep install/remove disabled until a signed package format, safe archive extraction, atomic deployment, ownership tracking and rollback are implemented.
+3. Continue the BIOS QEMU diagnosis independently; package-manager hardening does not resolve the boot triple fault.
+4. Reconcile the README and implementation-status document as actual product capabilities change.
