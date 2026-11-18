@@ -1,4 +1,4 @@
-use aweui_framework::ipc::{send_request, IpcRequest, IpcResponse};
+use aweui_framework::ipc::{default_socket_path, send_request, IpcRequest, IpcResponse};
 
 fn main() {
     aweui_framework::init();
@@ -6,7 +6,7 @@ fn main() {
     println!("         AWEUI Control Center           ");
     println!("========================================");
 
-    let socket = "/tmp/aweui-ipc.sock";
+    let socket = default_socket_path();
     println!("[Control Center] System Quick Service Status:");
 
     // Check network interface
@@ -16,7 +16,7 @@ fn main() {
         println!(" [Network] Querying network service...");
     }
 
-    match send_request(socket, IpcRequest::ToggleControlCenter) {
+    match send_request(&socket, IpcRequest::ToggleControlCenter) {
         Ok(IpcResponse::Success(msg)) => println!(" IPC Status: {}", msg),
         _ => println!(" IPC Status: Offline mode (compositor socket inactive)"),
     }

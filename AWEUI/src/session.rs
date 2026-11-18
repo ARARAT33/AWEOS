@@ -30,7 +30,7 @@ impl SessionManager {
 
     pub fn launch_app(&mut self, app_name: &str) -> Result<(), String> {
         let app = self.launcher.apps.iter()
-            .find(|a| a.name.eq_ignore_ascii_case(app_name) || a.exec == app_name)
+            .find(|a| a.name.eq_ignore_ascii_case(app_name))
             .cloned().ok_or_else(|| format!("application not found: {app_name}"))?;
         self.launch_command(&app.exec)
     }
@@ -76,10 +76,26 @@ fn shell_words(input: &str) -> Result<Vec<String>, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::shell_words;
+    use super::{shell_words, SessionManager};
+    use crate::launcher::AppInfo;
     #[test]
     fn parses_quoted_arguments() {
         assert_eq!(shell_words("app --title \"Hello World\"").unwrap(),
                    vec!["app", "--title", "Hello World"]);
+    }
+
+    #[test]
+    fn launch_app_requires_a_registered_application_name() {
+        let mut manager = SessionManager::new();
+        manager.launcher.apps.push(AppInfo {
+            name: "Known App".into(),
+            exec: "/usr/bin/known-app".into(),
+            icon: String::new(),
+            comment: String::new(),
+            categories: Vec::new(),
+        });
+
+        let error = manager.launch_app("/usr/bin/known-app").unwrap_err();
+        assert!(error.contains("application not found"));
     }
 }

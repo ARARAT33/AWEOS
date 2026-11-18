@@ -333,3 +333,127 @@
    compositor first-frame marker for desktop readiness.
 5. Keep PR #55 and this dependent PR draft/unmerged until the full boot matrix
    passes on the reconciled head.
+
+
+## 2026-11-17 run 3 — Correct AYUI IPC build failure and tighten runtime-path handling
+
+### Repository state and evidence
+- Continued on the existing PR #58 branch `fix/ayui-ipc-hardening-20261116`, stacked on PR #57. No new parallel branch or duplicate PR was created.
+- The default branch remains behind the active work stack; PR #58 is the current integration point for the AYUI IPC security fix.
+- Inspected full-image workflow run #650 and Userland Validation run #585 on the previous PR #58 head `9bb6df96899b2fd99c2366835059f459d55adb60`. Both failed at `cargo test --workspace`, before image assembly or boot tests.
+- The concrete compiler errors were:
+  - `FileType::is_socket` was unavailable because `std::os::unix::fs::FileTypeExt` was not imported.
+  - `UnixCredentials.uid` was used as a field; the nix API exposes `uid()`.
+- The full-image workflow's earlier PR #57 run #648 had reached BIOS/UEFI boot testing and failed there; the current PR #58 compile failure prevented that boot diagnosis from progressing.
+
+### Changes made on this branch
+- `AWEUI/src/ipc.rs`:
+  - Added the missing Unix file-type extension trait and corrected the peer-credential accessor.
+  - Moved the socket into a dedicated `aweui/` child directory below the user's runtime directory.
+  - Validates the socket directory as a real, non-symlink directory owned by the effective UID with owner-only (0700) permissions.
+  - No longer changes permissions on an existing parent directory. This avoids accidentally chmod'ing `/tmp`, `/run`, or an arbitrary directory supplied through `XDG_RUNTIME_DIR`.
+  - Creates only the dedicated socket directory, and only below an already validated private runtime directory.
+  - Restricts the socket to 0600 and verifies its type and owner after binding.
+  - Refuses non-socket paths and active listeners; only a socket whose connect attempt returns `ConnectionRefused` or `NotFound` is treated as stale.
+  - Compares `SO_PEERCRED` against the process effective UID.
+  - Added regression coverage for absolute/relative runtime paths, stale versus live sockets, non-socket path preservation, 0700/0600 permissions, unchanged unsafe-directory permissions, symlink rejection, and peer UID validation.
+- `docs/AI-DEVELOPMENT-LOG.md`:
+  - Restored the complete prior development history from the PR #57 parent branch. The previous PR #58 update had unintentionally replaced the existing 31 KB log with a short 3.3 KB entry and removed the earlier record.
+  - Appended this run's findings, implementation details, and validation status.
+
+### Files changed
+- `AWEUI/src/ipc.rs`
+- `docs/AI-DEVELOPMENT-LOG.md`
+
+### Validation status
+- The preceding CI attempts are recorded as failures, not passes: run #650 (full image) and run #585 (userland) both stopped at Rust compilation.
+- The corrective changes have been pushed to the existing PR #58 branch. Fresh GitHub Actions results are required; no local Rust/QEMU execution was available in this connector-only run.
+- No files under `/linux` were changed. No disk, partition, installer, updater, or user-data operations were performed.
+- No boot success is claimed. The BIOS/UEFI QEMU tests have not run on the corrected head yet.
+
+### Remaining security and product gaps
+- The rootfs currently launches AYUI as root (UID 0). The private runtime directory limits socket visibility, but a proper unprivileged desktop-session split is still required.
+- Same-UID clients can still request `LaunchCommand` and `PowerAction`; a separate authorization/capability model is still needed.
+- The IPC protocol still uses a single bounded read rather than explicit length framing; a future protocol revision should add framing and read deadlines without breaking existing clients.
+- AWEOS's distributed network platform, broad hardware support, production package signing/sandboxing, and a complete independent OS ecosystem remain unimplemented or partial; the current changes do not claim those capabilities.
+
+### Next run priorities
+1. Inspect fresh Userland Validation and full-image workflow runs on the corrected PR #58 head; read job logs if either fails.
+2. If Rust tests pass, continue to ISO construction and BIOS/UEFI boot checks without weakening the existing boot markers.
+3. Inspect the newest QEMU serial and emulator traces before changing the kernel, Limine, or initramfs.
+4. Complete the AYUI privilege split so the compositor and application session run as an unprivileged user; keep privileged operations behind a narrowly scoped broker.
+5. Continue the package-manager fail-closed work only after the boot pipeline's current failure is understood.
+
+
+### QEMU artifact inspection follow-up — 2026-11-17
+- Downloaded and inspected artifact #14198007121 from full-image run #43803675055 (PR #57 head).
+- The image-build log confirms the kernel, rootfs, initramfs, hybrid ISO, and Limine BIOS installation completed; the post-build `/linux` read-only check passed.
+- `build/qemu-bios.log` is 0 bytes. `build/qemu-bios-debug.log` is 2,713 bytes and records two CPU-reset snapshots at the BIOS reset vector (`CS=f000:EIP=fff0`), followed by `Triple fault`.
+- The trace was collected with `guest_errors,cpu_reset`, not the interrupt/exception trace flag. It therefore confirms a very early reset/triple-fault path but does not identify the first exception vector, failing instruction, or prove that the Linux kernel started. No rootfs or AYUI failure is established by this artifact.
+- Next diagnostic should be a bounded BIOS-only retry with `AWEOS_QEMU_DEBUG_FLAGS=guest_errors,cpu_reset,int`; keep the existing rootfs and compositor readiness assertions strict. Do not change kernel or initramfs behavior based only on the empty serial log.
+- The rootfs init script creates `/run/user/0` with mode 0700 before launching AYUI, so the new dedicated `/run/user/0/aweui` IPC directory has a valid private runtime parent in the current root-session boot model.
+
+
+### Additional regression coverage — 2026-11-17
+- Added `bind_creates_a_private_socket_directory_below_runtime_dir` to exercise the exact production layout (`$XDG_RUNTIME_DIR/aweui/aweui-ipc.sock`): the parent runtime directory must already be private, the dedicated child is created as 0700, and the socket is 0600.
+- Moved the test-only `PathBuf` import into the test module to avoid a production-build unused-import warning.
+- Code commit: `36e2c23f153ed74425a87dee33d7f93518472989`. Fresh Actions checks for this exact code head are pending; earlier in-progress runs target the preceding code commit and are not validation of this added test.
+
+
+### CI completion snapshot — 2026-11-17
+- Userland Validation run #44020963247 on code commit `24ac4b11e35c2ef17f7730e3730e8b4721b18fae`: **PASS**. Inspected the completed job log: shell/C transaction safety, repository boundary, Cargo metadata, `cargo test --workspace`, release builds, and all expected userland binary checks passed. The AYUI IPC regression tests (including stale/live socket distinction, path checks, permissions, and peer UID check) passed in that run.
+- Full image/boot run #44020963263 on the same code commit: kernel build, Rust workspace tests, and shell/rootfs regression steps had passed at the last poll; image assembly and BIOS/UEFI boot were still in progress. This is not a full image or boot pass.
+- A further regression was added on commit `36e2c23f153ed74425a87dee33d7f93518472989` to test creation of the dedicated runtime child directory used by the production socket path. Fresh Userland and full-image runs #44021270099/#44021270057 (plus duplicate push/PR-triggered runs #44021276128/#44021276106) were still in progress at the last poll. The successful run above does not include this additional test, so the exact latest head remains unvalidated.
+
+
+## 2026-11-18 run — Complete AYUI IPC client migration and remove legacy privileged wire actions
+
+### Repository and CI evidence inspected
+- Default branch: `master`, head `d4d300545558d660abb2127d297d3a00ef017dae`.
+- The latest safe branch-integration workflow run #44226925920 completed successfully. This confirms the workflow job itself completed; it does not establish that every historical branch was merged.
+- Current master full-image run #44077210131 built the kernel, rootfs and hybrid ISO and passed the shell/Rust tests and both `/linux` integrity checks before failing the BIOS QEMU test. Its serial log was empty; the emulator trace ended with `Triple fault`. This does not prove that Linux or rootfs init started.
+- Current master Linux sync run #44079563272 failed during the worktree replacement step: after `git rm -r linux`, `git read-tree --prefix=linux/ -u` reported `fatal: path 'linux' exists on disk, but not in the index`. No commit or push occurred.
+- PR #58's existing userland check passed on its prior head, but a reviewer identified that the bundled Settings, Control Center and Diagnostics clients still used `/tmp/aweui-ipc.sock` after the compositor moved to a private runtime socket.
+
+### Changes made on the existing PR #58 branch
+- Added the `aweui-framework` dependency to the compositor so the desktop and its bundled clients share one IPC path resolver instead of maintaining independent copies.
+- Added `resolve_socket_path`, `default_socket_path` and a live-listener probe to `AWEUI/framework/src/lib.rs`, with tests for absolute, missing, empty and relative runtime-directory values.
+- Re-exported the shared resolver from `AWEUI/src/ipc.rs`; the compositor continues to bind below its owner-only runtime directory.
+- Updated Settings and Control Center to connect to the same resolved private socket.
+- Updated Diagnostics to test the live IPC listener at the resolved path rather than checking the obsolete public `/tmp` pathname.
+- Removed `LaunchCommand` and `PowerAction` from the IPC wire enum and request dispatcher. The previous same-UID check alone was not a sufficient authorization model for arbitrary command execution or system power actions, particularly while the current minimal rootfs still starts the compositor as UID 0. Added a regression asserting that legacy serialized requests are rejected.
+- Restricted `LaunchApp` lookup to registered application names; callers can no longer pass a raw executable string as an alternate lookup key.
+
+### Files changed
+- `AWEUI/Cargo.toml`
+- `AWEUI/framework/src/lib.rs`
+- `AWEUI/src/ipc.rs`
+- `AWEUI/src/session.rs`
+- `APPS/SYSTEM/aweui-settings/src/main.rs`
+- `APPS/SYSTEM/aweui-control-center/src/main.rs`
+- `APPS/SYSTEM/aweui-diagnostics/src/main.rs`
+- `docs/AI-DEVELOPMENT-LOG.md`
+
+### Validation status
+- The edits are committed to the existing PR branch through GitHub file updates. Fresh GitHub Actions runs are required for the new exact head; no test pass is claimed for these changes yet.
+- Prior to this edit, PR #58's userland job had passed, but its full-image job still failed in QEMU before the rootfs hand-off marker. The latest master BIOS trace also records a triple fault; neither result is a desktop boot pass.
+- No changes were made under `/linux`. No disk, partition, installer or user-data operation was performed.
+
+### Remaining issues
+1. Run the new workspace tests and inspect the exact CI results for the shared IPC helper and legacy-request rejection tests.
+2. Complete a real unprivileged AYUI session split; the minimal rootfs still starts the compositor as root, so owner-only IPC is not a substitute for a least-privilege desktop session.
+3. Diagnose the BIOS reset with a bounded `guest_errors,cpu_reset,int` trace and preserve the strict rootfs/compositor readiness assertions.
+4. Fix the Linux sync worktree replacement failure without weakening the `/linux`-only boundary or deleting anything outside that subtree.
+5. Continue the production package trust, sandbox, network platform and hardware-support work only with real implementation and tests.
+
+### Next run priorities
+1. Inspect Userland Validation and full image/boot checks on the updated PR #58 head.
+2. If userland passes, retarget PR #58 to `master` because its former PR #57 base is already integrated, then keep it open until review and relevant checks are complete.
+3. Address the Linux sync leftover-worktree failure in its existing PR/workflow stack; add a regression for ignored and untracked leftovers inside the disposable CI checkout.
+4. Continue the BIOS instruction/interrupt trace only after verifying the new IPC tests; do not treat an empty serial log as evidence of a kernel/rootfs failure.
+
+
+### IPC helper test correction — 2026-11-18
+- The first updated-head Userland Validation run #44237442383 failed at `cargo test --workspace`. The new shared `resolve_socket_path` helper was correctly moved into `aweui-framework`, but existing compositor-side regression tests still referenced it through the local `ipc` module.
+- Re-exported both `default_socket_path` and `resolve_socket_path` from `AWEUI/src/ipc.rs`. This keeps the compositor and bundled clients on the same implementation while preserving the existing compositor test call sites.
+- The failure is recorded as a failure; a fresh exact-head Userland Validation run is required. The full image workflow on the preceding head was still in progress at the last inspection and is not a validation result for this correction.

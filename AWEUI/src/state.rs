@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 use crate::config::AweuiConfig;
 use crate::desktop::DesktopShell;
 use crate::notifications::NotificationDaemon;
-use crate::ipc::IpcServer;
+use crate::ipc::{IpcServer, default_socket_path};
 use crate::session::SessionManager;
 use crate::wm::WindowManager;
 use crate::workspaces::WorkspaceManager;
@@ -27,7 +27,9 @@ impl AweuiState {
         let config = AweuiConfig::load();
         let wm = WindowManager::new(config.wm.clone());
         let workspaces = WorkspaceManager::new(config.wm.workspace_count);
-        let ipc_server = Arc::new(Mutex::new(IpcServer::new("/tmp/aweui-ipc.sock")));
+        // The IPC socket lives in the session runtime directory (mode 0700),
+        // never in world-writable /tmp.
+        let ipc_server = Arc::new(Mutex::new(IpcServer::new(&default_socket_path())));
         let desktop = DesktopShell::new(&config.desktop.theme, config.panel.height, &config.panel.position);
         Self {
             config,
