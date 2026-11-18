@@ -76,6 +76,7 @@ jobs:
         run: make test-shell
 
       - name: Build AWEOS images
+        id: image_build
         run: |
           set -o pipefail
           AWEOS_LIMINE_CONFIG=Bootloader/x86_64/limine-ci.conf make image 2>&1 | tee build-make-image.log
@@ -98,14 +99,21 @@ jobs:
           fi
 
       - name: Verify /linux after build
+        id: linux_after_build
         run: ./scripts/verify-linux-readonly.sh
 
-      - name: Boot-test BIOS and UEFI ISO
-        id: qemu_boot
-        run: make test-qemu
+      - name: Boot-test BIOS ISO
+        id: qemu_bios
+        if: always() && steps.image_build.outcome == 'success' && steps.linux_after_build.outcome == 'success'
+        run: bash ./scripts/run-qemu-tests.sh build bios
+
+      - name: Boot-test UEFI ISO
+        id: qemu_uefi
+        if: always() && steps.image_build.outcome == 'success' && steps.linux_after_build.outcome == 'success'
+        run: bash ./scripts/run-qemu-tests.sh build uefi
 
       - name: Retry BIOS with a bounded interrupt-level trace
-        if: failure() && steps.qemu_boot.outcome == 'failure'
+        if: failure() && steps.qemu_bios.outcome == 'failure'
         env:
           AWEOS_QEMU_DEBUG_FLAGS: guest_errors,cpu_reset,int
           AWEOS_QEMU_TIMEOUT_SECONDS: '15'
@@ -173,6 +181,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Verify /linux after QEMU tests
+        if: always()
         run: ./scripts/verify-linux-readonly.sh
 
       - name: Verify release artifacts
