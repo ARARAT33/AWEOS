@@ -36,6 +36,8 @@ test_boot() {
     local debuglog="${BUILD_DIR}/qemu-${mode_lc}-debug.log"
     local debug_flags="${AWEOS_QEMU_DEBUG_FLAGS:-guest_errors,cpu_reset}"
     local timeout_seconds="${AWEOS_QEMU_TIMEOUT_SECONDS:-100}"
+    local dfilter="${AWEOS_QEMU_DFILTER:-}"
+    local -a dfilter_args=()
     shift 2
 
     case "${timeout_seconds}" in
@@ -49,12 +51,21 @@ test_boot() {
         return 2
     fi
 
+    if [[ -n "${dfilter}" ]]; then
+        if [[ ! "${dfilter}" =~ ^0x[[:xdigit:]]+\.\.0x[[:xdigit:]]+$ ]]; then
+            echo "ERROR: AWEOS_QEMU_DFILTER must use QEMU's 0xSTART..0xEND range syntax." >&2
+            return 2
+        fi
+        dfilter_args=(-dfilter "${dfilter}")
+    fi
+
     echo "Testing AWEOS ${mode} boot..."
     echo "QEMU debug trace: ${debuglog} (flags: ${debug_flags})"
+    if [[ -n "${dfilter}" ]]; then echo "QEMU debug address filter: ${dfilter}"; fi
     rm -f "${logfile}" "${debuglog}"
 
     set +e
-    timeout "${timeout_seconds}s" "$@" -d "${debug_flags}" -D "${debuglog}" >"${logfile}" 2>&1
+    timeout "${timeout_seconds}s" "$@" "${dfilter_args[@]}" -d "${debug_flags}" -D "${debuglog}" >"${logfile}" 2>&1
     local rc=$?
     set -e
 

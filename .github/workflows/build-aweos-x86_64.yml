@@ -112,10 +112,11 @@ jobs:
         if: always() && steps.image_build.outcome == 'success' && steps.linux_after_build.outcome == 'success'
         run: bash ./scripts/run-qemu-tests.sh build uefi
 
-      - name: Retry BIOS with a bounded interrupt-level trace
+      - name: Retry BIOS with a bounded instruction and interrupt trace
         if: failure() && steps.qemu_bios.outcome == 'failure'
         env:
-          AWEOS_QEMU_DEBUG_FLAGS: guest_errors,cpu_reset,int
+          AWEOS_QEMU_DEBUG_FLAGS: in_asm,int,guest_errors,cpu_reset
+          AWEOS_QEMU_DFILTER: "0x3c00000..0x3d00000"
           AWEOS_QEMU_TIMEOUT_SECONDS: '15'
         run: |
           set -euo pipefail
@@ -134,10 +135,10 @@ jobs:
           bash scripts/run-qemu-tests.sh build bios > build/qemu-bios-interrupt-retry.log 2>&1
           retry_status=$?
           set -e
-          echo "BIOS interrupt-trace retry exit status: $retry_status" >> "$GITHUB_STEP_SUMMARY"
+          echo "BIOS instruction/interrupt-trace retry exit status: $retry_status" >> "$GITHUB_STEP_SUMMARY"
           tail -n 100 build/qemu-bios-interrupt-retry.log >> "$GITHUB_STEP_SUMMARY" || true
           if [ -s build/qemu-bios-debug.log ]; then
-            echo "## BIOS interrupt trace tail" >> "$GITHUB_STEP_SUMMARY"
+            echo "## BIOS filtered instruction/interrupt trace tail" >> "$GITHUB_STEP_SUMMARY"
             tail -n 100 build/qemu-bios-debug.log >> "$GITHUB_STEP_SUMMARY"
           fi
           # This is diagnostic-only. The original QEMU step remains failed.
