@@ -35,14 +35,26 @@ test_boot() {
     local mode_lc="${mode,,}"
     local debuglog="${BUILD_DIR}/qemu-${mode_lc}-debug.log"
     local debug_flags="${AWEOS_QEMU_DEBUG_FLAGS:-guest_errors,cpu_reset}"
+    local timeout_seconds="${AWEOS_QEMU_TIMEOUT_SECONDS:-100}"
     shift 2
+
+    case "${timeout_seconds}" in
+        ''|*[!0-9]*)
+            echo "ERROR: AWEOS_QEMU_TIMEOUT_SECONDS must be a positive integer." >&2
+            return 2
+            ;;
+    esac
+    if [ "${timeout_seconds}" -lt 1 ]; then
+        echo "ERROR: AWEOS_QEMU_TIMEOUT_SECONDS must be greater than zero." >&2
+        return 2
+    fi
 
     echo "Testing AWEOS ${mode} boot..."
     echo "QEMU debug trace: ${debuglog} (flags: ${debug_flags})"
     rm -f "${logfile}" "${debuglog}"
 
     set +e
-    timeout 100s "$@" -d "${debug_flags}" -D "${debuglog}" >"${logfile}" 2>&1
+    timeout "${timeout_seconds}s" "$@" -d "${debug_flags}" -D "${debuglog}" >"${logfile}" 2>&1
     local rc=$?
     set -e
 
