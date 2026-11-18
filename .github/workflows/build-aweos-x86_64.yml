@@ -101,7 +101,39 @@ jobs:
         run: ./scripts/verify-linux-readonly.sh
 
       - name: Boot-test BIOS and UEFI ISO
+        id: qemu_boot
         run: make test-qemu
+
+      - name: Retry BIOS with a bounded interrupt-level trace
+        if: failure() && steps.qemu_boot.outcome == 'failure'
+        env:
+          AWEOS_QEMU_DEBUG_FLAGS: guest_errors,cpu_reset,int
+          AWEOS_QEMU_TIMEOUT_SECONDS: '15'
+        run: |
+          set -euo pipefail
+          # Preserve the original low-volume trace before the retry overwrites it.
+          if [ -f build/qemu-bios.log ]; then
+            cp build/qemu-bios.log build/qemu-bios-initial.log
+          fi
+          if [ -f build/qemu-bios-debug.log ]; then
+            cp build/qemu-bios-debug.log build/qemu-bios-initial-debug.log
+          fi
+
+          # Keep the diagnostic artifact bounded even if the guest begins
+          # generating a high volume of interrupt trace records.
+          ulimit -f 65536
+          set +e
+          bash scripts/run-qemu-tests.sh build bios > build/qemu-bios-interrupt-retry.log 2>&1
+          retry_status=$?
+          set -e
+          echo "BIOS interrupt-trace retry exit status: $retry_status" >> "$GITHUB_STEP_SUMMARY"
+          tail -n 100 build/qemu-bios-interrupt-retry.log >> "$GITHUB_STEP_SUMMARY" || true
+          if [ -s build/qemu-bios-debug.log ]; then
+            echo "## BIOS interrupt trace tail" >> "$GITHUB_STEP_SUMMARY"
+            tail -n 100 build/qemu-bios-debug.log >> "$GITHUB_STEP_SUMMARY"
+          fi
+          # This is diagnostic-only. The original QEMU step remains failed.
+          exit 0
 
       - name: Publish QEMU boot failure diagnostics
         if: failure()
@@ -135,6 +167,9 @@ jobs:
             build/qemu-uefi.log
             build/qemu-bios-debug.log
             build/qemu-uefi-debug.log
+            build/qemu-bios-initial.log
+            build/qemu-bios-initial-debug.log
+            build/qemu-bios-interrupt-retry.log
           if-no-files-found: ignore
 
       - name: Verify /linux after QEMU tests
