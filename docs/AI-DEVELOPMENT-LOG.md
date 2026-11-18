@@ -333,3 +333,37 @@
    compositor first-frame marker for desktop readiness.
 5. Keep PR #55 and this dependent PR draft/unmerged until the full boot matrix
    passes on the reconciled head.
+
+
+## 2026-11-18 run — Add bounded BIOS interrupt trace after reset/triple-fault failure
+
+### Evidence inspected
+- Downloaded and inspected the diagnostic artifact from master build run #44077210131.
+- The BIOS serial log was empty (0 bytes). The QEMU debug log was 2,713 bytes and contained two CPU-reset register dumps followed by `Triple fault`.
+- The captured reset state was at the x86 reset vector (CS=f000, EIP=0000fff0), with no guest serial output. The current trace used only `guest_errors,cpu_reset`; it did not include the interrupt/exception trace needed to identify the first failing vector.
+- Kernel/rootfs/ISO assembly had completed successfully in that run. The failure is therefore in the boot path before the expected rootfs/compositor readiness markers, but the available trace does not yet isolate whether the BIOS/bootloader/ISO path is responsible.
+
+### Changes on fix/qemu-bios-interrupt-trace-20261118
+- Added a validated AWEOS_QEMU_TIMEOUT_SECONDS override to the QEMU runner, retaining the 100-second default and rejecting zero/non-numeric values.
+- Added a regression for bounded timeout configuration and invalid timeout rejection.
+- Added a BIOS-only retry that runs only when the original QEMU boot step fails, using guest_errors,cpu_reset,int and a 15-second timeout.
+- The retry preserves the original low-volume serial/debug logs before replacing the trace, caps the debug file at 32 MiB, and publishes the interrupt-trace tail to the Actions summary.
+- The retry is diagnostic-only and does not change the original failing QEMU step's conclusion.
+- Added the initial and retry logs to the diagnostics artifact.
+
+### Files changed
+- scripts/run-qemu-tests.sh
+- scripts/test-qemu-boot-readiness.sh
+- .github/workflows/build-aweos-x86_64.yml
+- docs/AI-DEVELOPMENT-LOG.md
+
+### Validation status
+- Fresh Userland Validation and full image/boot checks are required for the exact PR head.
+- The new timeout regression has not yet run in GitHub Actions. No boot fix or successful boot is claimed.
+- No kernel source under /linux was modified.
+
+### Next priorities
+1. Inspect the exact-head Userland Validation result.
+2. Run the full image workflow and inspect qemu-bios-initial-debug.log plus qemu-bios-debug.log from the bounded interrupt retry.
+3. Use the first interrupt/exception record to identify the failing boot stage before changing Limine, ISO layout, kernel config or initramfs.
+4. Keep the rootfs hand-off and AYUI first-frame markers strict; do not convert a QEMU timeout or empty serial log into a pass.
