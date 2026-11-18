@@ -333,3 +333,57 @@
    compositor first-frame marker for desktop readiness.
 5. Keep PR #55 and this dependent PR draft/unmerged until the full boot matrix
    passes on the reconciled head.
+
+
+## 2026-11-18 run — Make upstream Linux sync resilient to ignored worktree leftovers
+
+### Evidence inspected
+- Current master Linux sync run #44079563272 completed the upstream fetch and clean-check steps, then failed in `Update ONLY /linux`.
+- Exact failure from the Actions job log: `fatal: path 'linux' exists on disk, but not in the index`.
+- The workflow had removed tracked `/linux` paths from the index with `git rm`, but the directory remained on disk. Git's `read-tree --prefix=linux/ -u` correctly refused to populate a path that still existed outside the index.
+- Existing PR #51 already contains the staged-subtree verifier and its exact/mismatch regression, but its branch is 86 commits behind current master and is not a safe integration base. This follow-up is therefore based directly on current master and preserves that existing branch/PR.
+
+### Changes on `fix/linux-sync-worktree-cleanup-20261118`
+- Added `scripts/verify-index-subtree.sh` and its regression from the existing PR #51 work, comparing the staged index's `linux` tree with the upstream root tree. This avoids the invalid `git rev-parse :linux` expression.
+- Added `scripts/replace-linux-worktree.sh`:
+  - Requires the explicit `AWEOS_ALLOW_LINUX_REPLACEMENT=1` opt-in.
+  - Rejects symlink/non-directory `linux` paths, missing kernel markers, unresolved upstream refs and any tracked, staged or ordinary untracked worktree changes.
+  - Removes the tracked subtree, then runs a scoped `git clean -fdx -- linux/` only for ignored leftovers under the exact `/linux` directory. It does not run repository-wide cleanup and does not force-remove nested repositories.
+  - Requires the directory to be gone before `git read-tree` and verifies the staged subtree exactly matches the upstream ref.
+  - Verifies that every staged path is under `linux/` before returning success.
+- Added `scripts/test-linux-sync-worktree-replacement.sh`, which creates isolated old/upstream Git repositories, models an ignored generated kernel file that survives `git rm`, verifies exact replacement, confirms an outside sentinel is unchanged, and checks that missing opt-in and dirty worktrees fail before modifying the subtree.
+- Updated the scheduled sync workflow to use the guarded replacement helper.
+- Added both Linux-sync regressions to `make test-shell`, which is already exercised by Userland Validation and the full image workflow.
+
+### Files changed
+- `.github/workflows/aweos-linux-sync.yml`
+- `Makefile`
+- `scripts/verify-index-subtree.sh`
+- `scripts/test-linux-sync-index-tree.sh`
+- `scripts/replace-linux-worktree.sh`
+- `scripts/test-linux-sync-worktree-replacement.sh`
+- `docs/AI-DEVELOPMENT-LOG.md`
+
+### Validation status
+- The GitHub branch and source changes are prepared; fresh Userland Validation and full image checks are required for this exact head.
+- This connector run did not execute the shell harness locally. No Linux upstream synchronization or push to `master` was performed.
+- No files under the repository's current `/linux` tree were changed by this run; the helper will only execute in the scheduled/manual sync workflow after its explicit guard and clean-check.
+- The exact Actions failure above is recorded as a failure, not reclassified as a successful sync.
+
+### Remaining issues
+1. Confirm both new shell regressions pass on the new branch.
+2. Run the scheduled/manual Linux sync only after PR review and passing tests; verify the resulting staged tree matches the fetched upstream commit and that no paths outside `/linux` are staged.
+3. Continue investigating the independent BIOS QEMU triple fault; the sync change does not affect kernel boot behavior.
+4. Keep upstream synchronization scoped to `/linux`; do not alter the source tree during ordinary build/test jobs.
+
+### Next run priorities
+1. Inspect the exact-head Userland Validation and image workflow results for this PR.
+2. If tests pass, review the helper's Actions behavior and keep the PR unmerged until the guarded sync has been exercised in a disposable CI checkout.
+3. Revisit PR #51 only to mark its older branch as superseded; do not force-update or delete it.
+
+
+### Linux sync test-path correction — 2026-11-18
+- The first Userland Validation attempts for PR #59 reached `make test-shell` and passed the existing shell regressions plus the staged-index exact/mismatch test.
+- The new worktree replacement fixture then failed because the helper invoked `scripts/verify-index-subtree.sh` relative to the disposable fixture repository, not relative to the helper's own checkout.
+- Updated the helper to resolve its own script directory before changing into the Git root, then invoke the verifier by that absolute script path. This preserves normal workflow behavior and makes the isolated fixture self-contained.
+- The earlier runs are failures, not passes. A fresh exact-head Userland Validation run is required after this correction.

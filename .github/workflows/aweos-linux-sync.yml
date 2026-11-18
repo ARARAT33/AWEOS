@@ -72,16 +72,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # HARD BOUNDARY: this workflow is allowed to change /linux only.
-          git rm -r --quiet -- linux
-          git read-tree --prefix=linux/ -u linux-upstream/master
-
-          # Exact upstream-tree verification.
-          test -f linux/Makefile
-          test -f linux/Kconfig
-          test -d linux/kernel
-          test -d linux/arch
-          test "$(git rev-parse :linux)" = "$(git rev-parse linux-upstream/master^{tree})"
+          # HARD BOUNDARY: the helper refuses dirty worktrees, requires an
+          # explicit CI opt-in, cleans ignored leftovers only under /linux,
+          # and verifies the staged subtree against the upstream root tree.
+          AWEOS_ALLOW_LINUX_REPLACEMENT=1 bash scripts/replace-linux-worktree.sh linux-upstream/master
 
       - name: Verify NOTHING outside /linux changed
         if: steps.compare.outputs.changed == 'true'
