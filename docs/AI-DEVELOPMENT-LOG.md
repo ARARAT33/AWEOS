@@ -333,3 +333,55 @@
    compositor first-frame marker for desktop readiness.
 5. Keep PR #55 and this dependent PR draft/unmerged until the full boot matrix
    passes on the reconciled head.
+
+## 2026-11-18 (run 2) — Device Identity Manager lands; boot issue stays blocked on CI evidence
+
+### Continue-from inspection
+- Resumed after the 2026-11-18 run that opened PRs #59-#63.
+- All six open PRs are mergeable (no conflicts) with `mergeable_state: unstable`
+  (checks outstanding or failing); no CI check data is retrievable from this
+  connector-only environment, so no pass was assumed for any PR and nothing
+  was merged, per the no-unverified-merges rule.
+- PR #58 (AYUI IPC hardening) remains the only non-draft PR awaiting CI review;
+  PRs #59-#63 stay draft. #59 is based on current master and is ready for
+  exact-head CI evidence.
+
+### Implemented (PR #64, branch `feat/device-identity-manager-20261118`)
+- New Network Platform module 2 (Device Identity Manager) as a
+  dependency-free C core:
+  - `src/core/netid.c` / `src/core/netid.h`: FIPS 180-4 SHA-256,
+    RFC 2104/RFC 4231 HMAC-SHA256, device identity derivation under the
+    versioned label `AWEOS-NETID-V1`, bounded challenge/response via
+    `aweos_netid_respond`, and constant-time `aweos_netid_mac_equal`.
+    No dynamic allocation; fail-closed error codes; no secrets logged.
+  - `scripts/test-netid.sh`: regression covering FIPS 180-4 vectors, RFC 4231
+    Test Case 1, deterministic derivation, fingerprint format
+    (`AWE-XXXXXXXX-XXXXXXXX-XXXXXXXX`), challenge/response accept, and
+    rejection of tampered MACs, wrong nonces, foreign identities, oversized
+    nonces and NULL parameters.
+  - `Makefile`: added to `test-shell`.
+  - `docs/NETWORK-IDENTITY.md`: scope, constraints, and non-goals.
+
+### Test results
+- In an isolated workspace the new regression compiled with
+  `cc -std=c11 -Wall -Wextra -Werror` and passed all assertions.
+- No GitHub Actions result is claimed for any PR this run; CI triggers were
+  submitted by the branch pushes.
+- The BIOS triple fault (PRs #61/#63) is unchanged: diagnosis requires the
+  QEMU diagnostics artifact from the next full image workflow run.
+
+### Unresolved issues
+1. Boot still fails before the rootfs hand-off marker; the emulator trace from
+   the PR #61/#63 diagnostics run must be inspected before kernel/ISO changes.
+2. AYUI IPC authorization (PR #58) and awepkg fail-closed merge (PR #60) still
+   await exact-head CI evidence.
+3. Stacked PRs #56 and #53 remain pinned to older bases until their stacks
+   reconcile against master.
+
+### Next run priorities
+1. Inspect the latest CI results for PRs #58-#64 and read any new QEMU
+   diagnostics artifacts before touching bootloader/kernel behavior.
+2. If PR #63's baseline-ISA fix passes the full boot matrix, prepare the
+   integration order (#58 non-draft first, then #60, #61, #62, #63, #64).
+3. Begin Connection Manager (module 4) handshake on top of the identity
+   primitive from PR #64.
