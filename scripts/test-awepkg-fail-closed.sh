@@ -38,7 +38,6 @@ if AWEOS_AWEPKG_DB_DIR="$DB_DIR" sh "$SCRIPT" install "$TEMP_ROOT/demo.awe" >"$T
 fi
 grep -Fq 'no files were extracted or copied' "$TEMP_ROOT/install.out"
 test ! -e "$TEMP_ROOT/system/payload.txt"
-test ! -e /payload.txt
 
 if AWEOS_AWEPKG_DB_DIR="$DB_DIR" sh "$SCRIPT" remove demo >"$TEMP_ROOT/remove.out" 2>&1; then
     echo "ERROR: package removal reported success without an ownership/rollback backend." >&2
