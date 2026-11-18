@@ -17,16 +17,19 @@ set -eu
 printf '%s\n' "$@" > "$AWEOS_QEMU_ARGS_LOG"
 debug_log=""
 debug_flags=""
+debug_filter=""
 while [ "$#" -gt 0 ]; do
     case "$1" in
         -D) shift; debug_log="${1:-}" ;;
         -d) shift; debug_flags="${1:-}" ;;
+        -dfilter) shift; debug_filter="${1:-}" ;;
     esac
     shift
 done
 [ -n "$debug_log" ] || { echo "ERROR: QEMU did not receive -D debug log path." >&2; exit 23; }
 [ -n "$debug_flags" ] || { echo "ERROR: QEMU did not receive -d debug flags." >&2; exit 24; }
 printf 'fake QEMU debug trace flags=%s\n' "$debug_flags" > "$debug_log"
+[ -z "$debug_filter" ] || printf 'fake QEMU debug filter=%s\n' "$debug_filter" >> "$debug_log"
 cat "$AWEOS_QEMU_FAKE_LOG"
 QEMU
 chmod 0755 "$FAKE_BIN/qemu-system-x86_64"
@@ -55,6 +58,36 @@ grep -Fxq -- "$BUILD_DIR/qemu-bios-debug.log" "$TEMP_ROOT/qemu-bios.args"
 grep -Fxq -- '-d' "$TEMP_ROOT/qemu-bios.args"
 grep -Fxq -- 'guest_errors,cpu_reset' "$TEMP_ROOT/qemu-bios.args"
 grep -Fq 'fake QEMU debug trace flags=guest_errors,cpu_reset' "$BUILD_DIR/qemu-bios-debug.log"
+if grep -Fxq -- '-dfilter' "$TEMP_ROOT/qemu-bios.args"; then
+    echo "ERROR: default QEMU run unexpectedly received a diagnostic address filter." >&2
+    exit 1
+fi
+
+# A caller can bound a diagnostic retry and invalid timeout values fail closed.
+AWEOS_QEMU_TIMEOUT_SECONDS=2 PATH="$FAKE_BIN:$PATH" AWEOS_QEMU_FAKE_LOG="$TEMP_ROOT/compositor-ready.log" \
+    AWEOS_QEMU_ARGS_LOG="$TEMP_ROOT/qemu-bios-bounded.args" \
+    bash "$SCRIPT_DIR/run-qemu-tests.sh" "$BUILD_DIR" bios > "$TEMP_ROOT/bounded.out" 2>&1
+if AWEOS_QEMU_TIMEOUT_SECONDS=invalid PATH="$FAKE_BIN:$PATH" AWEOS_QEMU_FAKE_LOG="$TEMP_ROOT/compositor-ready.log" \
+    AWEOS_QEMU_ARGS_LOG="$TEMP_ROOT/qemu-bios-invalid.args" \
+    bash "$SCRIPT_DIR/run-qemu-tests.sh" "$BUILD_DIR" bios > "$TEMP_ROOT/invalid-timeout.out" 2>&1; then
+    echo "ERROR: QEMU runner accepted an invalid timeout value." >&2
+    exit 1
+fi
+grep -Fq 'AWEOS_QEMU_TIMEOUT_SECONDS must be a positive integer' "$TEMP_ROOT/invalid-timeout.out"
+
+# The targeted retry captures instruction bytes only in the known failing image range.
+AWEOS_QEMU_DEBUG_FLAGS="in_asm,int,guest_errors,cpu_reset" AWEOS_QEMU_DFILTER="0x3c00000..0x3d00000" PATH="$FAKE_BIN:$PATH" AWEOS_QEMU_FAKE_LOG="$TEMP_ROOT/compositor-ready.log" AWEOS_QEMU_ARGS_LOG="$TEMP_ROOT/qemu-bios-instrtrace.args" bash "$SCRIPT_DIR/run-qemu-tests.sh" "$BUILD_DIR" bios > "$TEMP_ROOT/instrtrace.out" 2>&1
+grep -Fxq -- '-dfilter' "$TEMP_ROOT/qemu-bios-instrtrace.args"
+grep -Fxq -- '0x3c00000..0x3d00000' "$TEMP_ROOT/qemu-bios-instrtrace.args"
+grep -Fq 'fake QEMU debug trace flags=in_asm,int,guest_errors,cpu_reset' "$BUILD_DIR/qemu-bios-debug.log"
+grep -Fq 'fake QEMU debug filter=0x3c00000..0x3d00000' "$BUILD_DIR/qemu-bios-debug.log"
+
+# Invalid address filters fail before QEMU can produce a false-positive result.
+if AWEOS_QEMU_DFILTER="0x3c00000-0x3d00000" PATH="$FAKE_BIN:$PATH" AWEOS_QEMU_FAKE_LOG="$TEMP_ROOT/compositor-ready.log" AWEOS_QEMU_ARGS_LOG="$TEMP_ROOT/qemu-bios-invalid-filter.args" bash "$SCRIPT_DIR/run-qemu-tests.sh" "$BUILD_DIR" bios > "$TEMP_ROOT/invalid-filter.out" 2>&1; then
+    echo "ERROR: QEMU runner accepted an invalid address filter." >&2
+    exit 1
+fi
+grep -Fq 'AWEOS_QEMU_DFILTER must use QEMU' "$TEMP_ROOT/invalid-filter.out"
 
 # A present OVMF image must run the UEFI path with the same readiness checks.
 printf x > "$TEMP_ROOT/OVMF.fd"
@@ -75,4 +108,4 @@ if AWEOS_OVMF_FIRMWARE="$TEMP_ROOT/missing-ovmf.fd" \
 fi
 grep -Fq 'ERROR: OVMF firmware not found; UEFI boot test is required.' "$TEMP_ROOT/uefi-missing.out"
 
-echo "PASS: QEMU boot validation requires compositor readiness and cannot skip UEFI firmware."
+echo "PASS: QEMU boot validation requires compositor readiness, validates filtered instruction tracing, and cannot skip UEFI firmware."

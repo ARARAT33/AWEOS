@@ -27,4 +27,9 @@ if ! grep -Eq '^[[:space:]]*@?[[:space:]]*bash[[:space:]]+\./scripts/run-qemu-te
     exit 1
 fi
 
-echo "PASS: test-qemu invokes the mode-100644 QEMU runner through Bash."
+WORKFLOW="$REPO_ROOT/.github/workflows/build-aweos-x86_64.yml"
+grep -Fq 'name: Boot-test BIOS ISO' "$WORKFLOW"
+grep -Fq 'name: Boot-test UEFI ISO' "$WORKFLOW"
+grep -Fq "if: failure() && steps.qemu_bios.outcome == 'failure'" "$WORKFLOW"
+
+echo "PASS: test-qemu invokes the mode-100644 runner and CI tests BIOS/UEFI independently."

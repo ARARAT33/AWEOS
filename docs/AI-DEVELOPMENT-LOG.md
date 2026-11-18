@@ -333,3 +333,80 @@
    compositor first-frame marker for desktop readiness.
 5. Keep PR #55 and this dependent PR draft/unmerged until the full boot matrix
    passes on the reconciled head.
+
+
+## 2026-11-18 run — Add bounded BIOS interrupt trace after reset/triple-fault failure
+
+### Evidence inspected
+- Downloaded and inspected the diagnostic artifact from master build run #44077210131.
+- The BIOS serial log was empty (0 bytes). The QEMU debug log was 2,713 bytes and contained two CPU-reset register dumps followed by `Triple fault`.
+- The captured reset state was at the x86 reset vector (CS=f000, EIP=0000fff0), with no guest serial output. The current trace used only `guest_errors,cpu_reset`; it did not include the interrupt/exception trace needed to identify the first failing vector.
+- Kernel/rootfs/ISO assembly had completed successfully in that run. The failure is therefore in the boot path before the expected rootfs/compositor readiness markers, but the available trace does not yet isolate whether the BIOS/bootloader/ISO path is responsible.
+
+### Changes on fix/qemu-bios-interrupt-trace-20261118
+- Added a validated AWEOS_QEMU_TIMEOUT_SECONDS override to the QEMU runner, retaining the 100-second default and rejecting zero/non-numeric values.
+- Added a regression for bounded timeout configuration and invalid timeout rejection.
+- Added a BIOS-only retry that runs only when the original QEMU boot step fails, using guest_errors,cpu_reset,int and a 15-second timeout.
+- The retry preserves the original low-volume serial/debug logs before replacing the trace, caps the debug file at 32 MiB, and publishes the interrupt-trace tail to the Actions summary.
+- The retry is diagnostic-only and does not change the original failing QEMU step's conclusion.
+- Added the initial and retry logs to the diagnostics artifact.
+
+### Files changed
+- scripts/run-qemu-tests.sh
+- scripts/test-qemu-boot-readiness.sh
+- .github/workflows/build-aweos-x86_64.yml
+- docs/AI-DEVELOPMENT-LOG.md
+
+### Validation status
+- Fresh Userland Validation and full image/boot checks are required for the exact PR head.
+- The new timeout regression has not yet run in GitHub Actions. No boot fix or successful boot is claimed.
+- No kernel source under /linux was modified.
+
+### Next priorities
+1. Inspect the exact-head Userland Validation result.
+2. Run the full image workflow and inspect qemu-bios-initial-debug.log plus qemu-bios-debug.log from the bounded interrupt retry.
+3. Use the first interrupt/exception record to identify the failing boot stage before changing Limine, ISO layout, kernel config or initramfs.
+4. Keep the rootfs hand-off and AYUI first-frame markers strict; do not convert a QEMU timeout or empty serial log into a pass.
+
+
+### QEMU matrix correction — run UEFI independently of BIOS result
+- The current runner's all-mode path exits immediately when BIOS fails, so the workflow's combined "BIOS and UEFI" step did not actually exercise UEFI after the observed BIOS triple fault.
+- Split the workflow into independently reported BIOS and UEFI steps. Both run after a successful image build and /linux integrity check; UEFI uses an always-condition so a BIOS failure does not suppress it.
+- The bounded interrupt retry now runs only when the BIOS step itself failed, not merely when UEFI failed.
+- The post-QEMU /linux integrity check now runs even after a boot-test failure.
+- Extended the workflow regression to assert that BIOS and UEFI are separate steps and that the retry is tied to the BIOS result.
+
+
+## 2026-11-18 follow-up — Target the first BIOS #UD with filtered instruction tracing
+
+### New CI evidence
+- Inspected the exact-head PR #61 full-image run #44239001611 and artifact #14399412021. Kernel/rootfs/ISO image creation and the post-build `/linux` integrity check passed; the BIOS and UEFI desktop boot checks failed. The independent Userland Validation run #44239001574 passed.
+- The bounded BIOS `int` trace contains 109,747 lines (about 4.77 MiB). It records a hardware interrupt `0x08` immediately before the first exception, then:
+  - `#UD` (vector 6) at `RIP=0x3cd63c7`;
+  - `#GP` (vector 13, error code `0x32`) at the same RIP;
+  - a double-fault vector 8, followed by another general-protection exception and a triple fault.
+- The trace confirms the first observed fault is an invalid-opcode exception at a stable guest address; it does **not** yet reveal the instruction bytes. The preceding hardware interrupt is recorded as context, not asserted as the cause.
+- The UEFI serial log reaches the firmware's DVD boot selection but not the AWEOS rootfs hand-off marker; its low-volume emulator trace still ends in a triple fault. No BIOS, UEFI or desktop boot success is claimed.
+
+### Changes on `fix/qemu-bios-interrupt-trace-20261118`
+- Added validated optional `AWEOS_QEMU_DFILTER` support to `scripts/run-qemu-tests.sh`, passing QEMU's `-dfilter` range only when configured.
+- Added strict `0xSTART..0xEND` syntax validation and a fake-QEMU regression for valid and invalid ranges.
+- The bounded BIOS retry now enables `in_asm,int,guest_errors,cpu_reset` and filters the trace to `0x3c00000..0x3d00000`, which contains the failing RIP `0x3cd63c7`.
+- The 15-second timeout and 32 MiB file-size cap remain in place; the retry remains diagnostic-only and cannot convert the original boot failure into a pass.
+
+### Files changed
+- `scripts/run-qemu-tests.sh`
+- `scripts/test-qemu-boot-readiness.sh`
+- `.github/workflows/build-aweos-x86_64.yml`
+- `docs/AI-DEVELOPMENT-LOG.md`
+
+### Validation
+- Existing exact-head Userland Validation passed on the pre-filter head `0689324b212362364953902d66c9f1bb5d92c0f3`; the new filter regression requires a fresh run after this commit.
+- The exact-head full image/boot run on that pre-filter head failed BIOS and UEFI; the trace analysis above is diagnostic evidence, not a fix.
+- Local fake-QEMU validation for the new filter is required before treating the code change as verified. No files under `/linux` were modified.
+
+### Next priorities
+1. Run the filtered BIOS retry and inspect the disassembly around `0x3cd63c7` to identify the exact opcode and map it to the loaded kernel/bootloader image.
+2. Determine whether the instruction is unsupported by the configured `qemu64` CPU model or whether control flow reached an invalid code address; do not assume either until the bytes and symbol mapping are known.
+3. Investigate the UEFI path independently if its first exception differs; keep the rootfs hand-off and AYUI first-frame assertions strict.
+4. Keep PR #61 draft/unmerged until the new exact-head Userland and full image/boot runs complete.
