@@ -380,3 +380,10 @@
 1. Inspect the exact-head Userland Validation and image workflow results for this PR.
 2. If tests pass, review the helper's Actions behavior and keep the PR unmerged until the guarded sync has been exercised in a disposable CI checkout.
 3. Revisit PR #51 only to mark its older branch as superseded; do not force-update or delete it.
+
+
+### Linux sync test-path correction — 2026-11-18
+- The first Userland Validation attempts for PR #59 reached `make test-shell` and passed the existing shell regressions plus the staged-index exact/mismatch test.
+- The new worktree replacement fixture then failed because the helper invoked `scripts/verify-index-subtree.sh` relative to the disposable fixture repository, not relative to the helper's own checkout.
+- Updated the helper to resolve its own script directory before changing into the Git root, then invoke the verifier by that absolute script path. This preserves normal workflow behavior and makes the isolated fixture self-contained.
+- The earlier runs are failures, not passes. A fresh exact-head Userland Validation run is required after this correction.
