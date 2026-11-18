@@ -15,7 +15,7 @@ mkdir -p "$DB_DIR" "$TEMP_ROOT/archive/root" "$FAKE_BIN"
 for command in tar cp rm; do
     cat > "$FAKE_BIN/$command" <<'WRAPPER'
 #!/bin/sh
-printf '%s\\n' "$0" >> "$AWEOS_AWEPKG_SIDE_EFFECT_LOG"
+printf '%s\n' "$0" >> "$AWEOS_AWEPKG_SIDE_EFFECT_LOG"
 exit 97
 WRAPPER
     chmod 0755 "$FAKE_BIN/$command"
@@ -26,7 +26,6 @@ PKG_NAME=demo
 PKG_VER=1.2.3
 PKG_DESC=Read-only fixture
 META
-printf 'keep me\n' > "$TEMP_ROOT/system/keep.txt"
 printf 'must not be installed\n' > "$TEMP_ROOT/archive/root/payload.txt"
 cat > "$TEMP_ROOT/archive/manifest.meta" <<'META'
 PKG_NAME=demo
