@@ -56,6 +56,18 @@ grep -Fxq -- '-d' "$TEMP_ROOT/qemu-bios.args"
 grep -Fxq -- 'guest_errors,cpu_reset' "$TEMP_ROOT/qemu-bios.args"
 grep -Fq 'fake QEMU debug trace flags=guest_errors,cpu_reset' "$BUILD_DIR/qemu-bios-debug.log"
 
+# A caller can bound a diagnostic retry and invalid timeout values fail closed.
+AWEOS_QEMU_TIMEOUT_SECONDS=2 PATH="$FAKE_BIN:$PATH" AWEOS_QEMU_FAKE_LOG="$TEMP_ROOT/compositor-ready.log" \
+    AWEOS_QEMU_ARGS_LOG="$TEMP_ROOT/qemu-bios-bounded.args" \
+    bash "$SCRIPT_DIR/run-qemu-tests.sh" "$BUILD_DIR" bios > "$TEMP_ROOT/bounded.out" 2>&1
+if AWEOS_QEMU_TIMEOUT_SECONDS=invalid PATH="$FAKE_BIN:$PATH" AWEOS_QEMU_FAKE_LOG="$TEMP_ROOT/compositor-ready.log" \
+    AWEOS_QEMU_ARGS_LOG="$TEMP_ROOT/qemu-bios-invalid.args" \
+    bash "$SCRIPT_DIR/run-qemu-tests.sh" "$BUILD_DIR" bios > "$TEMP_ROOT/invalid-timeout.out" 2>&1; then
+    echo "ERROR: QEMU runner accepted an invalid timeout value." >&2
+    exit 1
+fi
+grep -Fq 'AWEOS_QEMU_TIMEOUT_SECONDS must be a positive integer' "$TEMP_ROOT/invalid-timeout.out"
+
 # A present OVMF image must run the UEFI path with the same readiness checks.
 printf x > "$TEMP_ROOT/OVMF.fd"
 AWEOS_OVMF_FIRMWARE="$TEMP_ROOT/OVMF.fd" \
