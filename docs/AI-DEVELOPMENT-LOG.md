@@ -1,3 +1,159 @@
+# AWEOS AI Development Log
+
+## 2026-11-12 — Rootfs regression and ISO-build stack integration
+
+### Repository and stack state inspected
+- Repository: `ARARAT33/AWEOS`; default branch: `master`.
+- The default branch head remains `0939488f5261b04c9c3af150e5e4dc8888896a9f`; the active work is carried in separate, unmerged pull-request branches.
+- PR #52 (`fix/rootfs-script-invocation-20261111`) is open and draft, based on `master`.
+- PR #28 (`fix/hybrid-iso-efi-partition-20261103`) is open and draft, based on PR #27 (`fix/transaction-engine-fail-closed-20261101`). PR #27 is also open and draft, based on `master`.
+- This run's integration branch is `stack/rootfs-iso-ci-hardening-20261112`, created from PR #28's head. It is intentionally stacked on PR #28 so the known ISO fix is inherited rather than copied or reimplemented.
+
+### Actual CI diagnosis
+- PR #52 userland run #42963145758 completed successfully. Its shell/rootfs regression, Cargo metadata, Rust workspace tests, release build, and expected-binary checks passed.
+- PR #52 full image run #42963145650 failed in job #130334163189 during `make image`, after the Rust build, rootfs creation, rootfs validation, and initramfs creation had succeeded.
+- The actual failing output was:
+  - `libisofs: FAILURE : Cannot open data file for appended partition`
+  - `xorriso : FAILURE : Failed to prepare session write run`
+  - `make: *** [Makefile:75: iso] Error 32`
+- The same failure was independently present in image run #42962547574.
+- Inspection of PR #52's `scripts/build-iso.sh` found `-efi-boot-part -efi-boot-image`. The single-dash token is interpreted as a path argument, not the xorrisofs special EFI image token.
+- This exact issue is already corrected in PR #28: its ISO builder uses `-efi-boot-part --efi-boot-image`, builds in a unique temporary workspace, and publishes the ISO only after xorriso and Limine BIOS installation succeed. Its mock regression test checks both the option pair and failure-safe publication. This run reuses that existing fix by stacking on PR #28; it does not duplicate the ISO implementation.
+
+### Changes made on this branch
+- `scripts/build-rootfs.sh`: invoke the optional GNOME rootfs builder through Bash. The script is stored without an executable Git mode, so direct execution would fail when `AWEOS_DESKTOP=gnome`.
+- `scripts/test-rootfs-layout-validator.sh`: add a fixture-based regression that invokes the real `make validate-rootfs` target, accepts a valid rootfs layout, and rejects a missing boot-critical configuration file.
+- `Makefile`: include the rootfs validator regression in `make test-shell`.
+- `.github/workflows/build-aweos-x86_64.yml`: run the full shell/rootfs regression suite before image construction; capture `make image` output; publish the final log tail in the Actions step summary and upload build/QEMU logs on failure.
+- No files under `/linux` were changed.
+
+### Validation status
+- Existing evidence from PR #52: userland workflow #42963145758 **PASS**.
+- Existing evidence from PR #52: full image workflow #42963145650 **FAIL** at xorriso ISO assembly; BIOS/UEFI boot steps were skipped.
+- The new stacked branch has just been created and updated. Its own GitHub Actions checks have not yet completed. No test on this exact branch is claimed as PASS.
+- No local kernel, ISO, or QEMU build was run in this connector-only environment.
+
+### Remaining issues
+1. Run the new branch's shell/rootfs tests and inspect their exact output.
+2. Run the full x86_64 image workflow against the combined PR #27 → PR #28 → this branch stack.
+3. If ISO assembly succeeds, inspect the next actual failure rather than assuming the build or boot is complete.
+4. Require BIOS and UEFI QEMU boot results, serial markers, and artifact validation before any boot-success claim.
+5. Keep PRs #27 and #28 unmerged until their parent/stack relationships and final-head checks are reviewed.
+6. The AWEOS network platform, device identity, distributed services, production package signing/sandboxing, and broad hardware support remain separate implementation work; do not imply they are complete from the current build checks.
+
+### Next run priorities
+1. Review this branch's Userland Validation and full image/boot workflow results.
+2. Use the captured `build-make-image.log` artifact/summary to identify the next concrete failure, if any.
+3. Fix only the proven failure with a regression test.
+4. Re-run the affected checks and preserve the `/linux` read-only invariant.
+5. Update this log with exact run IDs, job conclusions, and test evidence.
+
+
+### CI follow-up — PR #53 first validation
+- New stacked PR #53 triggered Userland Validation run #43158921437 and full image/boot run #43158921451.
+- Userland run #43158921437: the complete `make test-shell` step **PASS**, repository-boundary validation **PASS**, and Cargo metadata validation **PASS**. Cargo workspace tests were still running at the last poll.
+- Full image/boot run #43158921451: runner setup and build-dependency installation **PASS**; the Limine host utility build was in progress. Shell/rootfs tests, image assembly, and BIOS/UEFI QEMU boot remained pending at the last poll.
+- These are checks on the new stacked branch. No full image, ISO, BIOS, UEFI, or boot success is claimed until the corresponding steps complete.
+
+
+### Parent-stack boot blocker discovered during follow-up
+- PR #28's full image run #41576689314 completed the image/ISO build successfully and passed the post-build `/linux` integrity check.
+- Its BIOS QEMU test then failed with: `FAIL: root filesystem never reached its boot hand-off marker in BIOS mode.`
+- The UEFI test and later artifact checks were skipped because the workflow stops after the BIOS failure.
+- The prior workflow output exposed no serial lines from the BIOS QEMU run, and that workflow did not upload `build/qemu-bios.log` on failure. The absence of the hand-off marker alone does not prove whether the cause is firmware boot selection, serial-console visibility, kernel startup, or rootfs discovery.
+- PR #53 adds failure-path upload of the QEMU serial logs. Use that evidence before changing the boot/initramfs path; do not mask the missing marker or weaken the boot assertion.
+
+
+### CI completion update
+- Userland Validation run #43158921437 completed with overall conclusion **success**. All steps passed, including `make test-shell` (which includes the new valid/invalid rootfs fixture), repository-boundary verification, Cargo metadata, Rust workspace tests, release userland build, and expected-binary checks.
+- Full image/boot run #43158921451 had passed its setup, dependency installation, Limine host utility build, initial `/linux` integrity check, Rust workspace tests, and shell/rootfs regression suite. The `Build AWEOS images` step was still running at the last poll; BIOS/UEFI boot and release-artifact validation had not started.
+
+
+
+## 2026-11-13 run — Boot-marker mismatch fix and annotation-based diagnostics
+
+### CI results inspected
+- PR #53 branch workflow runs on the final head all failed: run #576 (10m 32s), #577 (16m 11s), #578 (15m 9s), #579 (16m 29s), all exit code 2, no artifacts visible on the public run page.
+- Actions logs and artifacts require an authenticated session and the REST API is rate-limited from this environment, so the failing step could not be read directly for runs #577-#579.
+- Parent-stack evidence remains: PR #28's image run #41576689314 built the ISO successfully, then failed the BIOS QEMU test at the boot hand-off marker.
+
+### Root cause found by source inspection
+- `scripts/build-rootfs.sh` emits `AWEOS BOOT SUCCESS: mode=aweui` for the AYUI session (limine.conf passes `aweos.mode=aweui`), but `scripts/run-qemu-tests.sh` only accepted `mode=ayui`, `mode=gnome`, or the compositor marker. Once the hand-off marker appears, the boot test would fail on the session check even for a successful AYUI boot.
+
+### Changes made
+- `scripts/run-qemu-tests.sh`: accept `mode=aweui` and the legacy `mode=gui` default as the AYUI desktop session; emit the last serial-log lines as GitHub `::error::` annotations on every boot-test failure path so the concrete failure is readable on the public run page without sign-in.
+- `.github/workflows/build-aweos-x86_64.yml`: the make-image failure diagnostics step now also emits the matching error lines from `build-make-image.log` as run-page `::error::` annotations.
+- No production runtime code was changed; no files under `/linux` were touched.
+
+### Validation status
+- `bash -n` syntax checks were not run locally in this connector-only environment; the changes are validated by CI. No boot success is claimed.
+
+### Next run priorities
+1. Read the `::error::` annotations on the next PR #53 image run page to identify the exact failing command inside `make image` or `make test-qemu`.
+2. Fix only the proven failure; keep the boot assertions strict.
+3. Keep PRs #27, #28, #51, #52, #43-#50 unmerged until their own gates pass; the integration path remains #27 -> #28 -> #53.
+
+
+## 2026-11-14 run — QEMU runner permission failure fixed
+
+### Latest PR #53 CI evidence inspected
+- PR #53 head before this fix: `facbf0e18cbd626656208f2b80a730dd96d09350`.
+- Userland Validation run #43442358277 completed with conclusion **success**.
+- Full image and boot run #43442358400 completed with conclusion **failure**. The job steps show that setup, Limine host utility build, `/linux` pre-check, Rust workspace tests, shell/rootfs regressions, image build, and post-build `/linux` check all passed.
+- The `Build AWEOS images` step completed successfully. The ISO was assembled and Limine BIOS stages were installed successfully. The image target then completed; the post-build `/linux` integrity check passed.
+- The next step, `Boot-test BIOS and UEFI ISO`, failed before QEMU started:
+  `/bin/bash: line 1: ./scripts/run-qemu-tests.sh: Permission denied`
+  `make: *** [Makefile:103: test-qemu] Error 126`
+- Therefore neither BIOS nor UEFI boot was actually tested in this run. This is a script invocation/mode failure, not evidence of a kernel boot failure.
+
+### Root cause
+- `scripts/run-qemu-tests.sh` is tracked in Git with mode `100644` (not executable).
+- The Makefile's `test-qemu` target attempted to execute it directly as `./scripts/run-qemu-tests.sh`.
+- This is the same class of failure previously found in the optional GNOME rootfs builder and validator scripts: a non-executable shell script must be invoked through Bash.
+
+### Changes made on the PR #53 branch
+- `Makefile`: changed the QEMU test recipe to `bash ./scripts/run-qemu-tests.sh $(BUILD_DIR)` and documented why explicit Bash invocation is required.
+- `Makefile`: added `scripts/test-qemu-runner-invocation.sh` to `make test-shell`.
+- `scripts/test-qemu-runner-invocation.sh` (new): checks that the QEMU runner is tracked as mode `100644` and that the Makefile invokes it through Bash. This prevents the same permission regression from silently returning.
+- No production kernel, initramfs, installer, partitioning, updater, or disk-write behavior was changed. No files under `/linux` were modified.
+
+### Commits
+- `e7d7a61a8b42b970499773255cf40aeaf8ef8fff` — invoke QEMU boot runner through Bash.
+- `ed8006be5e700a3f5971b11f103d3e06617d1237` — add regression guard for the invocation.
+
+### Validation status
+- PR #53 Userland Validation run #43442358277: **PASS** on the pre-fix head.
+- PR #53 full image/boot run #43442358400: image build and post-build `/linux` check **PASS**; boot-test step **FAIL** before QEMU launch due to the permission error above.
+- The new fix has been committed to the same PR branch. Its fresh CI checks have not yet completed, so the new regression test and BIOS/UEFI boot results are **pending**.
+- No local kernel, ISO, or QEMU build was run in this connector-only environment.
+
+### Remaining issues
+1. Confirm the new invocation regression passes in `make test-shell`.
+2. Confirm the QEMU runner launches after the permission fix.
+3. Inspect BIOS serial output and determine whether the expected boot marker and AYUI compositor are reached.
+4. Run UEFI boot separately; do not infer it from BIOS.
+5. Verify release artifacts and checksums only after the boot matrix passes.
+
+### Next run priorities
+1. Review fresh PR #53 Userland Validation and full image/boot runs on the updated head.
+2. If BIOS fails after QEMU launches, use the serial log and error annotations to diagnose the actual boot path.
+3. Run and record UEFI independently.
+4. Keep PR #53 stacked on PR #28 and do not merge unverified stack components.
+5. Continue preserving the `/linux` read-only integrity check.
+
+
+### Post-fix CI and architecture/security audit — 2026-11-14
+- Updated-head Userland Validation run #43558706411 completed with conclusion **success**. The `make test-shell` step passed, including the new `test-qemu-runner-invocation.sh`; its exact output was: `PASS: test-qemu invokes the mode-100644 QEMU runner through Bash.` Cargo metadata, workspace tests, release userland build, and expected-binary checks also passed.
+- Updated-head full image/boot run #43558706392 was still **in progress** at the time of this log update. The runner setup, dependency installation, Limine host utility build, and initial `/linux` integrity check had passed. No image, BIOS, UEFI, or release-artifact result is claimed for this run yet.
+- The invocation regression was also reproduced locally in an isolated temporary Git repository with the runner tracked as mode `100644`; the test passed.
+
+### Additional concrete audit findings for follow-up
+1. **AOSIN is not yet a real package payload system.** `src/aosin/aosin_core.c` ignores `payload_dir`, writes a fixed 1 KiB dummy payload, hardcodes the SHA-256 of an empty input, and its installer only writes package metadata. Inspection checks the magic value but does not validate the payload hash, format version, architecture, or a publisher signature. The C AOSIN sources are not included in the current Cargo workspace or current Makefile build.
+2. **The installed legacy `awepkg` helper is unsafe for untrusted packages.** `scripts/build-rootfs.sh` copies `scripts/awepkg.sh` into the root filesystem as `/usr/bin/awepkg`. Its `install` path extracts an unsigned tar archive, then copies the extracted `root/` tree into `/` while suppressing copy errors. It has no signature/trust-anchor verification or safe archive-path validation. Treat package installation as a critical security blocker; do not represent this as a production-safe package manager.
+3. **AYUI IPC requires a security redesign before production.** `AWEUI/src/state.rs` places the socket at `/tmp/aweui-ipc.sock`; `IpcServer::new` unconditionally removes the existing path; the server does not set a restrictive socket mode or authenticate peer credentials. The request API includes `LaunchCommand` and `PowerAction`. The current rootfs init launches `/usr/bin/aweui` directly from PID 1, so the compositor currently runs as root. Together these conditions create a local privilege-escalation risk if the socket is reachable by another local user.
+4. **The active AYUI implementation is narrower than the README implies.** `AWEUI/src/wayland.rs` initializes Smithay's Winit backend; its event loop handles keyboard events and maps absolute pointer motion to focus on the first toplevel, but does not implement normal pointer-seat motion/button handling. The separate C framebuffer desktop under `src/gui` is not built by the current Makefile. The README describes that C desktop and C core/AOSIN stack as part of the active product, while the current Makefile primarily builds the Rust workspace, Linux kernel, rootfs, initramfs, ISO, and disk image.
+5. **Documentation/build contract drift exists.** The README states that `make test` runs QEMU BIOS/UEFI checks, but the current Makefile's `test` target runs read-only, shell, and Rust tests only; QEMU is a separate `test-qemu` target. The README's stated default rootfs size also differs from the 512 MiB default in `scripts/build-rootfs.sh`.
+
 ### Next priorities after the current boot run
 1. Complete the QEMU runner launch and inspect actual BIOS serial output; then verify UEFI separately. Keep boot assertions strict.
 2. Harden AYUI IPC: place the socket in a private runtime directory, use safe socket ownership/type checks, set restrictive permissions, authenticate peers, and remove or gate privileged commands until authorization exists. Run the desktop as an unprivileged session user.
@@ -42,10 +198,64 @@
 1. The default minimal rootfs has no X11/Wayland display server, while the current AYUI code initializes only Smithay's Winit backend. The stricter QEMU test may therefore expose that AYUI cannot yet start on bare hardware/headless QEMU. If it fails, implement and test a real DRM/KMS/udev backend or explicitly keep the desktop milestone blocked; do not restore the weaker rootfs-only success check.
 2. A compositor first frame is not a complete desktop shell. Pointer-seat events, a rendered panel/launcher, application lifecycle, and multi-monitor support remain incomplete.
 3. Review and fix the critical package-manager and AYUI IPC issues recorded above before treating the current userspace as production-safe.
-4. Reduce duplicate Actions execution: both `push` and `pull_request` currently trigger the same validation workflows, so one commit can start redundant full image builds.
+4. Reduce duplicate Actions execution: both `push` and `pull_request` currently trigger the same validation workflows for a same-repository PR branch. Consider a concurrency policy or trigger adjustment after this boot run.
+5. Keep PR #53 draft and stacked on PR #28; no BIOS, UEFI, release-artifact, or full-desktop success is claimed until the latest-head workflows complete.
 
-### Next priorities
-1. Inspect the latest exact-head Userland Validation and full image/boot workflow results.
+
+### Commit trace for the 2026-11-14 boot-validation follow-up
+- `7c458de613` — emit AYUI compositor first-frame marker.
+- `82d4595119` — remove premature AYUI boot-success/services-online messages.
+- `e0720cf911` — distinguish rootfs readiness from desktop readiness.
+- `e88b71aac6` — mark initramfs fallback as recovery.
+- `81f07f7032` — relabel the GNOME pre-GDM service marker.
+- `e6f7cbf295` — require compositor readiness in the QEMU runner.
+- `09b906d660`, `0aeefee8d4`, `7c57e0b851` — add and correct the fake-QEMU readiness regression.
+- `e6c31d9458`, `dfd2d989e3` — fail closed for missing UEFI firmware and test both present/missing OVMF cases.
+- `8912fad3fb` — record the strict boot-validation design and test status.
+- Latest code tested by the queued workflows is `dfd2d989e3`; the current PR head is `8912fad3fb` because the final commit only updates this log.
+
+
+## 2026-11-15 run — Optical rootfs discovery and boot diagnostics
+
+### Repository and CI state inspected
+- Continued from PR #54 integration head 63b06170134b41bd3e6a3a677feeaa9d22c1bbad on stack/rootfs-iso-ci-hardening-20261112; default master remains at 0939488f5261b04c9c3af150e5e4dc8888896a9f.
+- PR #54 remains open and draft. Its latest inspected checks were:
+  - Full image/boot run #43607134518: kernel build, rootfs validation, initramfs build, ISO assembly, and post-build /linux integrity check passed; BIOS boot failed before the rootfs hand-off marker.
+  - Userland run #43607134538: passed.
+  - Core archive/preservation run #43607134519: passed.
+- The failed BIOS job's QEMU log was empty, so the failure cannot yet be called a confirmed kernel panic or confirmed rootfs mount failure. The previous workflow attempted to upload QEMU logs before QEMU ran, so a later boot failure produced no downloadable serial-log artifact.
+
+### Source-level boot-path finding
+- The live ISO stores rootfs.img under /boot/rootfs.img and the initramfs locates it by mounting the optical device and then loop-mounting the ext4 image.
+- The kernel configuration enabled SCSI and ISO9660 but did not explicitly enable CONFIG_BLK_DEV_SR. That SCSI CD-ROM driver is required for the optical device path and is not available to the initramfs if it is only built as a module.
+- The initramfs also performed a one-shot device scan after a fixed one-second sleep. This could miss asynchronously discovered optical/storage devices.
+- These are concrete configuration/discovery gaps consistent with the observed missing rootfs marker; the next QEMU run must verify whether they explain the failure.
+
+### Changes on fix/qemu-optical-rootfs-discovery-20261115
+- scripts/config-kernel.sh: reapply AWEOS-required kernel settings even when an existing .config is present; explicitly build CONFIG_CDROM and CONFIG_BLK_DEV_SR into the kernel.
+- scripts/verify-kernel-config.sh (new): fail closed unless boot-critical initramfs, ext4, ISO9660, loop, SCSI CD-ROM, SATA/AHCI, and block-device options are built in (=y).
+- scripts/test-kernel-config-requirements.sh (new): verifies valid built-in settings pass and missing, module-only, or absent configuration fails.
+- Makefile: include the kernel-config regression in make test-shell.
+- scripts/build-initramfs.sh: retry direct and optical-media discovery for up to 15 seconds; validate the mounted rootfs has /sbin/init; mount the ISO's rootfs image read-only as an OverlayFS lower layer.
+- Bootloader/x86_64/limine-ci.conf (new): enable Limine serial/verbose output, kernel log output, early serial console, and synchronous SCSI discovery for CI diagnostics.
+- .github/workflows/build-aweos-x86_64.yml: build the CI image with the diagnostic Limine profile and upload build/QEMU logs after the boot-test step, including when QEMU fails.
+- No files under /linux were modified. No installer partitioning, disk-write, updater, or user-data behavior was changed.
+
+### Validation status
+- The repository connector was used to inspect and edit the remote branch; this environment did not run a local kernel build or QEMU boot.
+- The new shell regression and full CI image/BIOS/UEFI boot matrix are pending GitHub Actions on the new branch.
+- No BIOS, UEFI, or full AYUI boot success is claimed.
+
+### Remaining critical issues
+1. Confirm that CONFIG_BLK_DEV_SR=y survives the real kernel's olddefconfig and that QEMU discovers /dev/sr0.
+2. Inspect the newly retained serial logs if BIOS or UEFI still fails; diagnose the first failing boot stage rather than weakening the marker assertions.
+3. Harden AYUI IPC: the current socket is in /tmp, stale paths are unconditionally removed, peer credentials are not authenticated, and privileged command/power actions are exposed.
+4. Disable or replace the legacy unsigned awepkg install path: it extracts untrusted tar archives and copies payload files into / without signature verification or safe path validation.
+5. Replace the dummy AOSIN payload/empty-input hash with a versioned, bounded, integrity-checked and signed package format before claiming package-manager readiness.
+6. Keep PR #54 and its dependent stack draft until fresh BIOS and UEFI boot checks pass.
+
+### Next run priorities
+1. Review the new branch's Userland Validation, Core Data Preservation, and full image/boot workflow results.
 2. If the kernel-config verifier fails, inspect the actual final .config and Kconfig dependencies; do not weaken the built-in-driver requirement.
 3. If rootfs hand-off still fails, inspect the uploaded BIOS serial log and then run UEFI independently.
 4. Once boot is reproducible, address AYUI IPC authorization and the unsigned package-installation path with focused tests.
@@ -76,6 +286,7 @@
   flags remain configurable through `AWEOS_QEMU_DEBUG_FLAGS`, so `int` can
   be enabled for a focused diagnostic run without producing interrupt-level
   traces on every normal boot.
+  The flags are configurable through `AWEOS_QEMU_DEBUG_FLAGS`.
 - On failure, the runner emits tails from both the guest serial output and
   the QEMU emulator trace. The two channels remain separate so host-side
   diagnostics cannot be mistaken for guest boot output.
@@ -129,8 +340,8 @@
 ### Evidence
 - Current `master` head: `d4d300545558d660abb2127d297d3a00ef017dae`. Its kernel build target passed the host compiler defaults through Kbuild without an explicit x86-64 baseline, and it had no post-build compressed-kernel ISA scan.
 - The current BIOS interrupt trace on PR #61 records the first `#UD` at `RIP=0x3cd63c7`, followed by `#GP` (error code `0x32`), double fault and triple fault.
-- The older, still-open stacked PR #44 inspected the same address and decoded bytes `c4 e2 fb f7 ca` as `SHRX` (BMI2) in `kernel_ident_mapping_init`. Its proposed kernel baseline fix is not present on current `master`; PR #44 is based on an older stacked branch, so this PR carries only the focused kernel-build guard onto current `master`.
-- The downloaded PR #61 diagnostic artifact (run #44241406946) independently confirms the exact bytes at the failing RIP: the filtered BIOS trace records `c4 e2 fb f7 ca` immediately before `#UD`, then `#GP`, double fault and triple fault. BIOS serial output stops after ACPI RSDP discovery; neither BIOS nor UEFI reaches the rootfs hand-off marker.
+- The older, still-open stacked PR #44 inspected the same BIOS RIP in its actual QEMU instruction trace and decoded bytes `c4 e2 fb f7 ca` as `SHRX` (BMI2) in `kernel_ident_mapping_init`. Its proposed kernel baseline fix is not present on current `master`; PR #44 is based on an older stacked branch, so this PR carries only the focused kernel-build guard onto current `master`.
+- The new current-head `in_asm` trace is still running and will be used to independently confirm the opcode. The old instruction decode is strong evidence, but this change does not claim the new head is fixed until its own build and boot tests pass.
 
 ### Changes on `fix/kernel-baseline-isa-20261118`
 - Added `AWEOS_KERNEL_CPU_FLAGS` defaulting to `-march=x86-64 -mtune=generic -mno-bmi -mno-bmi2`, passed through Kbuild's `CC` command so compressed boot code cannot inherit a newer host ISA.
@@ -142,18 +353,34 @@
 ### Validation
 - Local fixture regression using the available C compiler and `objdump`: **PASS** (safe object accepted; explicit SHRX/BMI2 object rejected).
 - Shell syntax checks for the new checker and test: **PASS**.
-- Exact-head GitHub userland, kernel build, compressed-kernel ISA scan, BIOS/UEFI QEMU boot and `/linux` integrity checks were pending at the start of this follow-up.
-- The pre-fix PR #61 full-image run #44241406946 failed both BIOS and UEFI; no successful boot is claimed.
-
-### Follow-up — Make the ISA verification fail closed
-- Code review found a fail-open edge in the new verifier: if `objdump` itself failed, the pipeline could be treated like an empty grep result and incorrectly print PASS.
-- `scripts/check-kernel-baseline-isa.sh` now captures disassembly first, checks the `objdump` exit status, requires actual disassemblable instruction lines, and distinguishes grep's “no match” result from execution errors.
-- `scripts/test-kernel-baseline-isa.sh` now covers three cases: baseline code accepted, explicit SHRX/BMI2 rejected, and malformed non-ELF input rejected before a clean result can be reported.
-- Local regression run after the change: **PASS** for all three cases. Shell syntax validation: **PASS**.
-- The prior exact-head full-image workflow for commit `20822b2e7d65` was still running when this follow-up was pushed; it does not validate the new follow-up commit. Fresh push/PR workflows for the new head are required.
+- Exact-head GitHub userland, kernel build, compressed-kernel ISA scan, BIOS/UEFI QEMU boot and `/linux` integrity checks are pending on this branch.
+- The pre-fix PR #61 full-image run #44239001611 failed both BIOS and UEFI; no successful boot is claimed.
 
 ### Next priorities
-1. Inspect the fresh exact-head userland and image/boot runs for the follow-up commit; do not reuse the previous head's results.
+1. Confirm the filtered current-head QEMU trace identifies the same SHRX instruction at `0x3cd63c7`.
+2. Run the post-build checker on the new compressed `vmlinux`; if it finds further BMI1/BMI2 instructions, keep the build fail-closed and correct the remaining compiler/assembly source.
+3. Re-run BIOS and UEFI on the exact fixed head and require the rootfs hand-off plus AYUI first-frame markers.
+4. If the kernel #UD is removed but a userspace #UD remains at a different address, map that address to its ELF and fix it separately rather than broadening kernel flags blindly.
+
+
+## 2026-11-18 follow-up — Make the compressed-kernel ISA verifier fail closed
+
+### Evidence
+- Downloaded and inspected the PR #61 BIOS diagnostic artifact from run #44241406946. The filtered QEMU instruction trace records bytes `c4 e2 fb f7 ca` at RIP `0x3cd63c7`, decoded as `SHRX` (BMI2), followed by `#UD`, `#GP`, double fault and triple fault. BIOS serial output stops after ACPI RSDP discovery; UEFI also fails before rootfs hand-off.
+- Code review found a fail-open edge in the new verifier: if `objdump` failed, the pipeline could be interpreted as an empty grep result and incorrectly print PASS.
+
+### Changes on `fix/kernel-baseline-isa-20261118`
+- `scripts/check-kernel-baseline-isa.sh` now captures disassembly first, checks the `objdump` exit status, requires actual disassemblable instruction lines, and distinguishes grep's “no match” result from execution errors.
+- `scripts/test-kernel-baseline-isa.sh` now covers three cases: baseline code accepted, explicit SHRX/BMI2 rejected, and malformed non-ELF input rejected before a clean result can be reported.
+- No files under `/linux` were changed.
+
+### Validation
+- Local regression using the available C compiler and `objdump`: **PASS** for all three cases.
+- Shell syntax validation for the checker and test: **PASS**.
+- The exact-head full-image workflow for the prior commit `20822b2e7d65` was still running when this follow-up was pushed; it does not validate the follow-up commit. Fresh push/PR workflows for the new head are required.
+
+### Next priorities
+1. Inspect fresh exact-head userland and image/boot runs for the follow-up commit; do not reuse the previous head's results.
 2. Confirm the post-build scanner reports no BMI1/BMI2 instructions in the real compressed `vmlinux`.
 3. Require fresh BIOS and UEFI QEMU boots to reach rootfs hand-off and AYUI compositor first-frame markers; if they still fail, inspect the new trace and map the first faulting instruction.
-4. Keep PR #63 draft/unmerged until the exact-head CI and boot matrix pass; preserve the upstream `/linux` tree unchanged.
+4. Keep PR #63 draft/unmerged until exact-head CI and the boot matrix pass; preserve the upstream `/linux` tree unchanged.
