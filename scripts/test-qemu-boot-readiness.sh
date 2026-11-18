@@ -29,7 +29,7 @@ done
 [ -n "$debug_log" ] || { echo "ERROR: QEMU did not receive -D debug log path." >&2; exit 23; }
 [ -n "$debug_flags" ] || { echo "ERROR: QEMU did not receive -d debug flags." >&2; exit 24; }
 printf 'fake QEMU debug trace flags=%s\n' "$debug_flags" > "$debug_log"
-[ -z "$debug_filter" ] || printf 'fake QEMU debug filter=%s\\n' "$debug_filter" >> "$debug_log"
+[ -z "$debug_filter" ] || printf 'fake QEMU debug filter=%s\n' "$debug_filter" >> "$debug_log"
 cat "$AWEOS_QEMU_FAKE_LOG"
 QEMU
 chmod 0755 "$FAKE_BIN/qemu-system-x86_64"
@@ -58,6 +58,10 @@ grep -Fxq -- "$BUILD_DIR/qemu-bios-debug.log" "$TEMP_ROOT/qemu-bios.args"
 grep -Fxq -- '-d' "$TEMP_ROOT/qemu-bios.args"
 grep -Fxq -- 'guest_errors,cpu_reset' "$TEMP_ROOT/qemu-bios.args"
 grep -Fq 'fake QEMU debug trace flags=guest_errors,cpu_reset' "$BUILD_DIR/qemu-bios-debug.log"
+if grep -Fxq -- '-dfilter' "$TEMP_ROOT/qemu-bios.args"; then
+    echo "ERROR: default QEMU run unexpectedly received a diagnostic address filter." >&2
+    exit 1
+fi
 
 # A caller can bound a diagnostic retry and invalid timeout values fail closed.
 AWEOS_QEMU_TIMEOUT_SECONDS=2 PATH="$FAKE_BIN:$PATH" AWEOS_QEMU_FAKE_LOG="$TEMP_ROOT/compositor-ready.log" \
@@ -104,4 +108,4 @@ if AWEOS_OVMF_FIRMWARE="$TEMP_ROOT/missing-ovmf.fd" \
 fi
 grep -Fq 'ERROR: OVMF firmware not found; UEFI boot test is required.' "$TEMP_ROOT/uefi-missing.out"
 
-echo "PASS: QEMU boot validation requires compositor readiness and cannot skip UEFI firmware."
+echo "PASS: QEMU boot validation requires compositor readiness, validates filtered instruction tracing, and cannot skip UEFI firmware."
