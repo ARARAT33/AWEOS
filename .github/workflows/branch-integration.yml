@@ -54,7 +54,7 @@ jobs:
           # Auto-merge only same-repository PRs with a clean merge state and
           # path-specific, successful validation. Workflow/docs/kernel changes
           # are intentionally left for manual review by the policy script.
-          while IFS= read -r number head base draft; do
+          while IFS=$'\t' read -r number head base draft; do
             [[ -z "$number" || "$draft" == "true" || "$base" != "$DEFAULT_BRANCH" ]] && continue
 
             if ! meta="$(gh pr view "$number" --repo "$GH_REPO" --json isDraft,baseRefName,mergeable,mergeStateStatus,headRepository)"; then
