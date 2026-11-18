@@ -40,8 +40,8 @@ jobs:
               gh pr create --repo "$GH_REPO" --base "$DEFAULT_BRANCH" --head "$branch" \
                 --title "Integrate branch: $branch" \
                 --body "Automated integration proposal. This PR preserves the source branch and its commits. It will only be auto-merged after GitHub reports successful checks and the PR is mergeable." || true
-              # Include closed/merged PRs so an existing branch is not proposed repeatedly.
-          prs_json="$(gh pr list --repo "$GH_REPO" --state all --limit 500 --json number,headRefName,baseRefName,isDraft)"
+              # Refresh the all-state PR list after creating a proposal.
+              prs_json="$(gh pr list --repo "$GH_REPO" --state all --limit 500 --json number,headRefName,baseRefName,isDraft)"
             fi
           done
 
@@ -54,10 +54,49 @@ jobs:
           # Auto-merge only same-repository PRs with a clean merge state and
           # path-specific, successful validation. Workflow/docs/kernel changes
           # are intentionally left for manual review by the policy script.
-          while IFS=$'\\t' read -r number head base draft; do
+          while IFS= read -r number head base draft; do
             [[ -z "$number" || "$draft" == "true" || "$base" != "$DEFAULT_BRANCH" ]] && continue
 
-            meta="$(gh pr view "$number" --repo "$GH_REPO" --json isDraft,baseRefName,mergeable,mergeStateStatus,headRepository)"
+            if ! meta="$(gh pr view "$number" --repo "$GH_REPO" --json isDraft,baseRefName,mergeable,mergeStateStatus,headRepository)"; then
+              echo "Skipping PR #$number: unable to read PR metadata."
+              continue
+            fi
+            [[ "$(jq -r '.isDraft' <<<"$meta")" == "false" ]] || continue
+            [[ "$(jq -r '.baseRefName' <<<"$meta")" == "$DEFAULT_BRANCH" ]] || continue
+            [[ "$(jq -r '.headRepository.nameWithOwner // ""' <<<"$meta")" == "$GH_REPO" ]] || continue
+            [[ "$(jq -r '.mergeable // "UNKNOWN"' <<<"$meta")" == "MERGEABLE" ]] || continue
+            [[ "$(jq -r '.mergeStateStatus // "UNKNOWN"' <<<"$meta")" == "CLEAN" ]] || continue
+
+            files="$tmpdir/pr-$number-files.txt"
+            checks="$tmpdir/pr-$number-checks.json"
+            if ! gh api --paginate "repos/$GH_REPO/pulls/$number/files?per_page=100" --jq '.[].filename' > "$files"; then
+              echo "Skipping PR #$number: unable to read its complete changed-file list."
+              continue
+            fi
+
+            set +e
+            gh pr checks "$number" --repo "$GH_REPO" --json name,state > "$checks" 2>"$tmpdir/pr-$number-checks.err"
+            checks_status=$?
+            set -e
+            if [[ "$checks_status" -ne 0 ]]; then
+              echo "Skipping PR #$number: checks are pending or unsuccessful."
+              continue
+            fi
+
+            if ! bash scripts/branch-integration-policy.sh "$files" "$checks"; then
+              echo "Skipping PR #$number: it does not satisfy the automatic-merge policy."
+              continue
+            fi
+
+            gh pr merge "$number" --repo "$GH_REPO" --merge --auto || true
+          done < <(jq -r '.[] | [.number, .headRefName, .baseRefName, (.isDraft|tostring)] | @tsv' <<<"$open_prs_json")
+\t' read -r number head base draft; do
+            [[ -z "$number" || "$draft" == "true" || "$base" != "$DEFAULT_BRANCH" ]] && continue
+
+            if ! meta="$(gh pr view "$number" --repo "$GH_REPO" --json isDraft,baseRefName,mergeable,mergeStateStatus,headRepository)"; then
+              echo "Skipping PR #$number: unable to read PR metadata."
+              continue
+            fi
             [[ "$(jq -r '.isDraft' <<<"$meta")" == "false" ]] || continue
             [[ "$(jq -r '.baseRefName' <<<"$meta")" == "$DEFAULT_BRANCH" ]] || continue
             [[ "$(jq -r '.headRepository.nameWithOwner // ""' <<<"$meta")" == "$GH_REPO" ]] || continue
