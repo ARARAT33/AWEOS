@@ -11,14 +11,14 @@ use nix::sys::socket::sockopt::PeerCredentials;
 use nix::sys::socket::getsockopt;
 use nix::unistd::Uid;
 
+pub use aweui_framework::ipc::default_socket_path;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum IpcRequest {
     GetStatus,
     GetWorkspaces,
     SwitchWorkspace(usize),
     LaunchApp(String),
-    LaunchCommand(String),
-    PowerAction(String),
     GetConfig,
     SetConfig(String),
     ToggleControlCenter,
@@ -31,33 +31,6 @@ pub enum IpcResponse {
     Workspaces(Vec<String>),
     Config(String),
     Error(String),
-}
-
-/// Resolve the AYUI IPC socket below a per-user private runtime subdirectory.
-///
-/// The parent XDG runtime directory is expected to exist with the XDG
-/// specification's owner-only permissions. A dedicated child directory keeps
-/// the socket private without changing permissions on an existing directory.
-pub fn resolve_socket_path(runtime_dir: Option<&str>, uid: u32) -> String {
-    if let Some(dir) = runtime_dir.filter(|value| !value.is_empty()) {
-        let path = Path::new(dir);
-        if path.is_absolute() {
-            return path
-                .join("aweui")
-                .join("aweui-ipc.sock")
-                .to_string_lossy()
-                .into_owned();
-        }
-    }
-
-    format!("/run/user/{uid}/aweui/aweui-ipc.sock")
-}
-
-/// Default socket path for this process, preferring a valid absolute
-/// XDG_RUNTIME_DIR. The directory itself is validated again before binding.
-pub fn default_socket_path() -> String {
-    let runtime_dir = std::env::var("XDG_RUNTIME_DIR").ok();
-    resolve_socket_path(runtime_dir.as_deref(), Uid::effective().as_raw())
 }
 
 /// Validate a directory without following a symlink.
@@ -278,18 +251,6 @@ impl IpcServer {
                 Ok(()) => IpcResponse::Success(format!("Launched {app}")),
                 Err(error) => IpcResponse::Error(error),
             },
-            IpcRequest::LaunchCommand(command) => {
-                match state.session.launch_command(&command) {
-                    Ok(()) => IpcResponse::Success("Command launched".into()),
-                    Err(error) => IpcResponse::Error(error),
-                }
-            }
-            IpcRequest::PowerAction(action) => {
-                match crate::session::SessionManager::power_action(&action) {
-                    Ok(()) => IpcResponse::Success(format!("Power action: {action}")),
-                    Err(error) => IpcResponse::Error(error),
-                }
-            }
             IpcRequest::GetConfig => IpcResponse::Config(
                 toml::to_string_pretty(&state.config).unwrap_or_default(),
             ),
@@ -527,5 +488,11 @@ mod tests {
         drop(server_stream);
         drop(listener);
         let _ = fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn legacy_privileged_ipc_requests_are_rejected() {
+        assert!(serde_json::from_str::<IpcRequest>(r#"{"LaunchCommand":"id"}"#).is_err());
+        assert!(serde_json::from_str::<IpcRequest>(r#"{"PowerAction":"reboot"}"#).is_err());
     }
 }
