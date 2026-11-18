@@ -13,6 +13,7 @@ if [[ "${AWEOS_ALLOW_LINUX_REPLACEMENT:-}" != "1" ]]; then
     exit 1
 fi
 
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 upstream_ref="$1"
@@ -70,7 +71,7 @@ if [[ -e linux || -L linux ]]; then
 fi
 
 git read-tree --prefix=linux/ -u "$upstream_ref"
-bash scripts/verify-index-subtree.sh linux "$upstream_ref"
+bash "$script_dir/verify-index-subtree.sh" linux "$upstream_ref"
 
 for required in linux/Makefile linux/Kconfig linux/kernel linux/arch; do
     [[ -e "$required" ]] || {
