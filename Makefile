@@ -101,6 +101,7 @@ test-shell:
 	@bash ./scripts/test-qemu-runner-invocation.sh
 	@bash ./scripts/test-qemu-boot-readiness.sh
 	@bash ./scripts/test-kernel-config-requirements.sh
+	@bash ./scripts/test-branch-integration-policy.sh
 
 test-qemu: iso
 	# The runner is tracked without the executable bit; invoke it through Bash.

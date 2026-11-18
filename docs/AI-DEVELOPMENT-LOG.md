@@ -333,3 +333,44 @@
    compositor first-frame marker for desktop readiness.
 5. Keep PR #55 and this dependent PR draft/unmerged until the full boot matrix
    passes on the reconciled head.
+
+
+## 2026-11-18 run — Require path-specific CI before automated branch integration
+
+### Evidence inspected
+- Current `master` head before this change: `d4d300545558d660abb2127d297d3a00ef017dae`.
+- The scheduled branch-integration workflow proposed PRs for branches without an open PR and attempted auto-merge when every *reported* check was successful.
+- The default `master` branch currently has branch protection disabled. The existing CI workflows are path-filtered: Userland Validation reports `userland`, the image/boot workflow reports `build-and-boot-test`, and the C preservation workflow reports `archive-regression`.
+- A non-empty set of successful checks alone is insufficient: changes to workflow definitions, documentation, the vendored kernel tree, or unclassified paths may not trigger the relevant product validation.
+
+### Changes prepared on `fix/branch-integration-required-checks-20261118`
+- Added `scripts/branch-integration-policy.sh`:
+  - Maps active userland/build paths to both `userland` and `build-and-boot-test`.
+  - Requires `archive-regression` as well for `src/core`, `src/installer`, and `src/updater`.
+  - Requires the image/boot check for bootloader and Limine configuration changes.
+  - Requires every reported check to be successful and every path-specific required check to be present.
+  - Blocks automatic merge for workflow files, documentation, `/linux`, lockfiles and unknown paths; those require manual review.
+- Added `scripts/test-branch-integration-policy.sh` covering missing checks, duplicate pending checks, failures, core-preservation requirements, bootloader coverage, and manual-review-only paths.
+- Updated `make test-shell` to run the new policy regression.
+- Updated the scheduled integration workflow to:
+  - Avoid recreating proposals for branches that already have an open, closed or merged PR.
+  - Consider only non-draft, same-repository PRs targeting the default branch.
+  - Require GitHub to report a clean, mergeable PR state.
+  - Require complete changed-file enumeration and path-specific CI policy approval before enabling auto-merge.
+
+### Validation
+- Local isolated regression: `bash scripts/test-branch-integration-policy.sh` — **PASS**.
+- The test covered valid userland/build checks, missing required checks, a pending duplicate, a failed check, core-preservation requirements, bootloader coverage, workflow/docs/kernel/unknown path blocks, and empty diffs.
+- Exact-head GitHub Userland Validation and full image/boot CI are still required. No PR was merged by this change.
+- No existing branch, commit, or PR was deleted or force-updated.
+
+### Remaining limitations
+1. The repository default branch is not protected by branch-protection rules; this workflow-level policy is not a substitute for repository-level required checks.
+2. The policy intentionally blocks documentation, workflow and vendored-kernel changes from auto-merge; these need explicit human review or a separately verified workflow.
+3. QEMU BIOS/UEFI boot-to-AYUI readiness remains an independent product blocker.
+
+### Next priorities
+1. Verify the new policy regression in exact-head Userland Validation.
+2. Inspect the full image/boot run and confirm the path-specific check names match the workflow job names.
+3. Review the workflow diff and preserve manual approval for workflow/CI policy changes.
+4. Continue BIOS interrupt-trace diagnosis without weakening rootfs or compositor readiness assertions.
