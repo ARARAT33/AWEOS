@@ -333,3 +333,31 @@
    compositor first-frame marker for desktop readiness.
 5. Keep PR #55 and this dependent PR draft/unmerged until the full boot matrix
    passes on the reconciled head.
+
+
+## 2026-11-18 run — Enforce the x86-64 baseline ISA in the compressed kernel
+
+### Evidence
+- Current `master` head: `d4d300545558d660abb2127d297d3a00ef017dae`. Its kernel build target passed the host compiler defaults through Kbuild without an explicit x86-64 baseline, and it had no post-build compressed-kernel ISA scan.
+- The current BIOS interrupt trace on PR #61 records the first `#UD` at `RIP=0x3cd63c7`, followed by `#GP` (error code `0x32`), double fault and triple fault.
+- The older, still-open stacked PR #44 inspected the same BIOS RIP in its actual QEMU instruction trace and decoded bytes `c4 e2 fb f7 ca` as `SHRX` (BMI2) in `kernel_ident_mapping_init`. Its proposed kernel baseline fix is not present on current `master`; PR #44 is based on an older stacked branch, so this PR carries only the focused kernel-build guard onto current `master`.
+- The new current-head `in_asm` trace is still running and will be used to independently confirm the opcode. The old instruction decode is strong evidence, but this change does not claim the new head is fixed until its own build and boot tests pass.
+
+### Changes on `fix/kernel-baseline-isa-20261118`
+- Added `AWEOS_KERNEL_CPU_FLAGS` defaulting to `-march=x86-64 -mtune=generic -mno-bmi -mno-bmi2`, passed through Kbuild's `CC` command so compressed boot code cannot inherit a newer host ISA.
+- Added `scripts/check-kernel-baseline-isa.sh` to scan the actual `arch/x86/boot/compressed/vmlinux` after each kernel build and fail the image build if BMI1/BMI2 instructions remain.
+- Added a fixture-based regression that accepts baseline code and rejects an explicitly encoded SHRX/BMI2 instruction.
+- Wired the regression into `make test-shell` and the post-build ISA check into the real `kernel` target.
+- No files under `/linux` were changed.
+
+### Validation
+- Local fixture regression using the available C compiler and `objdump`: **PASS** (safe object accepted; explicit SHRX/BMI2 object rejected).
+- Shell syntax checks for the new checker and test: **PASS**.
+- Exact-head GitHub userland, kernel build, compressed-kernel ISA scan, BIOS/UEFI QEMU boot and `/linux` integrity checks are pending on this branch.
+- The pre-fix PR #61 full-image run #44239001611 failed both BIOS and UEFI; no successful boot is claimed.
+
+### Next priorities
+1. Confirm the filtered current-head QEMU trace identifies the same SHRX instruction at `0x3cd63c7`.
+2. Run the post-build checker on the new compressed `vmlinux`; if it finds further BMI1/BMI2 instructions, keep the build fail-closed and correct the remaining compiler/assembly source.
+3. Re-run BIOS and UEFI on the exact fixed head and require the rootfs hand-off plus AYUI first-frame markers.
+4. If the kernel #UD is removed but a userspace #UD remains at a different address, map that address to its ELF and fix it separately rather than broadening kernel flags blindly.

@@ -11,6 +11,8 @@ ROOTFS_IMG := $(BUILD_DIR)/rootfs.img
 ROOTFS_DIR := $(BUILD_DIR)/rootfs
 INITRAMFS := $(BUILD_DIR)/aweos-initramfs.cpio.gz
 LIMINE_TOOL ?= $(shell command -v limine 2>/dev/null || true)
+# Keep the compressed x86_64 boot path within the architectural baseline ISA.
+AWEOS_KERNEL_CPU_FLAGS ?= -march=x86-64 -mtune=generic -mno-bmi -mno-bmi2
 
 RUST_BINS := aweui aweui-installer aweui-settings aweui-control-center aweui-file-manager \
              aweui-terminal aweui-system-monitor aweui-diagnostics aweui-text-editor \
@@ -42,8 +44,10 @@ userland: rust-build
 kernel: verify-linux
 	@mkdir -p $(KERNEL_BUILD_DIR)
 	@./scripts/config-kernel.sh $(KERNEL_SRC) $(KERNEL_BUILD_DIR)
-	@$(MAKE) -C $(KERNEL_SRC) O=$(KERNEL_BUILD_DIR) -j"$$(nproc)" bzImage
+	@$(MAKE) -C $(KERNEL_SRC) O=$(KERNEL_BUILD_DIR) CC="$(CC) $(AWEOS_KERNEL_CPU_FLAGS)" -j"$(nproc)" bzImage
 	@test -s $(KERNEL_BUILD_DIR)/arch/x86/boot/bzImage
+	@test -s $(KERNEL_BUILD_DIR)/arch/x86/boot/compressed/vmlinux
+	@bash ./scripts/check-kernel-baseline-isa.sh $(KERNEL_BUILD_DIR)/arch/x86/boot/compressed/vmlinux
 
 rootfs: rust-build
 	@AWEOS_DESKTOP=${AWEOS_DESKTOP:-ayui} ./scripts/build-rootfs.sh $(BUILD_DIR)
@@ -101,6 +105,7 @@ test-shell:
 	@bash ./scripts/test-qemu-runner-invocation.sh
 	@bash ./scripts/test-qemu-boot-readiness.sh
 	@bash ./scripts/test-kernel-config-requirements.sh
+	@bash ./scripts/test-kernel-baseline-isa.sh
 
 test-qemu: iso
 	# The runner is tracked without the executable bit; invoke it through Bash.
