@@ -7,7 +7,20 @@ TEMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/awepkg-fail-closed.XXXXXX")"
 trap 'rm -rf -- "$TEMP_ROOT"' EXIT
 
 DB_DIR="$TEMP_ROOT/db"
-mkdir -p "$DB_DIR" "$TEMP_ROOT/archive/root" "$TEMP_ROOT/system"
+FAKE_BIN="$TEMP_ROOT/fake-bin"
+mkdir -p "$DB_DIR" "$TEMP_ROOT/archive/root" "$FAKE_BIN"
+
+# If an install/remove regression invokes a filesystem mutator, record it and
+# fail before any host filesystem operation can occur.
+for command in tar cp rm; do
+    cat > "$FAKE_BIN/$command" <<'WRAPPER'
+#!/bin/sh
+printf '%s\\n' "$0" >> "$AWEOS_AWEPKG_SIDE_EFFECT_LOG"
+exit 97
+WRAPPER
+    chmod 0755 "$FAKE_BIN/$command"
+done
+export AWEOS_AWEPKG_SIDE_EFFECT_LOG="$TEMP_ROOT/side-effects.log"
 cat > "$DB_DIR/demo.meta" <<'META'
 PKG_NAME=demo
 PKG_VER=1.2.3
@@ -32,20 +45,19 @@ if AWEOS_AWEPKG_DB_DIR="$DB_DIR" sh "$SCRIPT" info ../system/keep >"$TEMP_ROOT/p
 fi
 grep -Fq 'invalid package name' "$TEMP_ROOT/path.out"
 
-if AWEOS_AWEPKG_DB_DIR="$DB_DIR" sh "$SCRIPT" install "$TEMP_ROOT/demo.awe" >"$TEMP_ROOT/install.out" 2>&1; then
+if AWEOS_AWEPKG_DB_DIR="$DB_DIR" PATH="$FAKE_BIN:$PATH" sh "$SCRIPT" install "$TEMP_ROOT/demo.awe" >"$TEMP_ROOT/install.out" 2>&1; then
     echo "ERROR: package install reported success without a trusted installer." >&2
     exit 1
 fi
 grep -Fq 'no files were extracted or copied' "$TEMP_ROOT/install.out"
-test ! -e "$TEMP_ROOT/system/payload.txt"
 
-if AWEOS_AWEPKG_DB_DIR="$DB_DIR" sh "$SCRIPT" remove demo >"$TEMP_ROOT/remove.out" 2>&1; then
+if AWEOS_AWEPKG_DB_DIR="$DB_DIR" PATH="$FAKE_BIN:$PATH" sh "$SCRIPT" remove demo >"$TEMP_ROOT/remove.out" 2>&1; then
     echo "ERROR: package removal reported success without an ownership/rollback backend." >&2
     exit 1
 fi
 grep -Fq 'no files or metadata were deleted' "$TEMP_ROOT/remove.out"
 test -f "$DB_DIR/demo.meta"
-test "$(cat "$TEMP_ROOT/system/keep.txt")" = "keep me"
+test ! -e "$TEMP_ROOT/side-effects.log"
 
 MISSING_DB="$TEMP_ROOT/missing-db"
 if AWEOS_AWEPKG_DB_DIR="$MISSING_DB" sh "$SCRIPT" install "$TEMP_ROOT/demo.awe" >"$TEMP_ROOT/missing.out" 2>&1; then
