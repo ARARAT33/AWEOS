@@ -11,7 +11,7 @@ use nix::sys::socket::sockopt::PeerCredentials;
 use nix::sys::socket::getsockopt;
 use nix::unistd::Uid;
 
-pub use aweui_framework::ipc::default_socket_path;
+pub use aweui_framework::ipc::{default_socket_path, resolve_socket_path};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum IpcRequest {
