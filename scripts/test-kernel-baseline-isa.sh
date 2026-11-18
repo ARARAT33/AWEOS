@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
-# Test the compressed-kernel ISA checker with one safe and one BMI2 fixture.
+# Test the compressed-kernel ISA checker with safe, unsafe and invalid fixtures.
 set -euo pipefail
 
 here="$(cd -- "$(dirname -- "$0")" && pwd -P)"
 checker="$here/check-kernel-baseline-isa.sh"
+if [ ! -f "$checker" ]; then
+    echo "ERROR: ISA checker is missing: $checker" >&2
+    exit 2
+fi
 command -v cc >/dev/null 2>&1 || { echo "ERROR: cc is required for ISA checker tests." >&2; exit 2; }
 command -v objdump >/dev/null 2>&1 || { echo "ERROR: objdump is required for ISA checker tests." >&2; exit 2; }
 workdir="$(mktemp -d "${TMPDIR:-/tmp}/aweos-kernel-isa-test.XXXXXX")"
@@ -29,6 +33,7 @@ ASM
 
 cc -c "$workdir/safe.S" -o "$workdir/safe.o"
 cc -c "$workdir/unsafe.S" -o "$workdir/unsafe.o"
+printf 'this is not an ELF object\n' >"$workdir/invalid.elf"
 
 bash "$checker" "$workdir/safe.o"
 if bash "$checker" "$workdir/unsafe.o" >"$workdir/unsafe.out" 2>&1; then
@@ -36,4 +41,11 @@ if bash "$checker" "$workdir/unsafe.o" >"$workdir/unsafe.out" 2>&1; then
     exit 1
 fi
 grep -q 'shrx' "$workdir/unsafe.out"
-echo "PASS: compressed-kernel ISA checker accepts baseline code and rejects BMI2 code."
+
+if bash "$checker" "$workdir/invalid.elf" >"$workdir/invalid.out" 2>&1; then
+    echo "ERROR: ISA checker accepted an input that objdump cannot disassemble." >&2
+    exit 1
+fi
+grep -q 'objdump could not disassemble' "$workdir/invalid.out"
+
+echo "PASS: ISA checker accepts baseline code, rejects BMI2 code, and fails closed on invalid ELF input."
