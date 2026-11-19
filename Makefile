@@ -101,6 +101,7 @@ test-shell:
 	@bash ./scripts/test-qemu-runner-invocation.sh
 	@bash ./scripts/test-qemu-boot-readiness.sh
 	@bash ./scripts/test-netid.sh
+	@bash ./scripts/test-aosin.sh
 	@bash ./scripts/test-kernel-config-requirements.sh
 
 test-qemu: iso
