@@ -37,9 +37,24 @@ jobs:
             existing="$(jq -r --arg b "$branch" '[.[] | select(.headRefName == $b)] | length' <<<"$prs_json")"
             if [[ "$existing" == "0" ]]; then
               # Do not overwrite or delete a branch; propose it as a normal PR.
-              gh pr create --repo "$GH_REPO" --base "$DEFAULT_BRANCH" --head "$branch" \
+              if ! create_output="$(gh pr create --repo "$GH_REPO" --base "$DEFAULT_BRANCH" --head "$branch" \
                 --title "Integrate branch: $branch" \
-                --body "Automated integration proposal. This PR preserves the source branch and its commits. It will only be auto-merged after GitHub reports successful checks and the PR is mergeable." || true
+                --body "Automated integration proposal. This PR preserves the source branch and its commits. It will only be auto-merged after GitHub reports successful checks and the PR is mergeable." 2>&1)"; then
+                if grep -Fq "not permitted to create or approve pull requests" <<<"$create_output"; then
+                  echo "::warning::GitHub Actions cannot create pull requests in this repository."
+                  {
+                    echo "## Branch proposal creation is unavailable"
+                    echo
+                    echo "The scheduled integration job attempted one proposal and GitHub rejected it because Actions is not permitted to create pull requests."
+                    echo "Enable **Allow GitHub Actions to create and approve pull requests** under Settings → Actions → General → Workflow permissions, or create branch proposals using an authorized account."
+                    echo "No source branches or commits were changed. The workflow will still evaluate existing open PRs."
+                  } >> "$GITHUB_STEP_SUMMARY"
+                  printf '%s\\n' "$create_output"
+                  break
+                fi
+                printf 'ERROR: failed to create integration PR for %s:\\n%s\\n' "$branch" "$create_output" >&2
+                exit 1
+              fi
               # Refresh the all-state PR list after creating a proposal.
               prs_json="$(gh pr list --repo "$GH_REPO" --state all --limit 500 --json number,headRefName,baseRefName,isDraft)"
             fi
