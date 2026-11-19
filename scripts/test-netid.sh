@@ -95,7 +95,7 @@ int main(void) {
     assert(strncmp(ident_a.fingerprint, "AWE-", 4) == 0);
     assert(ident_a.fingerprint[12] == '-' && ident_a.fingerprint[21] == '-');
     for (unsigned i = 0; i < 30; ++i) {
-        if (i == 12 || i == 21) continue;
+        if (i < 4 || i == 12 || i == 21) continue;
         char c = ident_a.fingerprint[i];
         assert((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F'));
     }
