@@ -52,6 +52,11 @@ int main(void) {
     assert(aweos_netid_sha256(million, sizeof(million), digest_a) == AWEOS_OK);
     assert(aweos_netid_sha256(million, sizeof(million), digest_b) == AWEOS_OK);
     assert(memcmp(digest_a, digest_b, 32) == 0);
+    static const uint8_t million_expected[32] = {
+        0xCD,0xC7,0x6E,0x5C,0x99,0x14,0xFB,0x92,0x81,0xA1,0xC7,0xE2,0x84,0xD7,0x3E,0x67,
+        0xF1,0x80,0x9A,0x48,0xA4,0x97,0x20,0x0E,0x04,0x6D,0x39,0xCC,0xC7,0x11,0x2C,0xD0
+    };
+    assert(memcmp(digest_a, million_expected, sizeof(million_expected)) == 0);
 
     /* RFC 4231 Test Case 1: key of 20 0x0b bytes, data "Hi There". */
     uint8_t key[20];
@@ -76,6 +81,12 @@ int main(void) {
     assert(aweos_netid_derive(secret_b, &ident_b) == AWEOS_OK);
     assert(memcmp(ident_a.id, ident_a2.id, 32) == 0);
     assert(strcmp(ident_a.fingerprint, ident_a2.fingerprint) == 0);
+    static const uint8_t expected_identity_a[32] = {
+        0x84,0x20,0x6F,0xE8,0xDC,0x1E,0xE1,0x37,0xA3,0xC4,0x02,0xA7,0xBE,0xF8,0x7E,0xFA,
+        0xAC,0x07,0xCF,0xD0,0x20,0x9B,0xB6,0xA8,0xFE,0x35,0x15,0x43,0xD1,0x18,0xBD,0x2D
+    };
+    assert(memcmp(ident_a.id, expected_identity_a, sizeof(expected_identity_a)) == 0);
+    assert(strcmp(ident_a.fingerprint, "AWE-84206FE8-DC1EE137-A3C402A7") == 0);
     assert(memcmp(ident_a.id, ident_b.id, 32) != 0);
     assert(strcmp(ident_a.fingerprint, ident_b.fingerprint) != 0);
 
