@@ -8,18 +8,11 @@
 static const uint8_t NETID_DOMAIN_BYTES[] = "AWEOS-NETID-V1";
 enum { NETID_DOMAIN_LEN = sizeof(NETID_DOMAIN_BYTES) - 1U };
 
-typedef struct {
-    uint32_t state[8];
-    uint8_t buffer[SHA256_BLOCK_LEN];
-    size_t buffered;
-    uint64_t total_len;
-} sha256_ctx_t;
-
 static uint32_t sha256_rotr(uint32_t value, unsigned bits) {
     return (value >> bits) | (value << (32U - bits));
 }
 
-static void sha256_init(sha256_ctx_t *ctx) {
+void aweos_netid_sha256_init(aweos_sha256_ctx_t *ctx) {
     static const uint32_t H0[8] = {
         0x6A09E667U, 0xBB67AE85U, 0x3C6EF372U, 0xA54FF53AU,
         0x510E527FU, 0x9B05688CU, 0x1F83D9ABU, 0x5BE0CD19U
@@ -48,7 +41,7 @@ static const uint32_t K[64] = {
     0x90BEFFFAU, 0xA4506CEBU, 0xBEF9A3F7U, 0xC67178F2U
 };
 
-static void sha256_compress(sha256_ctx_t *ctx, const uint8_t block[SHA256_BLOCK_LEN]) {
+static void aweos_netid_sha256_compress(aweos_sha256_ctx_t *ctx, const uint8_t block[SHA256_BLOCK_LEN]) {
     uint32_t w[64];
     for (unsigned i = 0; i < 16U; ++i) {
         w[i] = ((uint32_t)block[4U * i] << 24U) |
@@ -80,7 +73,7 @@ static void sha256_compress(sha256_ctx_t *ctx, const uint8_t block[SHA256_BLOCK_
     ctx->state[4] += e; ctx->state[5] += f; ctx->state[6] += g; ctx->state[7] += h;
 }
 
-static void sha256_update(sha256_ctx_t *ctx, const uint8_t *data, size_t len) {
+void aweos_netid_sha256_update(aweos_sha256_ctx_t *ctx, const uint8_t *data, size_t len) {
     ctx->total_len += (uint64_t)len;
     while (len > 0) {
         size_t take = SHA256_BLOCK_LEN - ctx->buffered;
@@ -90,19 +83,19 @@ static void sha256_update(sha256_ctx_t *ctx, const uint8_t *data, size_t len) {
         data += take;
         len -= take;
         if (ctx->buffered == SHA256_BLOCK_LEN) {
-            sha256_compress(ctx, ctx->buffer);
+            aweos_netid_sha256_compress(ctx, ctx->buffer);
             ctx->buffered = 0;
         }
     }
 }
 
-static void sha256_final(sha256_ctx_t *ctx, uint8_t out[SHA256_OUT_LEN]) {
+void aweos_netid_sha256_final(aweos_sha256_ctx_t *ctx, uint8_t out[SHA256_OUT_LEN]) {
     uint64_t bits = ctx->total_len * 8U;
     uint8_t pad = 0x80;
-    sha256_update(ctx, &pad, 1);
+    aweos_netid_sha256_update(ctx, &pad, 1);
     uint8_t zero = 0;
     while (ctx->buffered != 56U) {
-        sha256_update(ctx, &zero, 1);
+        aweos_netid_sha256_update(ctx, &zero, 1);
     }
     uint8_t length_bytes[8];
     for (unsigned i = 0; i < 8U; ++i) {
@@ -112,7 +105,7 @@ static void sha256_final(sha256_ctx_t *ctx, uint8_t out[SHA256_OUT_LEN]) {
     for (unsigned i = 0; i < 8U; ++i) {
         ctx->buffer[56U + i] = length_bytes[i];
     }
-    sha256_compress(ctx, ctx->buffer);
+    aweos_netid_sha256_compress(ctx, ctx->buffer);
     ctx->buffered = 0;
     for (unsigned i = 0; i < 8U; ++i) {
         out[4U * i] = (uint8_t)(ctx->state[i] >> 24);
@@ -124,10 +117,10 @@ static void sha256_final(sha256_ctx_t *ctx, uint8_t out[SHA256_OUT_LEN]) {
 
 int aweos_netid_sha256(const uint8_t *data, size_t len, uint8_t out[SHA256_OUT_LEN]) {
     if ((!data && len > 0) || !out) return AWEOS_ERR_INVALID_PARAM;
-    sha256_ctx_t ctx;
-    sha256_init(&ctx);
-    if (data && len > 0) sha256_update(&ctx, data, len);
-    sha256_final(&ctx, out);
+    aweos_sha256_ctx_t ctx;
+    aweos_netid_sha256_init(&ctx);
+    if (data && len > 0) aweos_netid_sha256_update(&ctx, data, len);
+    aweos_netid_sha256_final(&ctx, out);
     return AWEOS_OK;
 }
 
@@ -147,12 +140,12 @@ int aweos_netid_hmac_sha256(const uint8_t *key, size_t key_len,
         for (size_t i = 0; i < key_len; ++i) block[i] ^= key[i];
     }
 
-    sha256_ctx_t inner;
-    sha256_init(&inner);
-    sha256_update(&inner, block, sizeof(block));
-    if (msg && msg_len > 0) sha256_update(&inner, msg, msg_len);
+    aweos_sha256_ctx_t inner;
+    aweos_netid_sha256_init(&inner);
+    aweos_netid_sha256_update(&inner, block, sizeof(block));
+    if (msg && msg_len > 0) aweos_netid_sha256_update(&inner, msg, msg_len);
     uint8_t inner_digest[SHA256_OUT_LEN];
-    sha256_final(&inner, inner_digest);
+    aweos_netid_sha256_final(&inner, inner_digest);
 
     memset(block, 0x5C, sizeof(block)); /* opad */
     if (key_len > SHA256_BLOCK_LEN) {
@@ -161,11 +154,11 @@ int aweos_netid_hmac_sha256(const uint8_t *key, size_t key_len,
         for (size_t i = 0; i < key_len; ++i) block[i] ^= key[i];
     }
 
-    sha256_ctx_t outer;
-    sha256_init(&outer);
-    sha256_update(&outer, block, sizeof(block));
-    sha256_update(&outer, inner_digest, sizeof(inner_digest));
-    sha256_final(&outer, out);
+    aweos_sha256_ctx_t outer;
+    aweos_netid_sha256_init(&outer);
+    aweos_netid_sha256_update(&outer, block, sizeof(block));
+    aweos_netid_sha256_update(&outer, inner_digest, sizeof(inner_digest));
+    aweos_netid_sha256_final(&outer, out);
     return AWEOS_OK;
 }
 

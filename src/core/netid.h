@@ -26,6 +26,17 @@
 #define AWEOS_NETID_MAC_LEN 32
 #define AWEOS_NETID_FINGERPRINT_LEN 31 /* AWE-XXXXXXXX-XXXXXXXX-XXXXXXXX plus NUL */
 #define AWEOS_NETID_MAX_NONCE 64
+#define AWEOS_SHA256_BLOCK_LEN 64U
+#define AWEOS_SHA256_OUT_LEN 32U
+
+/* Incremental SHA-256 context for payloads that must not be fully
+ * buffered in memory. No dynamic allocation is used by the implementation. */
+typedef struct {
+    uint32_t state[8];
+    uint8_t buffer[AWEOS_SHA256_BLOCK_LEN];
+    size_t buffered;
+    uint64_t total_len;
+} aweos_sha256_ctx_t;
 
 typedef struct {
     uint8_t id[AWEOS_NETID_ID_LEN];
@@ -34,6 +45,11 @@ typedef struct {
 
 /* NIST FIPS 180-4 SHA-256. Returns AWEOS_OK or AWEOS_ERR_INVALID_PARAM. */
 int aweos_netid_sha256(const uint8_t *data, size_t len, uint8_t out[AWEOS_NETID_ID_LEN]);
+
+/* Incremental SHA-256: hash chunks in order, then finalize. */
+void aweos_netid_sha256_init(aweos_sha256_ctx_t *ctx);
+void aweos_netid_sha256_update(aweos_sha256_ctx_t *ctx, const uint8_t *data, size_t len);
+void aweos_netid_sha256_final(aweos_sha256_ctx_t *ctx, uint8_t out[AWEOS_SHA256_OUT_LEN]);
 
 /* RFC 2104 HMAC-SHA256. Keys longer than the block size are hashed first. */
 int aweos_netid_hmac_sha256(const uint8_t *key, size_t key_len,
