@@ -374,3 +374,24 @@
 2. Inspect the full image/boot run and confirm the path-specific check names match the workflow job names.
 3. Review the workflow diff and preserve manual approval for workflow/CI policy changes.
 4. Continue BIOS interrupt-trace diagnosis without weakening rootfs or compositor readiness assertions.
+
+
+## 2026-11-19 follow-up — Make scheduled PR proposal failures observable
+
+### Evidence
+- Scheduled run [#44445897064](https://github.com/ARARAT33/AWEOS/actions/runs/44445897064) completed green while its logs contained repeated GitHub API errors: the Actions token was not permitted to create pull requests.
+- The workflow used `gh pr create ... || true`, then continued through every branch. This hid the repository-level permission restriction and generated noisy repeated failures.
+
+### Change on `fix/branch-integration-required-checks-20261118` (PR #62)
+- The first permission-denied response now writes an explicit step-summary warning with the required repository setting, stops further proposal attempts, and continues evaluating already-open PRs.
+- Unexpected PR-creation errors are printed and fail the job instead of being silently ignored.
+- No source branch, commit, or existing PR is modified by this change.
+
+### Validation
+- Workflow source was updated on the existing draft PR branch. Fresh exact-head CI is pending; no auto-merge or PR creation success is claimed.
+- Repository setting changes cannot be made through this workflow source and may require an owner-level GitHub Settings update.
+
+### Next
+1. Verify the workflow shell and existing branch-policy regression on the updated PR #62 head.
+2. Confirm the run summary reports the permission limitation once, without retrying every branch.
+3. Keep workflow-policy changes under manual review.
