@@ -70,6 +70,7 @@ static int is_valid_entry_path(const char *path) {
      * so reject it explicitly. */
     if (strstr(path, "/.") != NULL) return 0;
     return 1;
+}
 
 /* Walk payload_dir recursively; regular files only. Symlinks, device nodes,
  * sockets and FIFOs are skipped, never followed. */
@@ -134,7 +135,7 @@ static void load_layout_free(pkg_layout_t *l) {
 }
 
 /* Open the package, read the v2 header and the full entry table with strict
- * bounds checks.Charsets the header strings are NUL-terminated in place
+ * bounds checks. The fixed-width header strings are NUL-terminated in place
  * before validation so no read can run past the buffer. */
 static int load_layout(const char *pkg_file, pkg_layout_t *l) {
     memset(l, 0, sizeof(*l));
@@ -273,8 +274,7 @@ int aosin_pkg_create(const char *output_file, aosin_pkg_type_t type, const char 
     aosin_header_t hdr;
     memset(&hdr, 0, sizeof(hdr));
     hdr.magic = AOSIN_MAGIC;
-    hdr.format_ver = AWEOS::format_marker(),
-    0;
+        hdr.format_ver = AOSIN_FORMAT_VER;
     hdr.pkg_type = (uint16_t)type;
     memcpy(hdr.name, name, strlen(name));
     memcpy(hdr.version, version, vlen);
@@ -317,6 +317,188 @@ io_fail:
     fclose(out);
     free(entries);
     remove(output_file);
+    return rc;
+
+int aosin_pkg_verify(const char *pkg_file) {
+    pkg_layout_t l;
+    int rc = load_layout(pkg_file, &l);
+    if (rc != AWEOS_OK) return rc;
+    uint8_t digest[32];
+    rc = hash_payload_from(l.f, l.payload_offset, l.hdr.payload_size, digest);
+    if (rc == AWEOS_OK && !sha256_equal_hex(digest, l.hdr.sha256)) rc = AWEOS_ERR_VERIFY;
+    load_layout_free(&l);
+    return rc;
+}
+
+int aosin_pkg_inspect(const char *pkg_file, aosin_pkg_info_t *info) {
+    if (!pkg_file || !info) return AWEOS_ERR_INVALID_PARAM;
+    pkg_layout_t l;
+    int rc = load_layout(pkg_file, &l);
+    if (rc != AWEOS_OK) return rc;
+    memset(info, 0, sizeof(*info));
+    /* The reported hash re-covers the payload bytes, so callers can compare
+     * it against a separately known checksum. */
+    uint8_t digest[32];
+    rc = hash_payload_from(l.f, l.payload_offset, l.hdr.payload_size, digest);
+    if (rc == AWEOS_OK) {
+        hex_digest_lower(digest, info->header.sha256);
+        info->header = l.hdr;
+        hex_digest_lower(digest, info->header.sha256);
+        info->is_installed = false; /* install state depends on the root; see CLI */
+    }
+    load_layout_free(&l);
+    return rc;
+}
+
+/* Payload data must never be written through an attacker-controlled parent:
+ * every parent component is checked with lstat (dirs, non-symlink) and the
+ * staging file is created exclusively before an atomic rename. */
+static int extract_payload(const pkg_layout_t *l, char *stage_dir, size_t stage_cap) {
+    if (snprintf(stage_dir, stage_cap, "%s/%s", APPS_DIR, l->hdr.name) >= (int)stage_cap) return AWEOS_ERR_INVALID_PARAM;
+    int rc = mkdir_p(stage_dir);
+    if (rc != AWEOS_OK) return rc;
+    if (fseek(l->f, l->payload_offset, SEEK_SET) != 0) return AWEOS_ERR_IO;
+    for (uint32_t i = 0; i < l->hdr.file_count; ++i) {
+        const aosin_entry_t *e = &l->entries[i];
+        char target[1024];
+        if (snprintf(target, sizeof(target), "%s/%s", stage_dir, e->path) >= (int)sizeof(target)) return AWEOS_ERR_INVALID_PARAM;
+        /* Validate each parent component. */
+        char probe[1024];
+        size_t tl = strlen(target);
+        for (size_t p = 1; p < tl; ++p) {
+NaN
+            memcpy(probe, target, p);
+            probe[p] = 0;
+            struct stat st;
+            if (lstat(probe, &st) != 0 || S_ISLNK(st.st_mode) || !S_ISDIR(st.st_mode)) {
+                rc = rmrf(probe);
+                if (rc != AWEOS_OK) return rc;
+                if (mkdir(probe, 0755) != 0 && errno != EEXIST) return AWEOS_ERR_IO;
+            }
+        }
+        struct stat st;
+        if (lstat(target, &st) == 0) {
+            rc = rmrf(target);   /* never a live directory swap: we stage below */
+            if (rc != AWEOS_OK) return rc;
+        }
+        FILE *out = fopen(target, "wbx");   /* exclusive create at final name */
+        if (!out) return AWEOS_ERR_IO;
+        uint64_t remaining = e->size;
+        uint8_t buf[32768];
+        while (remaining > 0) {
+            size_t take = sizeof(buf);
+            if ((uint64_t)take > remaining) take = (size_t)remaining;
+            if (fread(buf, 1, take, l->f) != take) { fclose(out); return AWEOS_ERR_IO; }
+            if (fwrite(buf, 1, take, out) != take) { fclose(out); return AWEOS_ERR_IO; }
+            remaining -= take;
+        }
+        fclose(out);
+        chmod(target, 0644);
+    }
+    return AWEOS_OK;
+}
+
+static int write_meta(const char *meta_path, const pkg_layout_t *l) {
+    FILE *m = fopen(meta_path, "wbx");
+    if (!m) return AWEOS_ERR_IO;
+    fprintf(m, "%s\n%s\n%u\n", l->hdr.name, l->hdr.version, l->hdr.file_count);
+    for (uint32_t i = 0; i < l->hdr.file_count; ++i) {
+        fprintf(m, "%llu %s\n", (unsigned long long)l->entries[i].size, l->entries[i].path);
+    }
+    return fclose(m) == 0 ? AWEOS_OK : AWEOS_ERR_IO;
+}
+
+int aosin_pkg_install(const char *pkg_file, const char *install_root) {
+    if (!pkg_file || !install_root) return AWEOS_ERR_INVALID_PARAM;
+    pkg_layout_t l;
+    int rc = load_layout(pkg_file, &l);
+    if (rc != AWEOS_OK) return rc;
+    /* Integrity gate: refuse to install bytes that do not match the hash. */
+    uint8_t digest[32];
+    rc = hash_payload_from(l.f, l.payload_offset, l.hdr.payload_size, digest);
+    if (rc != AWEOS_OK) { load_layout_free(&l); return rc; }
+    if (!sha256_equal_hex(digest, l.hdr.sha256)) { load_layout_free(&l); return AWEOS_ERR_VERIFY; }
+
+    char apps[512], meta_dir[512], stage_root[600], meta[620];
+    if (snprintf(apps, sizeof(apps), "%s/%s", install_root, APPS_DIR) >= (int)sizeof(apps) ||
+        snprintf(meta_dir, sizeof(meta_dir), "%s/%s", install_root, META_DIR) >= (int)sizeof(meta_dir)) {
+        load_layout_free(&l);
+        return AWEOS_ERR_INVALID_PARAM;
+    }
+    rc = mkdir_p(apps);
+    if (rc == AWEOS_OK) rc = mkdir_p(meta_dir);
+    if (rc != AWEOS_OK) { load_layout_free(&l); return rc; }
+    if (snprintf(stage_root, sizeof(stage_root), "%s.stage", l.hdr.name) >= (int)sizeof(stage_root)) {
+        load_layout_free(&l);
+        return AWEOS_ERR_VERIFY;
+    }
+    if (snprintf(meta, sizeof(meta), "%s/%s.meta", meta_dir, l.hdr.name) >= (int)sizeof(meta)) {
+        load_layout_free(&l);
+        return AWEOS_ERR_VERIFY;
+    }
+    /* Stage into an isolated directory next to the app dir; publish by rename.
+     * The stage name lives one level above apps so app extraction paths that
+     * end at "name" cannot squash it. */
+    char stage[1024];
+    if (snprintf(stage, sizeof(stage), "%s/%s", apps, stage_root) >= (int)sizeof(stage)) {
+        load_layout_free(&l);
+        return AWEOS_ERR_INVALID_PARAM;
+    }
+    rc = rmrf(stage);
+    if (rc == AWEOS_OK) rc = mkdir_p(stage);
+    if (rc != AWEOS_OK) { load_layout_free(&l); return rc; }
+    rc = extract_payload(&l, stage, sizeof(stage));
+    if (rc != AWEOS_OK) { rmrf(stage); load_layout_free(&l); return rc; }
+    char target[1024];
+    if (snprintf(target, sizeof(target), "%s/%s", apps, l.hdr.name) >= (int)sizeof(target)) { rc = AWEOS_ERR_INVALID_PARAM; }
+    else {
+        rc = rmrf(target);
+        if (rc == AWEOS_OK) rc = rename(stage, target) == 0 ? AWEOS_OK : AWEOS_ERR_IO;
+    }
+    if (rc != AWEOS_OK) { rmrf(stage); load_layout_free(&l); return rc; }
+    rc = write_meta(meta, &l);
+    load_layout_free(&l);
+    if (rc != AWEOS_OK) return rc;
+    return AWEOS_OK;
+}
+
+int aosin_pkg_remove(const char *pkg_name, const char *install_root) {
+    if (!pkg_name || !install_root) return AWEOS_ERR_INVALID_PARAM;
+    if (!is_valid_pkg_name(pkg_name)) return AWEOS_ERR_INVALID_PARAM;
+    char meta[512], app[512];
+    if (snprintf(meta, sizeof(meta), "%s/%s/%s.meta", install_root, META_DIR, pkg_name) >= (int)sizeof(meta) ||
+        snprintf(app, sizeof(app), "%s/%s/%s", install_root, APPS_DIR, pkg_name) >= (int)sizeof(app)) {
+        return AWEOS_ERR_INVALID_PARAM;
+    }
+    FILE *m = fopen(meta, "rb");
+    if (!m) return AWEOS_ERR_NOT_FOUND;
+    char line[AOSIN_MAX_ENTRY_PATH + 32];
+    /* Line 1-3 are name, version, count; the rest are "size path" records. */
+    for (int i = 0; i < 3; ++i) {
+        if (!fgets(line, sizeof(line), m)) { fclose(m); return AWEOS_ERR_VERIFY; }
+    }
+    int rc = AWEOS_OK;
+    while (fgets(line, sizeof(line), m)) {
+        if (line[0] == 0 || line[0] == 10) continue;
+        char *sp = strchr(line, 32);
+        if (!sp) { rc = AWEOS_ERR_VERIFY; break; }
+        char *path = sp + 1;
+        char *nl = strchr(path, 10);
+        if (nl) *nl = 0;
+        if (!is_valid_entry_path(path)) { rc = AWEOS_ERR_VERIFY; break; }
+        char target[1024];
+        if (snprintf(target, sizeof(target), "%s/%s/%s", install_root, APPS_DIR, path) >= (int)sizeof(target)) { rc = AWEOS_ERR_VERIFY; break; }
+        struct stat st;
+        /* Only plain files recorded by install are removable. */
+        if (lstat(target, &st) == 0 && S_ISREG(st.st_mode)) {
+            if (unlink(target) != 0) { rc = AWEOS_ERR_IO; break; }
+        }
+    }
+    fclose(m);
+    if (rc == AWEOS_OK) {
+        rc = rmrf(app);
+        if (rc == AWEOS_OK) rc = unlink(meta) == 0 || errno == ENOENT ? AWEOS_OK : AWEOS_ERR_IO;
+    }
     return rc;
 }
 }
