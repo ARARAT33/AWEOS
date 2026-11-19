@@ -385,3 +385,31 @@
    integration order (#58 non-draft first, then #60, #61, #62, #63, #64).
 3. Begin Connection Manager (module 4) handshake on top of the identity
    primitive from PR #64.
+
+
+## 2026-11-19 — PR #64 strict-build correction and identity boundary review
+
+### CI evidence inspected
+- PR #64 Userland Validation run [#44324028340](https://github.com/ARARAT33/AWEOS/actions/runs/44324028340) and full build/boot run [#44324028332](https://github.com/ARARAT33/AWEOS/actions/runs/44324028332) both stopped in `make test-shell`.
+- The exact compiler error was GCC `-Werror=unterminated-string-initialization` at `src/core/netid.c:10`: a 14-byte array was initialized from a 15-byte C string literal including its NUL terminator. Rust workspace tests had passed in the full-build job; image creation and QEMU boot were skipped after the shell-test failure. No boot result is inferred from these runs.
+- The separate Core Data Preservation workflow passed on the same PR head.
+
+### Changes made on `feat/device-identity-manager-20261118` (PR #64)
+- Replaced the fixed-size string initializer with an inferred-size byte array and a compile-time `sizeof(...)-1` domain length. The protocol transcript remains the same 14 bytes, without truncation warnings.
+- Strengthened `scripts/test-netid.sh` with known-answer checks for SHA-256 of one million `a` bytes and for a fixed device-secret identity/fingerprint.
+- Corrected `netid.h` and `docs/NETWORK-IDENTITY.md` to state the actual trust boundary: HMAC response generation alone is not remotely verifiable from the public device ID. No peer verifier, asymmetric signature, enrollment, or secure secret provisioning exists yet. The module must not be used as remote authentication until those are designed and tested.
+
+### Validation status
+- The observed CI failure is understood and the source-level correction is committed to the existing PR branch.
+- Fresh Userland Validation and full image/BIOS/UEFI checks on the updated head are pending. This run did not execute a local C build or QEMU; no pass is claimed.
+
+### Additional repository health findings
+- Scheduled branch-integration run [#44445897064](https://github.com/ARARAT33/AWEOS/actions/runs/44445897064) reported success, but its logs show repeated `gh pr create` failures because GitHub Actions is not permitted to create pull requests. The workflow currently masks those failures with `|| true`; its green conclusion is not evidence that proposals were created.
+- Linux sync run [#44299022285](https://github.com/ARARAT33/AWEOS/actions/runs/44299022285) failed at the Linux-only replacement step with `fatal: path 'linux' exists on disk, but not in the index`. No push occurred; the index/worktree discrepancy needs a separate diagnosis.
+
+### Next run priorities
+1. Verify the new PR #64 head with fresh `make test-shell` and Userland Validation.
+2. If userland passes, inspect the full build/boot run separately; the previous boot matrix never started.
+3. Fix the scheduled branch-integration workflow so disabled PR-creation permissions are reported once and not silently treated as successful proposal creation.
+4. Diagnose the Linux sync index/worktree failure without weakening the hard boundary that only `/linux` may change.
+5. Design a publicly verifiable device identity and secure provisioning model before adding Connection Manager trust decisions.
