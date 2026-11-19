@@ -274,7 +274,7 @@ int aosin_pkg_create(const char *output_file, aosin_pkg_type_t type, const char 
     aosin_header_t hdr;
     memset(&hdr, 0, sizeof(hdr));
     hdr.magic = AOSIN_MAGIC;
-        hdr.format_ver = AOSIN_FORMAT_VER;
+    hdr.format_ver = AOSIN_FORMAT_VER;
     hdr.pkg_type = (uint16_t)type;
     memcpy(hdr.name, name, strlen(name));
     memcpy(hdr.version, version, vlen);
@@ -318,6 +318,7 @@ io_fail:
     free(entries);
     remove(output_file);
     return rc;
+}
 
 int aosin_pkg_verify(const char *pkg_file) {
     pkg_layout_t l;
@@ -366,7 +367,7 @@ static int extract_payload(const pkg_layout_t *l, char *stage_dir, size_t stage_
         char probe[1024];
         size_t tl = strlen(target);
         for (size_t p = 1; p < tl; ++p) {
-NaN
+            if (target[p] != '/') continue;
             memcpy(probe, target, p);
             probe[p] = 0;
             struct stat st;
@@ -500,5 +501,4 @@ int aosin_pkg_remove(const char *pkg_name, const char *install_root) {
         if (rc == AWEOS_OK) rc = unlink(meta) == 0 || errno == ENOENT ? AWEOS_OK : AWEOS_ERR_IO;
     }
     return rc;
-}
 }
