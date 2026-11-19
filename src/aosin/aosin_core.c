@@ -355,7 +355,7 @@ int aosin_pkg_inspect(const char *pkg_file, aosin_pkg_info_t *info) {
  * every parent component is checked with lstat (dirs, non-symlink) and the
  * staging file is created exclusively before an atomic rename. */
 static int extract_payload(const pkg_layout_t *l, char *stage_dir, size_t stage_cap) {
-    if (snprintf(stage_dir, stage_cap, "%s/%s", APPS_DIR, l->hdr.name) >= (int)stage_cap) return AWEOS_ERR_INVALID_PARAM;
+    if (!stage_dir || !stage_dir[0]) return AWEOS_ERR_INVALID_PARAM;
     int rc = mkdir_p(stage_dir);
     if (rc != AWEOS_OK) return rc;
     if (fseek(l->f, l->payload_offset, SEEK_SET) != 0) return AWEOS_ERR_IO;
@@ -419,6 +419,17 @@ int aosin_pkg_install(const char *pkg_file, const char *install_root) {
     rc = hash_payload_from(l.f, l.payload_offset, l.hdr.payload_size, digest);
     if (rc != AWEOS_OK) { load_layout_free(&l); return rc; }
     if (!sha256_equal_hex(digest, l.hdr.sha256)) { load_layout_free(&l); return AWEOS_ERR_VERIFY; }
+
+    /* Fail-closed reinstall: refuse to overwrite an installed package. */
+    {
+        char probe[1024];
+        if (snprintf(probe, sizeof(probe), "%s/%s/%s", install_root, APPS_DIR, l.hdr.name) >= (int)sizeof(probe)) {
+            load_layout_free(&l);
+            return AWEOS_ERR_INVALID_PARAM;
+        }
+        struct stat tst;
+        if (lstat(probe, &tst) == 0) { load_layout_free(&l); return AWEOS_ERR_VERIFY; }
+    }
 
     char apps[512], meta_dir[512], stage_root[600], meta[620];
     if (snprintf(apps, sizeof(apps), "%s/%s", install_root, APPS_DIR) >= (int)sizeof(apps) ||
