@@ -9,11 +9,16 @@
 /*
  * AWEOS Device Identity Manager (Network Platform, module 2).
  *
- * Every AWEOS device owns a 32-byte secret. The secret never leaves the
- * device; peers only see the derived 32-byte device id and can challenge the
- * device with a nonce that must be answered with an HMAC-SHA256 tag. No
- * personal data is embedded in the identity: the id is a hash of the secret
- * under a versioned domain-separation label.
+ * This module derives a stable 32-byte identifier from a 32-byte secret
+ * and exposes SHA-256/HMAC-SHA256 primitives. The caller is responsible for
+ * obtaining the secret from a cryptographically secure source and protecting
+ * it at rest. No personal data is embedded in the derived identifier.
+ *
+ * IMPORTANT: aweos_netid_respond() only computes a keyed MAC. A remote peer
+ * cannot verify that MAC from the public identifier alone; this API does not
+ * implement public-key authentication, key enrollment, or a remote verifier.
+ * Do not use it as a network authentication protocol without a separately
+ * designed and reviewed shared-key trust model.
  */
 
 #define AWEOS_NETID_SECRET_LEN 32
@@ -39,9 +44,9 @@ int aweos_netid_hmac_sha256(const uint8_t *key, size_t key_len,
 int aweos_netid_derive(const uint8_t secret[AWEOS_NETID_SECRET_LEN],
                        aweos_device_identity_t *identity);
 
-/* Answer a challenge: HMAC(secret, label || id || nonce).
- * Nonces longer than AWEOS_NETID_MAX_NONCE bytes are rejected intentionally:
- * callers must keep handshake values small, and the module must not allocate. */
+/* Compute HMAC(secret, label || id || nonce). This returns a tag only;
+ * it is not publicly verifiable without a separately provisioned shared key.
+ * Oversized nonces are rejected and no dynamic allocation is performed. */
 int aweos_netid_respond(const uint8_t secret[AWEOS_NETID_SECRET_LEN],
                         const uint8_t *nonce, size_t nonce_len,
                         const uint8_t id[AWEOS_NETID_ID_LEN],
