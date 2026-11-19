@@ -413,3 +413,11 @@
 3. Fix the scheduled branch-integration workflow so disabled PR-creation permissions are reported once and not silently treated as successful proposal creation.
 4. Diagnose the Linux sync index/worktree failure without weakening the hard boundary that only `/linux` may change.
 5. Design a publicly verifiable device identity and secure provisioning model before adding Connection Manager trust decisions.
+
+
+## 2026-11-19 follow-up — Correct the fingerprint-format regression boundary
+
+- The first post-fix Userland Validation run [#44460674814](https://github.com/ARARAT33/AWEOS/actions/runs/44460674814) compiled the identity module successfully and reached the new regression.
+- It then exposed an existing test assertion bug: the hex-character loop included the literal `AWE-` prefix, so it incorrectly rejected the valid `W` character. The prefix and separator positions already have their own assertions.
+- Updated the loop to validate only the 24 hexadecimal payload characters. The known-answer SHA-256 and identity checks remain enabled.
+- Fresh CI on the newest branch head is pending. No test pass is claimed from the failed run.
