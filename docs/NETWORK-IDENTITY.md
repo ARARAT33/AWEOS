@@ -1,9 +1,6 @@
 # AWEOS Device Identity Manager (Network Platform module 2)
 
-Status: implemented and regression-tested at the C core level; not yet
-integrated into any network daemon or AYUI surface. Do not describe AWEOS as
-having end-to-end device networking until the connection manager and service
-discovery engine land on top of this identity layer.
+Status: C cryptographic primitives and deterministic identity derivation are implemented; not yet integrated into any network daemon or AYUI surface. The module is not a complete device-authentication protocol. Do not describe AWEOS as having end-to-end device networking until key provisioning, verifiable peer authentication, the connection manager, and service discovery are implemented and tested.
 
 ## What exists today
 
@@ -14,9 +11,10 @@ discovery engine land on top of this identity layer.
   - `aweos_netid_derive`: derives the 32-byte public device id and the
     human-readable `AWE-XXXXXXXX-XXXXXXXX-XXXXXXXX` fingerprint from the
     32-byte device secret under the versioned label `AWEOS-NETID-V1`.
-  - `aweos_netid_respond`: answers a peer nonce with
-    HMAC(secret, "AWEOS-NETID-V1" || device_id || nonce). The secret never
-    leaves the device; no personal data is embedded in the id.
+  - `aweos_netid_respond`: computes a response tag using
+    HMAC(secret, "AWEOS-NETID-V1" || device_id || nonce). It does not expose
+    the secret and embeds no personal data in the id. The API only computes
+    the tag; it does not provide a remote verifier.
   - `aweos_netid_mac_equal`: constant-time MAC comparison.
 - `scripts/test-netid.sh`: compiles the module with
   `cc -std=c11 -Wall -Wextra -Werror` and checks FIPS 180-4 SHA-256 vectors
@@ -25,6 +23,22 @@ discovery engine land on top of this identity layer.
   format, challenge/response acceptance, and fail-closed rejection of tampered
   MACs, wrong nonces, foreign identities and oversized nonces.
 - Wired into `make test-shell`.
+
+## Security boundary and authentication limitation
+
+The current challenge-response helper is **not sufficient for remote peer
+authentication**. HMAC verification requires the same secret (or an equivalent
+shared key) on the verifying side. The public device identifier is a hash and
+does not let another device verify the HMAC. This repository does not yet
+implement a public-key signature, peer-verification API, enrollment protocol,
+or secure secret provisioning. Do not use the returned tag as proof of device
+identity or authorize remote services from it.
+
+Before network integration, select a reviewed asymmetric authentication
+design and a vetted cryptographic implementation, generate private material
+from the operating-system CSPRNG, define protected storage/rotation/revocation,
+and add independent known-answer and negative tests. The current SHA-256 and
+HMAC implementation has not received an independent cryptographic audit.
 
 ## Design constraints honored
 
