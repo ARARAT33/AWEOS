@@ -2,12 +2,11 @@
 
 #include <string.h>
 
-#define NETID_DOMAIN "AWEOS-NETID-V1"
-#define NETID_DOMAIN_LEN 14U
 #define SHA256_BLOCK_LEN 64U
 #define SHA256_OUT_LEN 32U
 
-static const uint8_t NETID_DOMAIN_BYTES[NETID_DOMAIN_LEN] = "AWEOS-NETID-V1";
+static const uint8_t NETID_DOMAIN_BYTES[] = "AWEOS-NETID-V1";
+enum { NETID_DOMAIN_LEN = sizeof(NETID_DOMAIN_BYTES) - 1U };
 
 typedef struct {
     uint32_t state[8];
