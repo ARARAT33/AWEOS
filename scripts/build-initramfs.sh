@@ -10,14 +10,13 @@ echo "Building AWEOS bootstrap initramfs in ${INITRAMFS_DIR}..."
 rm -rf "${INITRAMFS_DIR}"
 mkdir -p "${INITRAMFS_DIR}"/{bin,sbin,usr/bin,usr/sbin,dev,proc,sys,run,tmp,etc,mnt/rootfs,mnt/boot}
 
-BUSYBOX_BIN="$(which busybox 2>/dev/null || true)"
-if [ -z "$BUSYBOX_BIN" ]; then
-    echo "Error: busybox binary not found!" >&2
+BUSYBOX_BIN="${AWEOS_BUSYBOX_BIN:-}"
+if [ -z "${BUSYBOX_BIN}" ] || [ ! -x "${BUSYBOX_BIN}" ]; then
+    echo "ERROR: AWEOS_BUSYBOX_BIN must point to the baseline-built BusyBox binary." >&2
     exit 1
 fi
-
-cp "$BUSYBOX_BIN" "${INITRAMFS_DIR}/bin/busybox"
-chmod +x "${INITRAMFS_DIR}/bin/busybox"
+bash "$(dirname "${BASH_SOURCE[0]}")/check-x86-64-baseline-isa.sh" "${BUSYBOX_BIN}"
+install -D -m 0755 "${BUSYBOX_BIN}" "${INITRAMFS_DIR}/bin/busybox"
 
 # Copy dynamic interpreter and shared libraries if busybox is dynamically linked
 mkdir -p "${INITRAMFS_DIR}"/lib64 "${INITRAMFS_DIR}"/lib/x86_64-linux-gnu
