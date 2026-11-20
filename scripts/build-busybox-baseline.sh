@@ -17,11 +17,11 @@ for tool in curl make musl-gcc sha256sum tar readelf; do
 done
 mkdir -p "${BUILD_DIR}"
 
-if [ ! -s "${ARCHIVE}" ] || ! printf '%s  %s\\n' "${BUSYBOX_SHA256}" "${ARCHIVE}" | sha256sum --check --status; then
+if [ ! -s "${ARCHIVE}" ] || ! printf '%s  %s\n' "${BUSYBOX_SHA256}" "${ARCHIVE}" | sha256sum --check --status; then
     rm -f "${ARCHIVE}" "${ARCHIVE}.tmp"
     echo "Downloading BusyBox ${BUSYBOX_VERSION} source..."
     curl --fail --location --retry 3 --output "${ARCHIVE}.tmp" "${BUSYBOX_URL}"
-    printf '%s  %s\\n' "${BUSYBOX_SHA256}" "${ARCHIVE}.tmp" | sha256sum --check
+    printf '%s  %s\n' "${BUSYBOX_SHA256}" "${ARCHIVE}.tmp" | sha256sum --check
     mv "${ARCHIVE}.tmp" "${ARCHIVE}"
 fi
 
@@ -39,7 +39,7 @@ tar -xjf "${ARCHIVE}" --directory "${WORK_DIR}" --strip-components=1
         if grep -q "^${key}=" .config; then
             sed -i "s|^${key}=.*|${key}=${value}|" .config
         else
-            printf '%s=%s\\n' "${key}" "${value}" >> .config
+            printf '%s=%s\n' "${key}" "${value}" >> .config
         fi
     }
 
