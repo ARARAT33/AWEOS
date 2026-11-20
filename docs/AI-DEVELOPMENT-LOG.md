@@ -519,3 +519,44 @@
 2. If `make test-shell` passes, inspect the new image-build and QEMU diagnostics artifacts before changing kernel or bootloader behavior.
 3. Review and test AOSIN uninstall path scoping and metadata rollback as a separate security-focused change.
 4. Continue Network Platform development only after the current AOSIN PR stack has a clean, evidence-backed test state.
+
+## 2026-11-20 follow-up — Confine AOSIN uninstall to the selected package
+
+### Evidence and security review
+- Continued from PR #65 (feat/aosin-real-payload-20261119) after its Userland Validation and Core Data Preservation workflows passed on head d819ecf13b0518afac7725a959e9533345352fde.
+- Source review found that aosin_pkg_remove joined manifest paths against the shared opt/aweos-pkg directory instead of the selected package directory. A modified appA.meta could therefore name appB/readme.txt and remove a sibling package's file.
+- The remover trusted the first three metadata lines, did not bound or validate the declared entry count, did not reject duplicate entries or trailing data, and recursively deleted the package directory. That could erase files not listed in the package manifest.
+- Package-name validation accepted the special components . and ... Those values are unsafe as directory names and must be rejected before create, inspect, install, or remove operations.
+- The existing package format still has no publisher signatures or trust-anchor verification. SHA-256 is an integrity check, not proof of publisher authenticity.
+
+### Changes on fix/aosin-uninstall-scope-20261120
+- src/aosin/aosin_core.c:
+  - Reject package names and entry paths that are exactly . or ...
+  - Open the metadata and package directory chains one component at a time with openat, O_DIRECTORY, and O_NOFOLLOW.
+  - Validate the complete uninstall manifest before deleting anything: package-name match, bounded nonzero entry count, bounded file sizes and total size, safe paths, duplicate rejection, and no trailing records.
+  - Resolve every entry relative to the already-open selected package directory, not the shared package root.
+  - Unlink only manifest-listed regular files; reject symlinked parents and non-regular final entries.
+  - Remove only empty parent directories and the package directory itself. Unowned files are preserved and keep the manifest available for a safe retry.
+- src/aosin/tests/test_aosin.c:
+  - Add a cross-package manifest-tampering regression.
+  - Add an unowned-user-data preservation/retry regression.
+  - Add a symlink-parent escape regression.
+  - Reject . and .. package names for create and remove.
+- No files under /linux were changed. No install, update, partition, or user-data migration operation was performed.
+
+### Validation status
+- GitHub source read-back confirms the new path-scoped remover and regression cases are present.
+- Local C execution was not available in this connector-only edit path. Exact-head Userland Validation, Core Data Preservation, and full image/boot checks are pending; no test pass or boot success is claimed for this branch.
+- The parent PR #65's prior Userland Validation and Core Data Preservation checks passed, but those results do not validate this follow-up head.
+
+### Remaining issues
+1. Verify the new AOSIN C regression on this exact head and correct any compile/runtime failures.
+2. Review install-side staging and metadata publication atomicity separately; the current installer still publishes the package directory before writing the final metadata file.
+3. Implement publisher signatures and trusted key management before treating AOSIN packages as authentic or production-safe.
+4. Continue the x86-64 baseline/BIOS/UEFI boot investigation on PR #63; do not infer boot success from userland checks.
+
+### Next priorities
+1. Inspect this branch's exact-head Userland Validation and Core Data Preservation results.
+2. If they pass, inspect the full image build and BIOS/UEFI results independently.
+3. Fix install metadata transactionality and collision-safe staging in a separate focused change.
+4. Keep the branch stacked on PR #65 and unmerged until exact-head checks and review are complete.
