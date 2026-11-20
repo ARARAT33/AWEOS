@@ -2,7 +2,7 @@
 # Re-run a failed QEMU boot with a narrow in_asm trace around a userspace RIP.
 set -euo pipefail
 
-if [ "\${#}" -lt 3 ]; then
+if [ "$#" -lt 3 ]; then
     echo "usage: $0 <serial-log> <trace-log> <qemu-command> [args...]" >&2
     exit 2
 fi
@@ -29,7 +29,7 @@ printf -v filter '0x%x..0x%x' "$lower" "$upper"
 mkdir -p "$(dirname "$trace_log")"
 rm -f "$trace_log"
 status=0
-timeout "\${AWEOS_QEMU_TRACE_TIMEOUT:-15s}" "$@" -d int,in_asm -D "$trace_log" -dfilter "$filter" >/dev/null 2>&1 || status=$?
+timeout "${AWEOS_QEMU_TRACE_TIMEOUT:-15s}" "$@" -d int,in_asm -D "$trace_log" -dfilter "$filter" >/dev/null 2>&1 || status=$?
 
 if [ ! -s "$trace_log" ]; then
     echo "ERROR: QEMU produced no targeted instruction trace (exit status $status)." >&2
