@@ -2,9 +2,9 @@
 # Regression tests for the targeted QEMU userspace-ISA trace helper.
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "@DOLLAR@{BASH_SOURCE[0]}")/.." && pwd)"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 helper="$repo_root/scripts/trace-qemu-user-isa-fault.sh"
-tmp="$(mktemp -d "@DOLLAR@{TMPDIR:-/tmp}/aweos-qemu-isa-trace.XXXXXX")"
+tmp="$(mktemp -d "${TMPDIR:-/tmp}/aweos-qemu-isa-trace.XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
 
 cat >"$tmp/fake-qemu" <<'FAKE'
