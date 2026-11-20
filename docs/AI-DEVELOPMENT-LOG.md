@@ -573,3 +573,11 @@
 - Added a real Makefile aosin target, included the binary in both AYUI and GNOME rootfs profiles, and made rootfs validation require an executable /usr/bin/aosin.
 - Updated the README to describe the shipped native CLI and the disabled legacy archive path. Publisher signatures, trusted repositories, dependencies, sandboxing, and rollback remain unimplemented.
 - Exact-head Userland Validation is pending for this integration follow-up; no rootfs build or boot success is claimed until the new target and layout checks pass.
+
+## 2026-11-20 architecture status audit
+
+- AWEUI is a real Smithay Wayland compositor implementation using the nested Winit/GLES backend. The current boot marker confirms a frame was submitted in that nested backend; it does not prove a direct DRM/KMS session. Pointer/touch handling, popup behavior, decorations, panel rendering, and multi-monitor support remain incomplete or unvalidated.
+- The current image/kernel build target is x86_64. Bootloader EFI binaries for other architectures are not evidence of working kernel ports.
+- docs/NETWORK-IDENTITY.md correctly describes the SHA-256/HMAC code as primitives only, not a complete peer-authentication or encrypted networking protocol.
+- README.md was corrected to distinguish the current build pipeline from source-only C installer/updater/WLIN modules and to list actual Makefile targets.
+- Remaining high-priority product work: finish AOSIN transaction-safe installation and publisher trust; implement a real network transport with authenticated encryption and key provisioning; complete AYUI shell/input/DRM integration; add physical-hardware testing and separate ARM64 porting.
