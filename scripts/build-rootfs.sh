@@ -57,6 +57,10 @@ for binary in ${RUST_BINS}; do
     copy_runtime_deps "${source}"
 done
 
+AOSIN_BIN="${BUILD_DIR}/aosin"
+test -x "${AOSIN_BIN}" || { echo "ERROR: required AOSIN CLI binary missing: ${AOSIN_BIN}" >&2; exit 1; }
+install -D -m 0755 "${AOSIN_BIN}" "${ROOTFS_DIR}/usr/bin/aosin"
+
 (
     cd "${ROOTFS_DIR}"
     for applet in $(./bin/busybox --list); do
