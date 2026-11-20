@@ -33,7 +33,7 @@ ASM
 cc -nostdlib -no-pie -Wl,-e,_start "${WORK_DIR}/baseline.S" -o "${WORK_DIR}/baseline.elf"
 cc -nostdlib -no-pie -mavx -Wl,-e,_start "${WORK_DIR}/avx.S" -o "${WORK_DIR}/avx.elf"
 cc -nostdlib -no-pie -mbmi -Wl,-e,_start "${WORK_DIR}/bmi.S" -o "${WORK_DIR}/bmi.elf"
-printf 'not an ELF file\\n' >"${WORK_DIR}/invalid.elf"
+printf 'not an ELF file\n' >"${WORK_DIR}/invalid.elf"
 
 bash "${CHECKER}" "${WORK_DIR}/baseline.elf"
 for unsafe in avx bmi invalid; do
