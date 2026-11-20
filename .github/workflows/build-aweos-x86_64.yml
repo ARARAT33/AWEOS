@@ -122,6 +122,12 @@ jobs:
             else
               echo "No QEMU $mode emulator debug trace was produced." >> "$GITHUB_STEP_SUMMARY"
             fi
+
+            usertracelog="build/qemu-$mode-user-isa-trace.log"
+            if [ -s "$usertracelog" ]; then
+              echo "## QEMU $mode targeted userspace ISA trace (last 200 lines)" >> "$GITHUB_STEP_SUMMARY"
+              tail -n 200 "$usertracelog" >> "$GITHUB_STEP_SUMMARY"
+            fi
           done
 
       - name: Upload build and QEMU diagnostics
@@ -135,6 +141,8 @@ jobs:
             build/qemu-uefi.log
             build/qemu-bios-debug.log
             build/qemu-uefi-debug.log
+            build/qemu-bios-user-isa-trace.log
+            build/qemu-uefi-user-isa-trace.log
           if-no-files-found: ignore
 
       - name: Verify /linux after QEMU tests
