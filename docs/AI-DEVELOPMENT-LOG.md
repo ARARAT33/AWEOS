@@ -462,6 +462,7 @@
 - Local targeted ISA-scanner regression: **PASS** (baseline ELF accepted; AVX, BMI and invalid ELF fixtures rejected).
 - Local shell syntax checks for the new build/check/test scripts: **PASS**.
 - The source archive could not be downloaded in this development container, so the full BusyBox compile was not run locally.
+- Upstream currently labels BusyBox 1.38.0 as an unstable release; this version is pinned for reproducible testing, not presented as a stable-release claim.
 - Exact-head GitHub Userland Validation, image build, BIOS/UEFI boot and `/linux` integrity checks are pending. No successful BIOS or UEFI boot is claimed.
 
 ### Next priorities
