@@ -39,7 +39,8 @@ static int mkdir_p(const char *path) {
 /* Package names are limited to A-Z, a-z, 0-9, dash, dot, underscore;
  * they never contain path separators. */
 static int is_valid_pkg_name(const char *name) {
-    if (!name || !name[0]) return 0;
+    /* A package name is one path component, never a special directory. */
+    if (!name || !name[0] || strcmp(name, ".") == 0 || strcmp(name, "..") == 0) return 0;
     size_t len = strlen(name);
     if (len >= 64) return 0;
     for (size_t i = 0; i < len; ++i) {
@@ -55,7 +56,7 @@ static int is_valid_pkg_name(const char *name) {
  * contain a trailing or doubled slash, and may only use a conservative safe
  * character set. This is what keeps install() from writing outside its root. */
 static int is_valid_entry_path(const char *path) {
-    if (!path || !path[0]) return 0;
+    if (!path || !path[0] || strcmp(path, ".") == 0 || strcmp(path, "..") == 0) return 0;
     size_t len = strlen(path);
     if (len >= AOSIN_MAX_ENTRY_PATH) return 0;
     if (path[0] == '/') return 0;
@@ -481,42 +482,297 @@ int aosin_pkg_install(const char *pkg_file, const char *install_root) {
     return AWEOS_OK;
 }
 
-int aosin_pkg_remove(const char *pkg_name, const char *install_root) {
-    if (!pkg_name || !install_root) return AWEOS_ERR_INVALID_PARAM;
-    if (!is_valid_pkg_name(pkg_name)) return AWEOS_ERR_INVALID_PARAM;
-    char meta[512], app[512];
-    if (snprintf(meta, sizeof(meta), "%s/%s/%s.meta", install_root, META_DIR, pkg_name) >= (int)sizeof(meta) ||
-        snprintf(app, sizeof(app), "%s/%s/%s", install_root, APPS_DIR, pkg_name) >= (int)sizeof(app)) {
-        return AWEOS_ERR_INVALID_PARAM;
+/* Open a fixed directory path one component at a time. O_NOFOLLOW prevents
+ * an install-root subdirectory from redirecting package operations through a
+ * symlink. The caller owns and closes the returned descriptor. */
+static int open_dir_chain(int base_fd, const char *const *components, size_t count) {
+    int fd = dup(base_fd);
+    if (fd < 0) return -1;
+    for (size_t i = 0; i < count; ++i) {
+        int next = openat(fd, components[i],
+                          O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
+        int saved = errno;
+        close(fd);
+        if (next < 0) {
+            errno = saved;
+            return -1;
+        }
+        fd = next;
     }
-    FILE *m = fopen(meta, "rb");
-    if (!m) return AWEOS_ERR_NOT_FOUND;
-    char line[AOSIN_MAX_ENTRY_PATH + 32];
-    /* Line 1-3 are name, version, count; the rest are "size path" records. */
-    for (int i = 0; i < 3; ++i) {
-        if (!fgets(line, sizeof(line), m)) { fclose(m); return AWEOS_ERR_VERIFY; }
+    return fd;
+}
+
+/* Remove one manifest entry relative to the already-open package directory.
+ * Parent directories are opened with O_NOFOLLOW and only the final regular
+ * file is unlinked. Empty parents are removed bottom-up; unowned files,
+ * symlinks, and non-empty directories are preserved. */
+static int remove_entry_at(int package_fd, const char *relative) {
+    if (!is_valid_entry_path(relative)) return AWEOS_ERR_VERIFY;
+    size_t len = strlen(relative);
+    if (len >= AOSIN_MAX_ENTRY_PATH) return AWEOS_ERR_VERIFY;
+
+    char copy[AOSIN_MAX_ENTRY_PATH];
+    memcpy(copy, relative, len + 1);
+
+    int dir_fds[AOSIN_MAX_ENTRY_PATH / 2 + 2];
+    char *dir_names[AOSIN_MAX_ENTRY_PATH / 2 + 1];
+    size_t dir_count = 0;
+    dir_fds[0] = dup(package_fd);
+    if (dir_fds[0] < 0) return AWEOS_ERR_IO;
+
+    char *leaf = copy;
+    char *slash = NULL;
+    while ((slash = strchr(leaf, '/')) != NULL) {
+        *slash = '\0';
+        if (dir_count >= AOSIN_MAX_ENTRY_PATH / 2 + 1) {
+            for (size_t i = 0; i <= dir_count; ++i) close(dir_fds[i]);
+            return AWEOS_ERR_VERIFY;
+        }
+        dir_names[dir_count] = leaf;
+        int next = openat(dir_fds[dir_count], leaf,
+                          O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
+        if (next < 0) {
+            int saved = errno;
+            int cleanup_rc = AWEOS_OK;
+            /* A missing parent means the manifest file is already absent.
+             * Still try to remove any now-empty ancestors opened above. */
+            if (saved == ENOENT) {
+                for (size_t i = dir_count; i > 0; --i) {
+                    if (unlinkat(dir_fds[i - 1], dir_names[i - 1], AT_REMOVEDIR) != 0 &&
+                        errno != ENOTEMPTY && errno != EEXIST && errno != ENOENT) {
+                        cleanup_rc = AWEOS_ERR_IO;
+                    }
+                }
+            }
+            for (size_t i = 0; i <= dir_count; ++i) close(dir_fds[i]);
+            if (saved == ENOENT) return cleanup_rc;
+            if (saved == ELOOP || saved == ENOTDIR) return AWEOS_ERR_VERIFY;
+            return AWEOS_ERR_IO;
+        }
+        dir_fds[dir_count + 1] = next;
+        ++dir_count;
+        leaf = slash + 1;
     }
+
     int rc = AWEOS_OK;
-    while (fgets(line, sizeof(line), m)) {
-        if (line[0] == 0 || line[0] == 10) continue;
-        char *sp = strchr(line, 32);
-        if (!sp) { rc = AWEOS_ERR_VERIFY; break; }
-        char *path = sp + 1;
-        char *nl = strchr(path, 10);
-        if (nl) *nl = 0;
-        if (!is_valid_entry_path(path)) { rc = AWEOS_ERR_VERIFY; break; }
-        char target[1024];
-        if (snprintf(target, sizeof(target), "%s/%s/%s", install_root, APPS_DIR, path) >= (int)sizeof(target)) { rc = AWEOS_ERR_VERIFY; break; }
-        struct stat st;
-        /* Only plain files recorded by install are removable. */
-        if (lstat(target, &st) == 0 && S_ISREG(st.st_mode)) {
-            if (unlink(target) != 0) { rc = AWEOS_ERR_IO; break; }
+    struct stat st;
+    if (fstatat(dir_fds[dir_count], leaf, &st, AT_SYMLINK_NOFOLLOW) == 0) {
+        if (!S_ISREG(st.st_mode)) {
+            rc = AWEOS_ERR_VERIFY;
+        } else if (unlinkat(dir_fds[dir_count], leaf, 0) != 0) {
+            rc = AWEOS_ERR_IO;
+        }
+    } else if (errno != ENOENT) {
+        rc = AWEOS_ERR_IO;
+    }
+
+    if (rc == AWEOS_OK) {
+        for (size_t i = dir_count; i > 0; --i) {
+            if (unlinkat(dir_fds[i - 1], dir_names[i - 1], AT_REMOVEDIR) != 0 &&
+                errno != ENOTEMPTY && errno != EEXIST && errno != ENOENT) {
+                rc = AWEOS_ERR_IO;
+                break;
+            }
         }
     }
-    fclose(m);
-    if (rc == AWEOS_OK) {
-        rc = rmrf(app);
-        if (rc == AWEOS_OK) rc = unlink(meta) == 0 || errno == ENOENT ? AWEOS_OK : AWEOS_ERR_IO;
-    }
+    for (size_t i = 0; i <= dir_count; ++i) close(dir_fds[i]);
     return rc;
 }
+
+static size_t strip_meta_line_ending(char *line) {
+    size_t len = strlen(line);
+    if (len > 0 && line[len - 1] == '\n') line[--len] = '\0';
+    if (len > 0 && line[len - 1] == '\r') line[--len] = '\0';
+    return len;
+}
+
+int aosin_pkg_remove(const char *pkg_name, const char *install_root) {
+    if (!pkg_name || !install_root || !is_valid_pkg_name(pkg_name)) {
+        return AWEOS_ERR_INVALID_PARAM;
+    }
+
+    int root_fd = open(install_root, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    if (root_fd < 0) return AWEOS_ERR_IO;
+
+    const char *meta_parts[] = {"var", "lib", "awepkg"};
+    int meta_dir_fd = open_dir_chain(root_fd, meta_parts, 3);
+    if (meta_dir_fd < 0) {
+        int saved = errno;
+        close(root_fd);
+        return saved == ENOENT ? AWEOS_ERR_NOT_FOUND :
+               (saved == ELOOP || saved == ENOTDIR ? AWEOS_ERR_VERIFY : AWEOS_ERR_IO);
+    }
+
+    char meta_name[96];
+    if (snprintf(meta_name, sizeof(meta_name), "%s.meta", pkg_name) >= (int)sizeof(meta_name)) {
+        close(meta_dir_fd);
+        close(root_fd);
+        return AWEOS_ERR_INVALID_PARAM;
+    }
+
+    int meta_fd = openat(meta_dir_fd, meta_name, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+    if (meta_fd < 0) {
+        int saved = errno;
+        close(meta_dir_fd);
+        close(root_fd);
+        return saved == ENOENT ? AWEOS_ERR_NOT_FOUND :
+               (saved == ELOOP || saved == ENOTDIR ? AWEOS_ERR_VERIFY : AWEOS_ERR_IO);
+    }
+    struct stat meta_st;
+    if (fstat(meta_fd, &meta_st) != 0 || !S_ISREG(meta_st.st_mode)) {
+        close(meta_fd);
+        close(meta_dir_fd);
+        close(root_fd);
+        return AWEOS_ERR_VERIFY;
+    }
+    FILE *meta_file = fdopen(meta_fd, "r");
+    if (!meta_file) {
+        close(meta_fd);
+        close(meta_dir_fd);
+        close(root_fd);
+        return AWEOS_ERR_IO;
+    }
+
+    int rc = AWEOS_OK;
+    char line[AOSIN_MAX_ENTRY_PATH + 32];
+    if (!fgets(line, sizeof(line), meta_file) || !strchr(line, '\n')) {
+        rc = AWEOS_ERR_VERIFY;
+    } else {
+        strip_meta_line_ending(line);
+        if (strcmp(line, pkg_name) != 0) rc = AWEOS_ERR_VERIFY;
+    }
+
+    if (rc == AWEOS_OK) {
+        if (!fgets(line, sizeof(line), meta_file) || !strchr(line, '\n')) {
+            rc = AWEOS_ERR_VERIFY;
+        } else {
+            size_t version_len = strip_meta_line_ending(line);
+            if (version_len == 0 || version_len >= 32) rc = AWEOS_ERR_VERIFY;
+        }
+    }
+
+    uint32_t count = 0;
+    if (rc == AWEOS_OK) {
+        if (!fgets(line, sizeof(line), meta_file) || !strchr(line, '\n')) {
+            rc = AWEOS_ERR_VERIFY;
+        } else {
+            strip_meta_line_ending(line);
+            if (!line[0]) {
+                rc = AWEOS_ERR_VERIFY;
+            } else {
+                for (const char *p = line; *p; ++p) {
+                    if (*p < '0' || *p > '9') { rc = AWEOS_ERR_VERIFY; break; }
+                }
+                if (rc == AWEOS_OK) {
+                    errno = 0;
+                    char *end = NULL;
+                    unsigned long parsed = strtoul(line, &end, 10);
+                    if (errno != 0 || end == line || *end != '\0' ||
+                        parsed == 0 || parsed > AOSIN_MAX_ENTRIES) {
+                        rc = AWEOS_ERR_VERIFY;
+                    } else {
+                        count = (uint32_t)parsed;
+                    }
+                }
+            }
+        }
+    }
+
+    aosin_entry_t *entries = NULL;
+    if (rc == AWEOS_OK) {
+        entries = calloc(count, sizeof(*entries));
+        if (!entries) rc = AWEOS_ERR_IO;
+    }
+
+    uint64_t total_size = 0;
+    for (uint32_t i = 0; rc == AWEOS_OK && i < count; ++i) {
+        if (!fgets(line, sizeof(line), meta_file) || !strchr(line, '\n')) {
+            rc = AWEOS_ERR_VERIFY;
+            break;
+        }
+        strip_meta_line_ending(line);
+        errno = 0;
+        char *end = NULL;
+        unsigned long long size = strtoull(line, &end, 10);
+        if (errno != 0 || end == line || *end != ' ' ||
+            size > AOSIN_MAX_FILE_SIZE || !is_valid_entry_path(end + 1)) {
+            rc = AWEOS_ERR_VERIFY;
+            break;
+        }
+        if ((uint64_t)size > AOSIN_MAX_TOTAL_SIZE - total_size) {
+            rc = AWEOS_ERR_VERIFY;
+            break;
+        }
+        total_size += (uint64_t)size;
+        entries[i].size = (uint64_t)size;
+        memcpy(entries[i].path, end + 1, strlen(end + 1) + 1);
+        for (uint32_t j = 0; j < i; ++j) {
+            if (strcmp(entries[j].path, entries[i].path) == 0) {
+                rc = AWEOS_ERR_VERIFY;
+                break;
+            }
+        }
+    }
+
+    if (rc == AWEOS_OK) {
+        if (fgets(line, sizeof(line), meta_file) != NULL) rc = AWEOS_ERR_VERIFY;
+        else if (ferror(meta_file)) rc = AWEOS_ERR_IO;
+    }
+    if (fclose(meta_file) != 0 && rc == AWEOS_OK) rc = AWEOS_ERR_IO;
+    if (rc != AWEOS_OK) {
+        free(entries);
+        close(meta_dir_fd);
+        close(root_fd);
+        return rc;
+    }
+
+    const char *apps_parts[] = {"opt", "aweos-pkg"};
+    int apps_dir_fd = open_dir_chain(root_fd, apps_parts, 2);
+    if (apps_dir_fd < 0 && errno != ENOENT) {
+        int saved = errno;
+        free(entries);
+        close(meta_dir_fd);
+        close(root_fd);
+        return (saved == ELOOP || saved == ENOTDIR) ? AWEOS_ERR_VERIFY : AWEOS_ERR_IO;
+    }
+
+    int package_fd = -1;
+    if (apps_dir_fd >= 0) {
+        package_fd = openat(apps_dir_fd, pkg_name,
+                            O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
+        if (package_fd < 0 && errno != ENOENT) {
+            int saved = errno;
+            free(entries);
+            close(apps_dir_fd);
+            close(meta_dir_fd);
+            close(root_fd);
+            return (saved == ELOOP || saved == ENOTDIR) ? AWEOS_ERR_VERIFY : AWEOS_ERR_IO;
+        }
+    }
+
+    if (package_fd >= 0) {
+        for (uint32_t i = 0; i < count; ++i) {
+            rc = remove_entry_at(package_fd, entries[i].path);
+            if (rc != AWEOS_OK) break;
+        }
+        close(package_fd);
+        package_fd = -1;
+        /* Only remove the package directory if it is empty. Unowned files
+         * are intentionally preserved and keep the manifest for a retry. */
+        if (rc == AWEOS_OK &&
+            unlinkat(apps_dir_fd, pkg_name, AT_REMOVEDIR) != 0 && errno != ENOENT) {
+            rc = (errno == ENOTEMPTY || errno == EEXIST) ? AWEOS_ERR_VERIFY : AWEOS_ERR_IO;
+        }
+    }
+
+    if (rc == AWEOS_OK && unlinkat(meta_dir_fd, meta_name, 0) != 0 && errno != ENOENT) {
+        rc = AWEOS_ERR_IO;
+    }
+
+    free(entries);
+    if (apps_dir_fd >= 0) close(apps_dir_fd);
+    close(meta_dir_fd);
+    close(root_fd);
+    return rc;
+}
+

@@ -139,6 +139,10 @@ for binary in ${RUST_BINS}; do
     install -D -m 0755 "${source}" "${ROOTFS_DIR}/usr/bin/${binary}"
 done
 
+AOSIN_BIN="${BUILD_DIR}/aosin"
+test -x "${AOSIN_BIN}" || { echo "ERROR: required AOSIN CLI binary missing: ${AOSIN_BIN}" >&2; exit 1; }
+install -D -m 0755 "${AOSIN_BIN}" "${ROOTFS_DIR}/usr/bin/aosin"
+
 for helper in aweos-info.sh aweos-diagnostics.sh awepkg.sh; do
     source="scripts/${helper}"
     test -f "${source}"

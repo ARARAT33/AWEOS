@@ -19,7 +19,7 @@ AYUI/AWEUI is the primary AWEOS desktop session. GNOME is retained as the second
 - CI verifies that `/linux` is unchanged before and after the build/test pipeline.
 
 ## Overview
-AWEOS is a complete, bootable x86_64 Linux operating system featuring **AYUI as the default desktop**, a native C graphical desktop environment, double-buffered framebuffer renderer, compositor, window manager, PTY-backed terminal emulator, AOSIN package system (`.asp`, `.asa`, `.aosin`), safe OS system updater (`aweos-update`), standalone graphical installer (`aweos-installer`), cross-platform USB-less migration installer (`wlin`), and headless fallback, powered by the upstream Linux kernel source and the Limine bootloader.
+AWEOS is a bootable x86_64 Linux-based operating-system project. The current image build uses the upstream Linux kernel and Limine BIOS/UEFI boot path, a Rust userland, a Smithay-based AYUI Wayland compositor (nested Winit/GLES backend in the current tested path), system applications, and the AOSIN v2 package CLI. This repository does not contain an independent kernel, and the current CI does not validate ARM64, RISC-V, LoongArch, or physical-hardware support. Several C installer/updater/WLIN modules remain source-level components and are not part of the current default image build.
 
 ## Core Rules & Isolation Policy
 - **`/linux` Read-Only Rule**: The upstream Linux kernel source tree in `/linux` is strictly read-only. No files inside `/linux` are added, modified, formatted, patched, or created.
@@ -69,46 +69,51 @@ AWEOS is a complete, bootable x86_64 Linux operating system featuring **AYUI as 
 - **`archive.c/h`**: Non-destructive user data preservation engine archiving directory structures into `/archiveddata/`.
 - **`transaction.c/h`**: Atomic transaction engine (`PLAN -> VALIDATE -> PREPARE -> PRESERVE -> EXECUTE -> BOOTCFG -> VERIFY -> COMMIT / ROLLBACK`).
 
+These C modules are present in the source tree; not all are linked into the current default image. The actual shipped components are determined by the Makefile and rootfs scripts, not by directory presence alone.
+
 ## AOSIN Package System (`src/aosin/`)
-Native AWEOS package management system supporting three formal format specifications:
-- **`.asp` (AWEOS Software Package)**: Software/payload binary archives.
-- **`.asa` (AWEOS Standalone Application)**: Self-contained application bundles.
-- **`.aosin` (AOSIN Installer Archive)**: Multi-package installation bundles with manifests and permission bounds.
-- **`aosin` CLI Tool**: Query, install, remove, and verify packages registered under `/var/lib/awepkg/`.
-- **AYUI Integration**: Dynamic package scanning in `/var/lib/awepkg/*.meta` automatically populates the AYUI desktop application launcher menu.
 
-## AYUI Native Desktop Environment (`src/gui/`, `src/apps/`)
-- Built independently without external Desktop Environments (GNOME, KDE, Xfce, LXQt, etc.).
-- **Executable**: `/usr/bin/aweos-ayui` (symlinked as `aweos-wm`, `aweos-gui`, `start-ayui`, `aweos-terminal`).
-- **Graphics Abstraction**: Double-buffered `/dev/fb0` Linux framebuffer driver with resolution adaptation.
-- **Input System**: Linux `/dev/input/event*` evdev keyboard/mouse input normalization with cursor tracking.
-- **Compositor & Window Manager**: Surface layout, title bar controls, focus handling, z-ordering, and application launcher.
-- **Graphical Terminal**: Live `/bin/sh` Unix PTY (`/dev/ptmx` forkpty) execution with real-time rendering.
-- **Base Native GUI Applications**: File Manager, Settings, System Information, Network Manager, Storage Info, Package Manager, Installer, Updater, Diagnostics, About AWEOS.
+Current implementation: AOSIN binary package format v2 with bounded payload file tables, streamed SHA-256 integrity verification, and a native CLI shipped as /usr/bin/aosin in both rootfs profiles.
 
-## Safe OS System Updater (`src/updater/`)
-- **`aweos-update`**: Staged, atomic OS update tool validating candidate ISO images, staging rootfs updates, preserving `/home` user data, and managing boot target switching.
+- **Container layout**: fixed-width header, file-entry table, and concatenated payload bytes. The SHA-256 digest covers the payload bytes and is rechecked by verify, inspect, and install.
+- **Type tags**: `.asp`, `.asa`, and `.aosin` currently map to enum values in the same v2 container layout. They are not yet three independent formats or a multi-package installer bundle.
+- **CLI**: create, verify, inspect package metadata, install into an explicit root, and remove a package using its installed manifest. The awepkg compatibility wrapper delegates install/remove to this CLI; its unsafe legacy tar extraction path is disabled.
+- **Install/remove safety**: payload paths and sizes are bounded; symlink payload entries are skipped; uninstall is scoped to the selected package directory and preserves unowned files.
+- **Not implemented yet**: publisher signatures, trusted signing keys, authenticated repositories, dependency resolution, permissions/capabilities, sandboxing, multi-package transactions, and rollback.
+- **Security boundary**: SHA-256 detects payload corruption but does not authenticate the publisher. Do not install untrusted packages as root.
 
-## Standalone Graphical Installer (`src/installer/`)
-- **`aweos-installer`**: Interactive GUI and CLI installer supporting dual-boot installation, full-disk replacement (with explicit destructive confirmation), and BIOS/UEFI boot setup.
+## AYUI Native Desktop Environment (AWEUI/)
 
-## WLIN Cross-OS Installation Tool (`src/wlin/`)
-- **Cross-Platform Installer**: USB-less installation tool for Windows and Linux hosts.
-- **Windows Backend (`wlin.exe`)**: Compiled natively via MinGW-w64 (`x86_64-w64-mingw32-gcc`) with Win32 GUI controls (`CreateWindowEx`).
-- **Linux Backend (`wlin`)**: Native C Linux application.
-- **USB-Less Boot Staging**: Validates AWEOS ISO, stages kernel/initramfs onto boot staging partition, configures EFI/Limine boot path, and prepares computer to reboot directly into AWEOS installer.
+- **Executable**: `/usr/bin/aweui`, built from the Rust workspace.
+- **Compositor**: Smithay Wayland server with compositor, XDG-shell, shared-memory, seat, and data-device protocol handlers.
+- **Current render backend**: Smithay's nested Winit backend with GLES rendering. The tested CI path runs AYUI in a QEMU window; this is not yet a direct DRM/KMS console compositor.
+- **Window handling**: Wayland toplevel surfaces are tracked and rendered; the current implementation is an early compositor/session, not a complete desktop shell.
+- **Incomplete areas**: direct DRM/KMS backend, complete pointer/touch handling, popup support, decorations, panel/launcher rendering inside the compositor, multi-monitor validation, accessibility, and hardware power integration.
+- **Status rule**: the BIOS/UEFI boot test requires a submitted AYUI frame. That proves the nested compositor rendered a frame; it does not prove every desktop feature or physical GPU/monitor support.
+
+## Additional C system modules (source-level status)
+
+- `src/updater/`, `src/installer/`, and `src/wlin/` contain C implementation work and tests, but they are not currently built or installed by the default Makefile/rootfs pipeline.
+- Do not treat these modules as production installers, disk migrators, or atomic update services until explicit build targets, integration tests, destructive-operation safeguards, and end-to-end BIOS/UEFI tests are wired into CI.
+- The default image currently ships the Rust AYUI application suite, BusyBox utilities, and the native AOSIN CLI.
 
 ## Build System Usage
 
-- `make` or `make build`: Verify `/linux` immutability, build kernel out-of-tree, core libraries, AYUI GUI, AOSIN, installer, updater, WLIN (Linux & Win32), rootfs, initramfs, ISO (`build/AWEOS-x86_64.iso`), and raw disk image (`build/AWEOS-x86_64-disk.img`).
-- `make ayui`: Build `aweos-ayui` desktop session executable.
-- `make aosin`: Build `aosin` package management binary.
-- `make installer`: Build `aweos-installer` standalone installer binary.
-- `make updater`: Build `aweos-update` OS system updater binary.
-- `make wlin`: Build `wlin` Linux migration binary.
-- `make wlin-win32`: Build `wlin.exe` Windows MinGW migration binary.
-- `make verify-linux-readonly`: Execute read-only integrity check on `/linux`.
-- `make test`: Run automated QEMU BIOS, UEFI, and AYUI GUI verification tests.
-- `make test-gui` / `make test-ayui`: Run automated QEMU AYUI GUI boot marker test and QMP screenshot capture (`build/ayui-screenshot.png`).
-- `make qemu-gui` / `make qemu-ayui`: Launch interactive QEMU graphical desktop boot mode.
-- `make clean`: Clean build artifacts in `build/`.
+Current implemented Makefile targets:
+
+- `make build`: verify the read-only Linux source tree, build Rust userland and the native AOSIN CLI, build the x86_64 kernel out-of-tree, create rootfs/initramfs, then produce the hybrid ISO and raw disk image.
+- `make kernel`: build the x86_64 Linux kernel into `build/linux-x86_64/`.
+- `make userland`: build Rust applications and `build/aosin`.
+- `make aosin`: compile the native AOSIN v2 CLI.
+- `make rootfs`: assemble the selected rootfs profile and validate required files.
+- `make image`: create ISO and disk-image artifacts.
+- `make test`: run read-only boundary, shell/C regressions, and Rust tests.
+- `make test-shell`: run shell syntax, C module, package, rootfs, and QEMU-runner regression tests.
+- `make test-rust`: run Rust workspace tests.
+- `make test-qemu`: boot-test BIOS and UEFI images and require the AYUI first-frame marker.
+- `make check`: run shell tests, formatting checks, and Cargo workspace checks.
+- `make validate-rootfs`: validate the current rootfs layout.
+- `make verify-linux-readonly`: verify that the vendored `/linux` tree is unchanged.
+- `make clean`: remove build artifacts under `build/`.
+
+The current kernel/image build target is x86_64 only. ARM64/RISC-V/LoongArch bootloader EFI files are not, by themselves, kernel ports or tested platform support.

@@ -1,113 +1,72 @@
 #!/bin/sh
-# AWEOS Package Manager (awepkg)
+# Safe compatibility wrapper for the native AOSIN package manager.
+# The legacy tar-based .awe installer is intentionally disabled: it copied
+# untrusted paths into / and trusted a mutable removal list.
+set -eu
 
-DB_DIR="/var/lib/awepkg"
-mkdir -p "$DB_DIR" 2>/dev/null || true
-
+DB_DIR="${AWEOS_AWEPKG_DB_DIR:-/var/lib/awepkg}"
 CMD="${1:-help}"
 ARG="${2:-}"
+INSTALL_ROOT="${AWEOS_INSTALL_ROOT:-/}"
+
+valid_package_name() {
+    case "$1" in
+        ""|.|..|*[!A-Za-z0-9._+-]*) return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
+show_help() {
+    echo "AWEOS package manager compatibility wrapper"
+    echo "Usage: awepkg {list|info|install|remove|help} [package]"
+    echo "Install/remove use the native AOSIN v2 CLI; legacy .awe tar installs are disabled."
+}
 
 case "$CMD" in
     list)
-        echo "========================================"
-        echo "        AWEOS Installed Packages        "
-        echo "========================================"
-        FOUND=0
+        found=0
         for meta in "$DB_DIR"/*.meta; do
-            if [ -f "$meta" ]; then
-                PKG_NAME=$(grep "^PKG_NAME=" "$meta" | cut -d'=' -f2)
-                PKG_VER=$(grep "^PKG_VER=" "$meta" | cut -d'=' -f2)
-                PKG_DESC=$(grep "^PKG_DESC=" "$meta" | cut -d'=' -f2)
-                printf "  %-15s %-10s - %s\n" "$PKG_NAME" "$PKG_VER" "$PKG_DESC"
-                FOUND=1
+            [ -f "$meta" ] || continue
+            if grep -q '^PKG_NAME=' "$meta"; then
+                name="$(sed -n 's/^PKG_NAME=//p' "$meta" | sed -n '1p')"
+                version="$(sed -n 's/^PKG_VER=//p' "$meta" | sed -n '1p')"
+            else
+                name="$(sed -n '1p' "$meta")"
+                version="$(sed -n '2p' "$meta")"
             fi
+            [ -n "$name" ] || continue
+            printf '%-24s %s\n' "$name" "${version:-unknown}"
+            found=1
         done
-        if [ "$FOUND" -eq 0 ]; then
-            echo "No packages currently installed."
-        fi
-        echo "========================================"
+        [ "$found" -eq 1 ] || echo "No packages currently installed."
         ;;
-
     info)
-        if [ -z "$ARG" ]; then
-            echo "Usage: awepkg info <package_name>"
-            exit 1
-        fi
-        META_FILE="$DB_DIR/${ARG}.meta"
-        if [ -f "$META_FILE" ]; then
-            cat "$META_FILE"
-        else
-            echo "Error: Package '$ARG' is not installed."
-            exit 1
-        fi
+        valid_package_name "$ARG" || { echo "Error: invalid package name." >&2; exit 2; }
+        META_FILE="$DB_DIR/$ARG.meta"
+        [ -f "$META_FILE" ] || { echo "Error: package '$ARG' is not installed." >&2; exit 1; }
+        cat "$META_FILE"
         ;;
-
     install)
-        if [ -z "$ARG" ] || [ ! -f "$ARG" ]; then
-            echo "Usage: awepkg install <package_file.awe>"
-            exit 1
-        fi
-
-        TMP_DIR="/tmp/awepkg_install_$$"
-        mkdir -p "$TMP_DIR"
-
-        if ! tar -xzf "$ARG" -C "$TMP_DIR" 2>/dev/null; then
-            echo "Error: Failed to unpack package $ARG"
-            rm -rf "$TMP_DIR"
-            exit 1
-        fi
-
-        if [ ! -f "$TMP_DIR/manifest.meta" ]; then
-            echo "Error: Invalid .awe package: missing manifest.meta"
-            rm -rf "$TMP_DIR"
-            exit 1
-        fi
-
-        PKG_NAME=$(grep "^PKG_NAME=" "$TMP_DIR/manifest.meta" | cut -d'=' -f2)
-        PKG_VER=$(grep "^PKG_VER=" "$TMP_DIR/manifest.meta" | cut -d'=' -f2)
-
-        echo "Installing package '$PKG_NAME' version '$PKG_VER'..."
-
-        # Copy payload files to system root /
-        if [ -d "$TMP_DIR/root" ]; then
-            ( cd "$TMP_DIR/root" && find . -type f ) > "$DB_DIR/${PKG_NAME}.files"
-            cp -rf "$TMP_DIR/root/"* / 2>/dev/null || true
-        fi
-
-        cp "$TMP_DIR/manifest.meta" "$DB_DIR/${PKG_NAME}.meta"
-        rm -rf "$TMP_DIR"
-        echo "Successfully installed $PKG_NAME v$PKG_VER."
+        [ -n "$ARG" ] && [ -f "$ARG" ] || { echo "Usage: awepkg install <package.asp>" >&2; exit 2; }
+        command -v aosin >/dev/null 2>&1 || {
+            echo "Error: native aosin CLI is unavailable; legacy tar installation is disabled." >&2
+            exit 2
+        }
+        exec aosin install "$ARG" "$INSTALL_ROOT"
         ;;
-
     remove)
-        if [ -z "$ARG" ]; then
-            echo "Usage: awepkg remove <package_name>"
-            exit 1
-        fi
-
-        META_FILE="$DB_DIR/${ARG}.meta"
-        FILES_LIST="$DB_DIR/${ARG}.files"
-
-        if [ ! -f "$META_FILE" ]; then
-            echo "Error: Package '$ARG' is not installed."
-            exit 1
-        fi
-
-        echo "Removing package '$ARG'..."
-
-        if [ -f "$FILES_LIST" ]; then
-            while read -r file; do
-                [ -n "$file" ] && rm -f "/$file" 2>/dev/null || true
-            done < "$FILES_LIST"
-            rm -f "$FILES_LIST"
-        fi
-
-        rm -f "$META_FILE"
-        echo "Successfully removed package '$ARG'."
+        valid_package_name "$ARG" || { echo "Error: invalid package name." >&2; exit 2; }
+        command -v aosin >/dev/null 2>&1 || {
+            echo "Error: native aosin CLI is unavailable; legacy removal is disabled." >&2
+            exit 2
+        }
+        exec aosin remove "$ARG" "$INSTALL_ROOT"
         ;;
-
+    help|--help|-h)
+        show_help
+        ;;
     *)
-        echo "AWEOS Package Manager (awepkg) v1.0.0"
-        echo "Usage: awepkg {list|info|install|remove|help} [target]"
+        show_help >&2
+        exit 2
         ;;
 esac

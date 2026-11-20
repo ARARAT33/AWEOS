@@ -519,3 +519,65 @@
 2. If `make test-shell` passes, inspect the new image-build and QEMU diagnostics artifacts before changing kernel or bootloader behavior.
 3. Review and test AOSIN uninstall path scoping and metadata rollback as a separate security-focused change.
 4. Continue Network Platform development only after the current AOSIN PR stack has a clean, evidence-backed test state.
+
+## 2026-11-20 follow-up — Confine AOSIN uninstall to the selected package
+
+### Evidence and security review
+- Continued from PR #65 (feat/aosin-real-payload-20261119) after its Userland Validation and Core Data Preservation workflows passed on head d819ecf13b0518afac7725a959e9533345352fde.
+- Source review found that aosin_pkg_remove joined manifest paths against the shared opt/aweos-pkg directory instead of the selected package directory. A modified appA.meta could therefore name appB/readme.txt and remove a sibling package's file.
+- The remover trusted the first three metadata lines, did not bound or validate the declared entry count, did not reject duplicate entries or trailing data, and recursively deleted the package directory. That could erase files not listed in the package manifest.
+- Package-name validation accepted the special components . and ... Those values are unsafe as directory names and must be rejected before create, inspect, install, or remove operations.
+- The existing package format still has no publisher signatures or trust-anchor verification. SHA-256 is an integrity check, not proof of publisher authenticity.
+
+### Changes on fix/aosin-uninstall-scope-20261120
+- src/aosin/aosin_core.c:
+  - Reject package names and entry paths that are exactly . or ...
+  - Open the metadata and package directory chains one component at a time with openat, O_DIRECTORY, and O_NOFOLLOW.
+  - Validate the complete uninstall manifest before deleting anything: package-name match, bounded nonzero entry count, bounded file sizes and total size, safe paths, duplicate rejection, and no trailing records.
+  - Resolve every entry relative to the already-open selected package directory, not the shared package root.
+  - Unlink only manifest-listed regular files; reject symlinked parents and non-regular final entries.
+  - Remove only empty parent directories and the package directory itself. Unowned files are preserved and keep the manifest available for a safe retry.
+- src/aosin/tests/test_aosin.c:
+  - Add a cross-package manifest-tampering regression.
+  - Add an unowned-user-data preservation/retry regression.
+  - Add a symlink-parent escape regression.
+  - Reject . and .. package names for create and remove.
+- No files under /linux were changed. No install, update, partition, or user-data migration operation was performed.
+
+### Documentation correction
+
+- README.md: corrected the AOSIN section so .asp/.asa/.aosin are described as type tags in the same v2 container, not separate formats or an implemented multi-package bundle. The documentation now explicitly lists the missing signatures, trusted repositories, dependency resolution, sandboxing, and rollback boundaries.
+
+### Validation status
+- GitHub source read-back confirms the new path-scoped remover and regression cases are present.
+- Local C execution was not available in this connector-only edit path. Exact-head Userland Validation, Core Data Preservation, and full image/boot checks are pending; no test pass or boot success is claimed for this branch.
+- The parent PR #65's prior Userland Validation and Core Data Preservation checks passed, but those results do not validate this follow-up head.
+
+### Remaining issues
+1. Verify the new AOSIN C regression on this exact head and correct any compile/runtime failures.
+2. Review install-side staging and metadata publication atomicity separately; the current installer still publishes the package directory before writing the final metadata file.
+3. Implement publisher signatures and trusted key management before treating AOSIN packages as authentic or production-safe.
+4. Continue the x86-64 baseline/BIOS/UEFI boot investigation on PR #63; do not infer boot success from userland checks.
+
+### Next priorities
+1. Inspect this branch's exact-head Userland Validation and Core Data Preservation results.
+2. If they pass, inspect the full image build and BIOS/UEFI results independently.
+3. Fix install metadata transactionality and collision-safe staging in a separate focused change.
+4. Keep the branch stacked on PR #65 and unmerged until exact-head checks and review are complete.
+
+## 2026-11-20 AOSIN integration follow-up — Ship the native CLI and disable legacy tar writes
+
+- Source review found that the rootfs shipped scripts/awepkg.sh, whose legacy install path extracted an untrusted tar archive and copied files directly into /, while its remove path trusted a mutable file list and ran rm -f against absolute paths. This bypassed the bounded AOSIN v2 implementation and was unsafe to expose as a root package manager.
+- Replaced that legacy behavior with a fail-closed compatibility wrapper: list/info remain read-only; install/remove delegate only to the native aosin executable; unsafe package names are rejected. The wrapper no longer extracts tar archives or copies/removes arbitrary paths.
+- Added scripts/test-awepkg-safe.sh to verify traversal rejection, fail-closed behavior when aosin is absent, and argument-safe delegation to the native CLI.
+- Added a real Makefile aosin target, included the binary in both AYUI and GNOME rootfs profiles, and made rootfs validation require an executable /usr/bin/aosin.
+- Updated the README to describe the shipped native CLI and the disabled legacy archive path. Publisher signatures, trusted repositories, dependencies, sandboxing, and rollback remain unimplemented.
+- Exact-head Userland Validation is pending for this integration follow-up; no rootfs build or boot success is claimed until the new target and layout checks pass.
+
+## 2026-11-20 architecture status audit
+
+- AWEUI is a real Smithay Wayland compositor implementation using the nested Winit/GLES backend. The current boot marker confirms a frame was submitted in that nested backend; it does not prove a direct DRM/KMS session. Pointer/touch handling, popup behavior, decorations, panel rendering, and multi-monitor support remain incomplete or unvalidated.
+- The current image/kernel build target is x86_64. Bootloader EFI binaries for other architectures are not evidence of working kernel ports.
+- docs/NETWORK-IDENTITY.md correctly describes the SHA-256/HMAC code as primitives only, not a complete peer-authentication or encrypted networking protocol.
+- README.md was corrected to distinguish the current build pipeline from source-only C installer/updater/WLIN modules and to list actual Makefile targets.
+- Remaining high-priority product work: finish AOSIN transaction-safe installation and publisher trust; implement a real network transport with authenticated encryption and key provisioning; complete AYUI shell/input/DRM integration; add physical-hardware testing and separate ARM64 porting.

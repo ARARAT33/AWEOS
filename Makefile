@@ -10,6 +10,8 @@ ISO_PATH := $(BUILD_DIR)/AWEOS-x86_64.iso
 ROOTFS_IMG := $(BUILD_DIR)/rootfs.img
 ROOTFS_DIR := $(BUILD_DIR)/rootfs
 INITRAMFS := $(BUILD_DIR)/aweos-initramfs.cpio.gz
+AOSIN_BIN := $(BUILD_DIR)/aosin
+AOSIN_CFLAGS ?= -D_POSIX_C_SOURCE=200809L -std=c11 -Wall -Wextra -Werror
 LIMINE_TOOL ?= $(shell command -v limine 2>/dev/null || true)
 
 RUST_BINS := aweui aweui-installer aweui-settings aweui-control-center aweui-file-manager \
@@ -19,11 +21,11 @@ SHELL_SCRIPTS := $(shell find scripts -maxdepth 1 -type f -name '*.sh' -print | 
 
 .PHONY: all build verify-linux verify-linux-readonly rust-build userland kernel rootfs \
         initramfs finalize-rootfs iso disk-image image check test test-rust test-shell test-qemu \
-        validate-rootfs verify-artifacts clean
+        validate-rootfs verify-artifacts aosin clean
 
 all: build
 
-build: verify-linux rust-build kernel rootfs initramfs finalize-rootfs iso disk-image verify-artifacts
+build: verify-linux rust-build aosin kernel rootfs initramfs finalize-rootfs iso disk-image verify-artifacts
 
 verify-linux verify-linux-readonly:
 	@./scripts/verify-linux-readonly.sh
@@ -37,7 +39,14 @@ rust-build:
 		cp "target/release/$$binary" "$(BUILD_DIR)/$$binary"; \
 	done
 
-userland: rust-build
+aosin: $(AOSIN_BIN)
+
+$(AOSIN_BIN): src/core/netid.c src/core/logging.c src/aosin/aosin_core.c src/aosin/main.c \
+               src/core/types.h src/core/netid.h src/core/logging.h src/aosin/aosin_spec.h
+	@mkdir -p $(BUILD_DIR)
+	@$(CC) $(AOSIN_CFLAGS) -Isrc/core -Isrc/aosin src/core/netid.c src/core/logging.c src/aosin/aosin_core.c src/aosin/main.c -o "$@"
+
+userland: rust-build aosin
 
 kernel: verify-linux
 	@mkdir -p $(KERNEL_BUILD_DIR)
@@ -45,7 +54,7 @@ kernel: verify-linux
 	@$(MAKE) -C $(KERNEL_SRC) O=$(KERNEL_BUILD_DIR) -j"$$(nproc)" bzImage
 	@test -s $(KERNEL_BUILD_DIR)/arch/x86/boot/bzImage
 
-rootfs: rust-build
+rootfs: rust-build aosin
 	@AWEOS_DESKTOP=${AWEOS_DESKTOP:-ayui} ./scripts/build-rootfs.sh $(BUILD_DIR)
 	@bash ./scripts/validate-rootfs-layout.sh $(BUILD_DIR)
 
@@ -102,6 +111,7 @@ test-shell:
 	@bash ./scripts/test-qemu-boot-readiness.sh
 	@bash ./scripts/test-netid.sh
 	@bash ./scripts/test-aosin.sh
+	@bash ./scripts/test-awepkg-safe.sh
 	@bash ./scripts/test-kernel-config-requirements.sh
 
 test-qemu: iso
@@ -115,6 +125,7 @@ verify-artifacts:
 		$(BUILD_DIR)/aweui-control-center $(BUILD_DIR)/aweui-file-manager $(BUILD_DIR)/aweui-terminal \
 		$(BUILD_DIR)/aweui-system-monitor $(BUILD_DIR)/aweui-diagnostics $(BUILD_DIR)/aweui-text-editor \
 		$(BUILD_DIR)/aweui-calculator $(BUILD_DIR)/aweui-firstboot-setup $(BUILD_DIR)/aweui-user-app-template \
+		$(AOSIN_BIN) \
 		$(KERNEL_BUILD_DIR)/arch/x86/boot/bzImage $(INITRAMFS) $(ROOTFS_IMG) \
 		$(ISO_PATH) $(BUILD_DIR)/AWEOS-x86_64-disk.img; do \
 		test -s "$$artifact" || { echo "ERROR: missing or empty artifact $$artifact" >&2; exit 1; }; \
