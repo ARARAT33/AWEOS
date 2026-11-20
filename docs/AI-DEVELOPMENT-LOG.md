@@ -487,3 +487,35 @@
 3. Merge order once checks are green: #58, #60, #61, #62, #63, #64,
    then this AOSIN branch rebased on the reconciled stack.
 4. Begin Connection Manager (module 4) on top of the identity API.
+
+## 2026-11-20 run 10 — Unblock AOSIN v2 regression compilation
+
+### Repository and CI evidence
+- Inspected the latest default-branch head `d4d300545558d660abb2127d297d3a00ef017dae`, the open PR stack, recent commits, and the latest Actions runs before editing.
+- Continued on the existing isolated PR #65 branch `feat/aosin-real-payload-20261119`, based on PR #64; no changes were made to `master` or the upstream `/linux` tree.
+- PR #65 head `855d12c74430b97b67c4496668ea2ab031ce841d` failed both Userland Validation run #44545309915 and full image/boot run #44545309714. The image job passed the Rust workspace tests but stopped at `make test-shell`; image creation and BIOS/UEFI boot steps were skipped.
+- The compiler reported missing POSIX declarations for `lstat` and `symlink`, missing declarations for the incremental SHA-256 API used by AOSIN, and an unused `stage_cap` parameter under `-Werror`.
+
+### Changes pushed to the existing PR #65 branch
+- `src/aosin/aosin_core.c`: enable the POSIX.1-2008 interfaces before system headers and include the existing Device Identity Manager API header for the incremental SHA-256 context/functions. The SHA-256 implementation is reused; no duplicate hash implementation was added.
+- `src/aosin/aosin_core.c`: validate that the caller-provided staging path is NUL-terminated within its declared capacity and use the bounded path length when checking extraction target sizes.
+- `src/aosin/tests/test_aosin.c`: enable POSIX.1-2008 declarations so the symlink-skipping regression compiles under strict C11.
+- `src/aosin/tests/test_aosin.c`: correct the tamper fixture to seek back to the byte after reading it, ensuring the test actually overwrites an existing payload byte rather than appending a byte.
+- `scripts/test-aosin.sh`: pass the POSIX feature-test macro explicitly and use a Bash argument array for compiler flags.
+- `docs/AI-DEVELOPMENT-LOG.md`: record this run and the exact CI evidence.
+
+### Validation
+- Source edits were assembled into one fast-forward commit on the existing PR branch. Fresh GitHub Actions results are required to validate compilation and runtime behavior.
+- No new test pass, successful package install, or boot success is claimed in this log entry.
+
+### Unresolved issues
+1. The latest PR #65 image run did not reach ISO creation or QEMU because `make test-shell` stopped at the AOSIN compile errors. BIOS/UEFI behavior therefore remains untested on that head.
+2. AOSIN package signatures, publisher trust anchors, and authenticated repository metadata remain unimplemented. SHA-256 integrity alone does not establish publisher trust.
+3. The AOSIN install/remove implementation still needs a focused security review of metadata atomicity, symlink-safe directory traversal, and exact uninstall scope before production use.
+4. The earlier qemu64 BIOS boot/reset failure remains a release blocker; do not weaken boot readiness assertions to make CI green.
+
+### Next run priorities
+1. Inspect the fresh Userland Validation and full image/boot checks on the updated PR #65 head; fix the next concrete failure from its log.
+2. If `make test-shell` passes, inspect the new image-build and QEMU diagnostics artifacts before changing kernel or bootloader behavior.
+3. Review and test AOSIN uninstall path scoping and metadata rollback as a separate security-focused change.
+4. Continue Network Platform development only after the current AOSIN PR stack has a clean, evidence-backed test state.

@@ -1,6 +1,9 @@
+#define _POSIX_C_SOURCE 200809L
+
 #include "aosin_spec.h"
 
 #include "../core/logging.h"
+#include "../core/netid.h"
 
 #include <dirent.h>
 #include <errno.h>
@@ -355,13 +358,17 @@ int aosin_pkg_inspect(const char *pkg_file, aosin_pkg_info_t *info) {
  * every parent component is checked with lstat (dirs, non-symlink) and the
  * staging file is created exclusively before an atomic rename. */
 static int extract_payload(const pkg_layout_t *l, char *stage_dir, size_t stage_cap) {
-    if (!stage_dir || !stage_dir[0]) return AWEOS_ERR_INVALID_PARAM;
+    if (!stage_dir || stage_cap == 0) return AWEOS_ERR_INVALID_PARAM;
+    size_t stage_len = 0;
+    while (stage_len < stage_cap && stage_dir[stage_len] != '\0') ++stage_len;
+    if (stage_len == 0 || stage_len == stage_cap) return AWEOS_ERR_INVALID_PARAM;
     int rc = mkdir_p(stage_dir);
     if (rc != AWEOS_OK) return rc;
     if (fseek(l->f, l->payload_offset, SEEK_SET) != 0) return AWEOS_ERR_IO;
     for (uint32_t i = 0; i < l->hdr.file_count; ++i) {
         const aosin_entry_t *e = &l->entries[i];
         char target[1024];
+        if (stage_len + 1U + strlen(e->path) >= sizeof(target)) return AWEOS_ERR_INVALID_PARAM;
         if (snprintf(target, sizeof(target), "%s/%s", stage_dir, e->path) >= (int)sizeof(target)) return AWEOS_ERR_INVALID_PARAM;
         /* Validate each parent component. */
         char probe[1024];

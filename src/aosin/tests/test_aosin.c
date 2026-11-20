@@ -1,3 +1,5 @@
+#define _POSIX_C_SOURCE 200809L
+
 #include "aosin_spec.h"
 
 #include <assert.h>
@@ -60,8 +62,18 @@ int main(void) {
     {
         FILE *f = fopen("build/app1.asp", "r+b");
         assert(f);
-        fseek(f, -1, SEEK_END);
-        fputc(0x5A ^ (unsigned)fgetc(f), f);   /* flip to any different byte */
+        if (fseek(f, -1, SEEK_END) != 0) {
+            fclose(f);
+            fprintf(stderr, "FAIL: seek to tamper byte\\n");
+            return 1;
+        }
+        int original = fgetc(f);
+        if (original == EOF || fseek(f, -1, SEEK_END) != 0 ||
+            fputc(original ^ 0x01, f) == EOF) {
+            fclose(f);
+            fprintf(stderr, "FAIL: mutate package byte\\n");
+            return 1;
+        }
         fclose(f);
         expect_not("tampered verify", aosin_pkg_verify("build/app1.asp"), AWEOS_ERR_VERIFY);
         /* rebuild for later tests */
