@@ -416,3 +416,28 @@
 - Restored `scripts/config-kernel.sh` to its original executable Git mode `100755` and added a test that fails if this direct-invocation script loses that mode again.
 - The previous exact-head image run #44674438775 stopped before kernel compilation because the script mode had been lost; it did not validate the baseline flags or compressed-kernel scan.
 - Fresh exact-head CI is required. No kernel build, ISA scan on a real image, or boot success is claimed for that failed run.
+
+## 2026-11-20 run 10 follow-up — Capture the first userspace invalid-opcode instruction
+
+### Evidence
+- The exact PR #63 head 7a2aa278080dfbab73c65844dc3197b0aae855db completed the full kernel build, rootfs creation, ISO/disk-image creation, and /linux integrity check in run #44674841664.
+- The compressed-kernel build target completed, including its real-vmlinux BMI1/BMI2 scan. Boot progressed beyond the earlier kernel triple fault and reached PID 1.
+- BIOS still fails: the kernel reports SIGILL (exitcode 0x00000004) for PID 1 at user-mode RIP 0x56df50. The faulting bytes include c5 f9 6f, a VEX-encoded instruction outside the qemu64 x86-64 baseline. This is a new userspace fault, not evidence that the kernel BMI2 issue remains.
+- The current logs do not yet identify which ELF contains the faulting instruction. Do not broaden kernel compiler flags or change the QEMU CPU model to hide this userspace incompatibility.
+
+### Changes on fix/qemu-userland-isa-diagnostics-20261120
+- Added scripts/trace-qemu-user-isa-fault.sh. When a serial log contains a user-mode RIP, it re-runs the same QEMU command with a 512-byte address window and int,in_asm tracing.
+- Updated scripts/run-qemu-tests.sh to invoke the targeted trace only after a userspace RIP is observed.
+- Updated the x86_64 workflow to include the targeted trace in the job summary and diagnostic artifact.
+- Added scripts/test-qemu-user-isa-trace.sh and wired it into make test-shell. The regression checks the exact address filter and verifies that no QEMU invocation occurs without a user-mode RIP.
+- No files under /linux were changed.
+
+### Validation status
+- GitHub read-back confirms the helper, runner integration, workflow artifact paths, and regression are present.
+- Exact-head shell regression and full BIOS/UEFI diagnostic runs are pending. No userspace fix or successful boot is claimed.
+
+### Next priorities
+1. Run the targeted trace on BIOS and map the VEX instruction to its ELF using the actual build artifacts.
+2. If the fault is in BusyBox or a library, replace/rebuild that component for the x86-64 baseline rather than relaxing QEMU's CPU features.
+3. Re-run BIOS and UEFI and require the rootfs hand-off plus AYUI first-frame markers.
+4. Keep PR #63 and this diagnostic follow-up draft/unmerged until the exact-head boot matrix passes.
