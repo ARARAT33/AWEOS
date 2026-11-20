@@ -441,3 +441,31 @@
 2. If the fault is in BusyBox or a library, replace/rebuild that component for the x86-64 baseline rather than relaxing QEMU's CPU features.
 3. Re-run BIOS and UEFI and require the rootfs hand-off plus AYUI first-frame markers.
 4. Keep PR #63 and this diagnostic follow-up draft/unmerged until the exact-head boot matrix passes.
+
+
+## 2026-11-20 run 10 follow-up — Rebuild early userspace BusyBox for the x86-64 baseline
+
+### Evidence
+- PR #67 exact-head full image run #44676952897 passed Rust tests, shell/rootfs regressions, kernel build, compressed-kernel BMI1/BMI2 scan, rootfs/initramfs creation, ISO and disk-image creation, and the post-build `/linux` integrity check. BIOS boot still failed with PID 1 SIGILL at RIP `0x56df50`; UEFI was not reached because BIOS failed first.
+- The kernel serial log records the fault bytes `c5 f9 6f`; the targeted QEMU `in_asm` trace decodes the instruction at `0x56df50` as `vmovdqa`, a VEX/AVX instruction unavailable on the required `qemu64` baseline.
+- Source inspection shows that the AYUI rootfs copies the host `busybox` binary from PATH, creates `/bin/sh` as a BusyBox applet symlink, and runs `/sbin/init` as a shell script. The initramfs independently copies the same host BusyBox. This makes a host-built BusyBox the leading, testable source of the userspace ISA mismatch; the exact ELF symbol is not yet proven.
+
+### Changes on `fix/busybox-x86-64-baseline-20261120`
+- Added a pinned BusyBox 1.38.0 source build using static musl and explicit `-march=x86-64 -mtune=generic` flags with AVX/BMI disabled. The source archive is SHA-256 verified before extraction.
+- The same built binary is now passed explicitly to both persistent-rootfs and initramfs builders; they no longer silently copy the CI host's BusyBox.
+- Added a targeted ELF instruction scanner and regression fixtures that accept baseline code and reject AVX, BMI and invalid ELF inputs.
+- Added the same checked BusyBox to the GNOME rootfs so the shared rootfs validator has consistent boot tooling.
+- Added the BusyBox build to the Makefile and CI release checksum/artifact list. Fixed the Makefile's desktop selection assignment so the shell default is expanded by Bash rather than interpreted as a Make variable.
+- No files under `/linux` were changed.
+
+### Validation status
+- Local targeted ISA-scanner regression: **PASS** (baseline ELF accepted; AVX, BMI and invalid ELF fixtures rejected).
+- Local shell syntax checks for the new build/check/test scripts: **PASS**.
+- The source archive could not be downloaded in this development container, so the full BusyBox compile was not run locally.
+- Exact-head GitHub Userland Validation, image build, BIOS/UEFI boot and `/linux` integrity checks are pending. No successful BIOS or UEFI boot is claimed.
+
+### Next priorities
+1. Run exact-head CI and confirm the pinned BusyBox build is static and passes the AVX/BMI scanner.
+2. Re-run BIOS and UEFI; require rootfs hand-off and the AYUI compositor first-frame marker in both modes.
+3. If SIGILL persists, use the retained BusyBox ELF and QEMU trace to map the new RIP to a symbol and correct that component without enabling non-baseline CPU features.
+4. Keep this PR and its boot-diagnostic parent draft/unmerged until the exact-head build and boot matrix pass.
