@@ -463,10 +463,17 @@
 - Local shell syntax checks for the new build/check/test scripts: **PASS**.
 - The source archive could not be downloaded in this development container, so the full BusyBox compile was not run locally.
 - Upstream currently labels BusyBox 1.38.0 as an unstable release; this version is pinned for reproducible testing, not presented as a stable-release claim.
-- Exact-head GitHub Userland Validation, image build, BIOS/UEFI boot and `/linux` integrity checks are pending. No successful BIOS or UEFI boot is claimed.
+- Exact-head Userland Validation run #44680050497: **PASS**. It completed shell/C transaction tests (including the rootfs validator and new ISA scanner), repository-boundary validation, Cargo metadata, Rust workspace tests, and all expected Rust binary builds.
+- Exact-head image run #44680050408 was still running at this log update. No successful BIOS or UEFI boot is claimed.
 
 ### Next priorities
 1. Run exact-head CI and confirm the pinned BusyBox build is static and passes the AVX/BMI scanner.
 2. Re-run BIOS and UEFI; require rootfs hand-off and the AYUI compositor first-frame marker in both modes.
 3. If SIGILL persists, use the retained BusyBox ELF and QEMU trace to map the new RIP to a symbol and correct that component without enabling non-baseline CPU features.
 4. Keep this PR and its boot-diagnostic parent draft/unmerged until the exact-head build and boot matrix pass.
+
+
+### Additional repository architecture findings
+- The current image build is a Linux-kernel/Limine boot path with a Rust `AWEUI` workspace and Rust system applications under `APPS/`. The older C implementations under `src/core`, `src/aosin`, `src/gui`, `src/installer`, `src/updater`, and `src/wlin` are not members of the current root `Cargo.toml` workspace and are not built by the current `make image` path; their integration must be verified separately rather than inferred from their presence.
+- The repository contains additional EFI binaries for ARM64, RISC-V64, LoongArch64 and IA32, but the current Makefile, kernel configuration and QEMU CI exercise x86_64 only. Those other architecture binaries are not evidence of a working AWEOS port.
+- No dedicated distributed Network Platform service tree was found in the current module layout. The Linux networking stack exists, but AWEOS device identity, service discovery, peer authentication and distributed resource orchestration remain future implementation work.
