@@ -26,7 +26,7 @@ printf '[    1.5] RIP: 0033:0x56df50\n' >"$tmp/serial.log"
 AWEOS_FAKE_QEMU_ARGS="$tmp/args" bash "$helper" "$tmp/serial.log" "$tmp/trace.log" "$tmp/fake-qemu" -machine q35
 
 grep -Fxq 'int,in_asm' "$tmp/args"
-grep -Fxq '0x56de50-0x56e050' "$tmp/args"
+grep -Fxq '0x56de50..0x56e050' "$tmp/args"
 grep -q 'fake QEMU instruction trace' "$tmp/trace.log"
 
 printf 'no user-mode exception marker\n' >"$tmp/no-rip.log"
