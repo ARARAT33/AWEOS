@@ -477,3 +477,27 @@
 - The current image build is a Linux-kernel/Limine boot path with a Rust `AWEUI` workspace and Rust system applications under `APPS/`. The older C implementations under `src/core`, `src/aosin`, `src/gui`, `src/installer`, `src/updater`, and `src/wlin` are not members of the current root `Cargo.toml` workspace and are not built by the current `make image` path; their integration must be verified separately rather than inferred from their presence.
 - The repository contains additional EFI binaries for ARM64, RISC-V64, LoongArch64 and IA32, but the current Makefile, kernel configuration and QEMU CI exercise x86_64 only. Those other architecture binaries are not evidence of a working AWEOS port.
 - No dedicated distributed Network Platform service tree was found in the current module layout. The Linux networking stack exists, but AWEOS device identity, service discovery, peer authentication and distributed resource orchestration remain future implementation work.
+
+
+## 2026-11-20 run 11 fix — Supply kernel headers so the pinned BusyBox build compiles
+
+### Evidence
+- Exact-head PR #68 full image run #44680612284 (job #136102828774) failed during the BusyBox source build, not during boot:
+  - `console-tools/kbd_mode.c:32:10: fatal error: linux/kd.h: No such file or directory`
+  - `make[2]: *** [scripts/Makefile.build:197: console-tools/kbd_mode.o] Error 1`
+  - `make: *** [Makefile:46: busybox] Error 2`
+- The PR #68 Userland Validation run #44680612390 passed; this is a build-configuration failure only.
+- Root cause: the pinned BusyBox is compiled statically with musl-gcc, and neither musl nor the CI host's libc development headers are guaranteed to provide `linux/kd.h`, which is a kernel-headers file.
+
+### Changes on this branch
+- `scripts/build-busybox-baseline.sh`: generate x86_64 kernel headers out-of-tree with `make O=build/linux-headers ARCH=x86_64 headers_install` from the read-only `/linux` source (overridable with `AWEOS_LINUX_SRC`), fail closed if `linux/kd.h` is still absent, and prepend that directory to `CONFIG_EXTRA_CFLAGS` so kbd_mode and siblings compile against the real kernel headers. `/linux` itself is never written.
+
+### Validation status
+- The exact-head Userland Validation run #44680612390 пассed for the pre-fix head; the new fix has fresh exact-head Userland and full image/boot workflows pending on the updated head. No build or boot success is claimed for the fix commit yet.
+
+### Next priorities
+1. Confirm the fixed BusyBox build completes, the static binary passes the AVX/BMI ISA scanner, and image assembly succeeds.
+2. Re-run BIOS and UEFI; require the rootfs hand-off marker plus the AYUI compositor first-frame marker in both modes.
+3. If a userspace invalid-opcode fault remains, map the new RIP to its ELF with the retained trace and fix that component for the x86-64 baseline.
+4. Keep this PR and its boot-diagnostic parent draft/unmerged until the exact-head build and boot matrix pass.
+
