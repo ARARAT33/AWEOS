@@ -333,3 +333,86 @@
    compositor first-frame marker for desktop readiness.
 5. Keep PR #55 and this dependent PR draft/unmerged until the full boot matrix
    passes on the reconciled head.
+
+
+## 2026-11-18 run — Enforce the x86-64 baseline ISA in the compressed kernel
+
+### Evidence
+- Current `master` head: `d4d300545558d660abb2127d297d3a00ef017dae`. Its kernel build target passed the host compiler defaults through Kbuild without an explicit x86-64 baseline, and it had no post-build compressed-kernel ISA scan.
+- The current BIOS interrupt trace on PR #61 records the first `#UD` at `RIP=0x3cd63c7`, followed by `#GP` (error code `0x32`), double fault and triple fault.
+- The older, still-open stacked PR #44 inspected the same BIOS RIP in its actual QEMU instruction trace and decoded bytes `c4 e2 fb f7 ca` as `SHRX` (BMI2) in `kernel_ident_mapping_init`. Its proposed kernel baseline fix is not present on current `master`; PR #44 is based on an older stacked branch, so this PR carries only the focused kernel-build guard onto current `master`.
+- The new current-head `in_asm` trace is still running and will be used to independently confirm the opcode. The old instruction decode is strong evidence, but this change does not claim the new head is fixed until its own build and boot tests pass.
+
+### Changes on `fix/kernel-baseline-isa-20261118`
+- Added `AWEOS_KERNEL_CPU_FLAGS` defaulting to `-march=x86-64 -mtune=generic -mno-bmi -mno-bmi2`, passed through Kbuild's `CC` command so compressed boot code cannot inherit a newer host ISA.
+- Added `scripts/check-kernel-baseline-isa.sh` to scan the actual `arch/x86/boot/compressed/vmlinux` after each kernel build and fail the image build if BMI1/BMI2 instructions remain.
+- Added a fixture-based regression that accepts baseline code and rejects an explicitly encoded SHRX/BMI2 instruction.
+- Wired the regression into `make test-shell` and the post-build ISA check into the real `kernel` target.
+- No files under `/linux` were changed.
+
+### Validation
+- Local fixture regression using the available C compiler and `objdump`: **PASS** (safe object accepted; explicit SHRX/BMI2 object rejected).
+- Shell syntax checks for the new checker and test: **PASS**.
+- Exact-head GitHub userland, kernel build, compressed-kernel ISA scan, BIOS/UEFI QEMU boot and `/linux` integrity checks are pending on this branch.
+- The pre-fix PR #61 full-image run #44239001611 failed both BIOS and UEFI; no successful boot is claimed.
+
+### Next priorities
+1. Confirm the filtered current-head QEMU trace identifies the same SHRX instruction at `0x3cd63c7`.
+2. Run the post-build checker on the new compressed `vmlinux`; if it finds further BMI1/BMI2 instructions, keep the build fail-closed and correct the remaining compiler/assembly source.
+3. Re-run BIOS and UEFI on the exact fixed head and require the rootfs hand-off plus AYUI first-frame markers.
+4. If the kernel #UD is removed but a userspace #UD remains at a different address, map that address to its ELF and fix it separately rather than broadening kernel flags blindly.
+
+
+## 2026-11-18 follow-up — Make the compressed-kernel ISA verifier fail closed
+
+### Evidence
+- Downloaded and inspected the PR #61 BIOS diagnostic artifact from run #44241406946. The filtered QEMU instruction trace records bytes `c4 e2 fb f7 ca` at RIP `0x3cd63c7`, decoded as `SHRX` (BMI2), followed by `#UD`, `#GP`, double fault and triple fault. BIOS serial output stops after ACPI RSDP discovery; UEFI also fails before rootfs hand-off.
+- Code review found a fail-open edge in the new verifier: if `objdump` failed, the pipeline could be interpreted as an empty grep result and incorrectly print PASS.
+
+### Changes on `fix/kernel-baseline-isa-20261118`
+- `scripts/check-kernel-baseline-isa.sh` now captures disassembly first, checks the `objdump` exit status, requires actual disassemblable instruction lines, and distinguishes grep's “no match” result from execution errors.
+- `scripts/test-kernel-baseline-isa.sh` now covers three cases: baseline code accepted, explicit SHRX/BMI2 rejected, and malformed non-ELF input rejected before a clean result can be reported.
+- No files under `/linux` were changed.
+
+### Validation
+- Local regression using the available C compiler and `objdump`: **PASS** for all three cases.
+- Shell syntax validation for the checker and test: **PASS**.
+- The exact-head full-image workflow for the prior commit `20822b2e7d65` was still running when this follow-up was pushed; it does not validate the follow-up commit. Fresh push/PR workflows for the new head are required.
+
+### Next priorities
+1. Inspect fresh exact-head userland and image/boot runs for the follow-up commit; do not reuse the previous head's results.
+2. Confirm the post-build scanner reports no BMI1/BMI2 instructions in the real compressed `vmlinux`.
+3. Require fresh BIOS and UEFI QEMU boots to reach rootfs hand-off and AYUI compositor first-frame markers; if they still fail, inspect the new trace and map the first faulting instruction.
+4. Keep PR #63 draft/unmerged until exact-head CI and the boot matrix pass; preserve the upstream `/linux` tree unchanged.
+
+## 2026-11-20 run 10 follow-up — Make the x86-64 baseline enforceable on reused build directories
+
+### New boot evidence
+- Inspected the fresh PR #65 full-image run #44672877358 and downloaded its diagnostic artifact #14600679940. Kernel build, rootfs, hybrid ISO creation, disk-image creation, and the post-build `/linux` read-only integrity check all passed.
+- BIOS QEMU still fails before the rootfs hand-off marker. The earlier exact-head PR #61 instruction trace (run #44241413286, artifact #14400546292) contains the bytes `c4 e2 fb f7 ca` at RIP `0x3cd63c7`; local `objdump` decodes them as `shrx rcx,rdx,rax` (BMI2), followed by #UD, #GP, double fault, and triple fault.
+- Re-inspected the existing PR #63 kernel-baseline branch instead of duplicating its implementation. Its Makefile recipe had `-j"$(nproc)"` (GNU Make expands this as an undefined Make variable) instead of the required escaped shell substitution `-j"$$(nproc)"`. Its config script also reused an existing `.config` without explicitly disabling `CONFIG_X86_NATIVE_CPU`; the upstream x86 Makefile emits `-march=native` when that option is enabled, which can override the intended baseline flags.
+
+### Changes on the existing PR #63 branch
+- `Makefile`: corrected the kernel parallelism recipe to pass `$(nproc)` to the shell rather than expanding an empty GNU Make variable.
+- `scripts/config-kernel.sh`: explicitly disables `CONFIG_X86_NATIVE_CPU` every time AWEOS reapplies its required kernel configuration, including when reusing an existing build directory.
+- `scripts/test-kernel-config-requirements.sh`: added regression assertions for the native-CPU disable, x86-64 baseline compiler flags, and correctly escaped parallel job-count expression.
+- No files under `/linux` were modified; only the build configuration and checks changed.
+
+### Validation status
+- The fresh PR #65 Userland Validation run #44672886433 passed. Its shell/C suite includes the AOSIN v2 create/verify/inspect/install/remove regression and CLI verification; the Rust workspace tests and all expected release binaries also passed.
+- The fresh PR #65 full image run #44672877358 passed Rust tests, shell/rootfs regressions, kernel build, rootfs/initramfs creation, ISO and disk-image creation, and the `/linux` integrity check, but failed the BIOS QEMU rootfs hand-off test with a triple fault. The UEFI step was not reached in this failed push run.
+- The PR #63 branch correction is not yet validated by a fresh exact-head build/boot run. No successful BIOS or UEFI boot is claimed.
+
+### Next priorities
+1. Run the exact PR #63 head through the full image build and verify the compressed-kernel BMI1/BMI2 scan passes on the actual `vmlinux`.
+2. Re-run the qemu64 BIOS and UEFI tests and inspect both results independently; retain the rootfs hand-off and AYUI first-frame requirements.
+3. Reconcile PR #63 with PR #65 only after the exact-head ISA scan and QEMU results are known. Do not merge an unverified stacked branch.
+4. Continue the AOSIN uninstall-scope and metadata-atomicity review as a separate security task.
+
+## 2026-11-20 run 10 correction — Preserve Make's escaped job-count expression and script mode
+
+- Read-back of the first PR #63 correction found that the GitHub blob contained a single `$` in `-j"$(nproc)"`, because the replacement-string API interpreted `$$` as a literal single dollar. The earlier entry therefore overstated that this recipe had been corrected.
+- Rebuilt the replacement using a literal callback so the committed Makefile now contains the required `-j"$$(nproc)"` text. The regression assertion was updated to check the exact two-dollar form.
+- Restored `scripts/config-kernel.sh` to its original executable Git mode `100755` and added a test that fails if this direct-invocation script loses that mode again.
+- The previous exact-head image run #44674438775 stopped before kernel compilation because the script mode had been lost; it did not validate the baseline flags or compressed-kernel scan.
+- Fresh exact-head CI is required. No kernel build, ISA scan on a real image, or boot success is claimed for that failed run.

@@ -17,6 +17,9 @@ echo "Configuring Linux kernel out-of-tree in ${KERNEL_BUILD_DIR}..."
 
 CONFIG_TOOL="${KERNEL_SRC}/scripts/config --file ${KERNEL_BUILD_DIR}/.config"
 
+# Force a portable x86-64 baseline even when reusing an older build directory.
+${CONFIG_TOOL} --disable CONFIG_X86_NATIVE_CPU
+
 # Disable heavy debug info
 ${CONFIG_TOOL} --disable CONFIG_DEBUG_INFO
 ${CONFIG_TOOL} --disable CONFIG_DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT
