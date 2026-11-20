@@ -564,3 +564,12 @@
 2. If they pass, inspect the full image build and BIOS/UEFI results independently.
 3. Fix install metadata transactionality and collision-safe staging in a separate focused change.
 4. Keep the branch stacked on PR #65 and unmerged until exact-head checks and review are complete.
+
+## 2026-11-20 AOSIN integration follow-up — Ship the native CLI and disable legacy tar writes
+
+- Source review found that the rootfs shipped scripts/awepkg.sh, whose legacy install path extracted an untrusted tar archive and copied files directly into /, while its remove path trusted a mutable file list and ran rm -f against absolute paths. This bypassed the bounded AOSIN v2 implementation and was unsafe to expose as a root package manager.
+- Replaced that legacy behavior with a fail-closed compatibility wrapper: list/info remain read-only; install/remove delegate only to the native aosin executable; unsafe package names are rejected. The wrapper no longer extracts tar archives or copies/removes arbitrary paths.
+- Added scripts/test-awepkg-safe.sh to verify traversal rejection, fail-closed behavior when aosin is absent, and argument-safe delegation to the native CLI.
+- Added a real Makefile aosin target, included the binary in both AYUI and GNOME rootfs profiles, and made rootfs validation require an executable /usr/bin/aosin.
+- Updated the README to describe the shipped native CLI and the disabled legacy archive path. Publisher signatures, trusted repositories, dependencies, sandboxing, and rollback remain unimplemented.
+- Exact-head Userland Validation is pending for this integration follow-up; no rootfs build or boot success is claimed until the new target and layout checks pass.
