@@ -493,7 +493,7 @@
 - `scripts/build-busybox-baseline.sh`: generate x86_64 kernel headers out-of-tree with `make O=build/linux-headers ARCH=x86_64 headers_install` from the read-only `/linux` source (overridable with `AWEOS_LINUX_SRC`), fail closed if `linux/kd.h` is still absent, and prepend that directory to `CONFIG_EXTRA_CFLAGS` so kbd_mode and siblings compile against the real kernel headers. `/linux` itself is never written.
 
 ### Validation status
-- The exact-head Userland Validation run #44680612390 пассed for the pre-fix head; the new fix has fresh exact-head Userland and full image/boot workflows pending on the updated head. No build or boot success is claimed for the fix commit yet.
+- The exact-head Userland Validation run #44680612390 passed for the pre-fix head; the new fix has fresh exact-head Userland and full image/boot workflows pending on the updated head. No build or boot success is claimed for the fix commit yet.
 
 ### Next priorities
 1. Confirm the fixed BusyBox build completes, the static binary passes the AVX/BMI ISA scanner, and image assembly succeeds.
