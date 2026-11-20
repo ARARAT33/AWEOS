@@ -24,7 +24,7 @@ fi
 rip_value=$((16#$rip))
 lower=$((rip_value > 256 ? rip_value - 256 : 0))
 upper=$((rip_value + 256))
-printf -v filter '0x%x-0x%x' "$lower" "$upper"
+printf -v filter '0x%x..0x%x' "$lower" "$upper"
 
 mkdir -p "$(dirname "$trace_log")"
 rm -f "$trace_log"
