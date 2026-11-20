@@ -48,6 +48,19 @@ test_boot() {
 
     cat "${logfile}"
 
+    # A userspace SIGILL is reported by the kernel with a user-mode RIP. Capture
+    # a narrowly filtered instruction trace on a second boot so the exact opcode
+    # can be mapped without flooding the normal QEMU debug artifact.
+    if grep -qE 'RIP: 0033:0x[[:xdigit:]]+' "${logfile}"; then
+        local user_trace="${BUILD_DIR}/qemu-${mode_lc}-user-isa-trace.log"
+        echo "Detected a userspace exception; capturing a targeted instruction trace."
+        if bash "$(dirname "${BASH_SOURCE[0]}")/trace-qemu-user-isa-fault.sh" "${logfile}" "${user_trace}" "$@"; then
+            annotate_log_tail "${user_trace}" "${mode} user ISA trace"
+        else
+            echo "WARNING: targeted userspace instruction trace could not be captured." >&2
+        fi
+    fi
+
     # timeout(124) is expected because AWEUI is intentionally a long-running compositor.
     if [ "${rc}" -ne 0 ] && [ "${rc}" -ne 124 ]; then
         echo "FAIL: QEMU exited with status ${rc} during ${mode} boot." >&2
