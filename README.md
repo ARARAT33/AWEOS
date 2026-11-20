@@ -70,12 +70,15 @@ AWEOS is a complete, bootable x86_64 Linux operating system featuring **AYUI as 
 - **`transaction.c/h`**: Atomic transaction engine (`PLAN -> VALIDATE -> PREPARE -> PRESERVE -> EXECUTE -> BOOTCFG -> VERIFY -> COMMIT / ROLLBACK`).
 
 ## AOSIN Package System (`src/aosin/`)
-Native AWEOS package management system supporting three formal format specifications:
-- **`.asp` (AWEOS Software Package)**: Software/payload binary archives.
-- **`.asa` (AWEOS Standalone Application)**: Self-contained application bundles.
-- **`.aosin` (AOSIN Installer Archive)**: Multi-package installation bundles with manifests and permission bounds.
-- **`aosin` CLI Tool**: Query, install, remove, and verify packages registered under `/var/lib/awepkg/`.
-- **AYUI Integration**: Dynamic package scanning in `/var/lib/awepkg/*.meta` automatically populates the AYUI desktop application launcher menu.
+
+Current implementation: AOSIN binary package format v2 with bounded payload file tables, streamed SHA-256 integrity verification, and a native CLI.
+
+- **Container layout**: fixed-width header, file-entry table, and concatenated payload bytes. The SHA-256 digest covers the payload bytes and is rechecked by verify, inspect, and install.
+- **Type tags**: `.asp`, `.asa`, and `.aosin` currently map to enum values in the same v2 container layout. They are not yet three independent formats or a multi-package installer bundle.
+- **CLI**: create, verify, inspect package metadata, install into an explicit root, and remove a package using its installed manifest.
+- **Install/remove safety**: payload paths and sizes are bounded; symlink payload entries are skipped; uninstall is scoped to the selected package directory and preserves unowned files.
+- **Not implemented yet**: publisher signatures, trusted signing keys, authenticated repositories, dependency resolution, permissions/capabilities, sandboxing, multi-package transactions, and rollback.
+- **Security boundary**: SHA-256 detects payload corruption but does not authenticate the publisher. Do not install untrusted packages as root.
 
 ## AYUI Native Desktop Environment (`src/gui/`, `src/apps/`)
 - Built independently without external Desktop Environments (GNOME, KDE, Xfce, LXQt, etc.).
