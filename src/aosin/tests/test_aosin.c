@@ -106,9 +106,104 @@ int main(void) {
     /* 5. reinstall of the same package fails instead of silently clobbering */
     expect_not("reinstall app2", aosin_pkg_install("build/app2.asp", "rootfs_test"), AWEOS_ERR_VERIFY);
 
-    /* 6. remove deletes the app dir and meta; second remove is NOT_FOUND */
+    /* 6. A tampered manifest must never let package A remove package B's files.
+     * The old remover joined paths against the shared package root rather than
+     * the selected package directory, so this fixture reproduced cross-package
+     * deletion. */
+    make_payload("build/app3", "package-three", strlen("package-three"), 0);
+    expect_not("create app3", aosin_pkg_create("build/app3.asp", PKG_TYPE_ASP, "app3", "1.0", "build/app3"), AWEOS_OK);
+    expect_not("install app3", aosin_pkg_install("build/app3.asp", "rootfs_test"), AWEOS_OK);
+    {
+        const size_t n = strlen("package-three");
+        FILE *m = fopen("rootfs_test/var/lib/awepkg/app3.meta", "wb");
+        assert(m);
+        fprintf(m, "app3\n1.0\n3\n%zu readme.txt\n%zu sub/data.bin\n0 app2/readme.txt\n", n, n * 2U);
+        assert(fclose(m) == 0);
+    }
+    expect_not("remove app3 with sibling path", aosin_pkg_remove("app3", "rootfs_test"), AWEOS_OK);
+    if (stat("rootfs_test/opt/aweos-pkg/app2/readme.txt", &st) != 0) {
+        fprintf(stderr, "FAIL: removing app3 deleted app2/readme.txt\n");
+        return 1;
+    }
+
+    /* 7. unowned user data inside a package directory must not be recursively
+     * deleted by package removal; the manifest remains so removal can retry. */
+    {
+        FILE *keep = fopen("rootfs_test/opt/aweos-pkg/app2/user-data.txt", "wb");
+        assert(keep);
+        fputs("user data", keep);
+        assert(fclose(keep) == 0);
+    }
+    expect_not("remove app2 preserves unowned data", aosin_pkg_remove("app2", "rootfs_test"), AWEOS_ERR_VERIFY);
+    if (stat("rootfs_test/opt/aweos-pkg/app2/user-data.txt", &st) != 0) {
+        fprintf(stderr, "FAIL: package removal deleted unowned user data\n");
+        return 1;
+    }
+    if (unlink("rootfs_test/opt/aweos-pkg/app2/user-data.txt") != 0) {
+        fprintf(stderr, "FAIL: remove unowned data fixture\n");
+        return 1;
+    }
     expect_not("remove app2", aosin_pkg_remove("app2", "rootfs_test"), AWEOS_OK);
     expect_not("re-remove app2", aosin_pkg_remove("app2", "rootfs_test"), AWEOS_ERR_NOT_FOUND);
+
+    /* 8. symlinked package parents must not redirect uninstall outside the
+     * package tree. */
+    make_payload("build/app4", "symlink-check", strlen("symlink-check"), 0);
+    expect_not("create app4", aosin_pkg_create("build/app4.asp", PKG_TYPE_ASP, "app4", "1.0", "build/app4"), AWEOS_OK);
+    expect_not("install app4", aosin_pkg_install("build/app4.asp", "rootfs_test"), AWEOS_OK);
+    mkdir("outside", 0755);
+    {
+        FILE *sentinel = fopen("outside/data.bin", "wb");
+        assert(sentinel);
+        fputs("must survive", sentinel);
+        assert(fclose(sentinel) == 0);
+    }
+    {
+        char outside_abs[1024];
+        char link_path[1024];
+        assert(getcwd(outside_abs, sizeof(outside_abs)) != NULL);
+        assert(strlen(outside_abs) + sizeof("/outside") < sizeof(outside_abs));
+        strcat(outside_abs, "/outside");
+        snprintf(link_path, sizeof(link_path), "%s", "rootfs_test/opt/aweos-pkg/app4/sub");
+        assert(unlink("rootfs_test/opt/aweos-pkg/app4/sub/data.bin") == 0);
+        assert(rmdir(link_path) == 0);
+        assert(symlink(outside_abs, link_path) == 0);
+        expect_not("remove app4 through symlink parent", aosin_pkg_remove("app4", "rootfs_test"), AWEOS_ERR_VERIFY);
+        if (stat("outside/data.bin", &st) != 0) {
+            fprintf(stderr, "FAIL: symlinked parent allowed deletion outside package root\n");
+            return 1;
+        }
+        assert(unlink(link_path) == 0);
+    }
+    expect_not("remove app4 after symlink removal", aosin_pkg_remove("app4", "rootfs_test"), AWEOS_OK);
+
+    /* 9. path traversal and special directory package names are rejected. */
+    expect_not("traversal create", aosin_pkg_create("build/evil.asp", PKG_TYPE_ASP, "../evil", "1.0", "build/app"), AWEOS_ERR_INVALID_PARAM);
+    expect_not("dot package create", aosin_pkg_create("build/dot.asp", PKG_TYPE_ASP, ".", "1.0", "build/app"), AWEOS_ERR_INVALID_PARAM);
+    expect_not("dotdot package create", aosin_pkg_create("build/dotdot.asp", PKG_TYPE_ASP, "..", "1.0", "build/app"), AWEOS_ERR_INVALID_PARAM);
+    expect_not("dot package remove", aosin_pkg_remove(".", "rootfs_test"), AWEOS_ERR_INVALID_PARAM);
+    expect_not("dotdot package remove", aosin_pkg_remove("..", "rootfs_test"), AWEOS_ERR_INVALID_PARAM);
+
+    /* 10. bad names are rejected */
+    expect_not("bad name", aosin_pkg_create("build/x.asp", PKG_TYPE_ASP, "bad/name", "1.0", "build/app"), AWEOS_ERR_INVALID_PARAM);
+    expect_not("bad version", aosin_pkg_create("build/x.asp", PKG_TYPE_ASP, "x", "1 0", "build/app"), AWEOS_ERR_INVALID_PARAM);
+
+    /* 11. legacy v1 package is rejected fail-closed */
+    {
+        FILE *f = fopen("build/legacy.asp", "wb");
+        assert(f);
+        unsigned char v1[128];
+        memset(v1, 0, sizeof(v1));
+        v1[0] = 0x4F; v1[1] = 0x53; v1[2] = 0x49; v1[3] = 0x4E;
+        fwrite(v1, 1, sizeof(v1), f);
+        fclose(f);
+        expect_not("legacy v1", aosin_pkg_verify("build/legacy.asp"), AWEOS_ERR_VERIFY);
+        expect_not("legacy v1 install", aosin_pkg_install("build/legacy.asp", "rootfs_test"), AWEOS_ERR_VERIFY);
+    }
+
+    /* 12. empty payload dir is rejected */
+    mkdir("empty_dir", 0755);
+    expect_not("empty create", aosin_pkg_create("build/empty.asp", PKG_TYPE_ASP, "empty", "1.0", "empty_dir"), AWEOS_ERR_INVALID_PARAM);
 
     /* 7. path traversal entries are rejected fail-closed */
     expect_not("traversal create", aosin_pkg_create("build/evil.asp", PKG_TYPE_ASP, "../evil", "1.0", "build/app"), AWEOS_ERR_INVALID_PARAM);
