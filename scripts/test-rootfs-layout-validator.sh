@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+command -v cc >/dev/null 2>&1 || { echo "ERROR: cc is required for the rootfs validator test." >&2; exit 2; }
+
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd -P)"
 TEMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/aweos-rootfs-validator-test.XXXXXX")"
@@ -18,7 +20,13 @@ printf '%s\n' 'NAME="AWEOS"' > "$ROOTFS_DIR/etc/os-release"
 printf '%s\n' 'NETWORK_AUTO=true' > "$ROOTFS_DIR/etc/aweos/config"
 printf '%s\n' '[desktop]' > "$ROOTFS_DIR/etc/aweui/config.toml"
 printf '%s\n' '#!/bin/sh' 'exit 0' > "$ROOTFS_DIR/sbin/init"
-printf '%s\n' '#!/bin/sh' 'exit 0' > "$ROOTFS_DIR/bin/busybox"
+cat > "$TEMP_ROOT/busybox.S" <<'ASM'
+.text
+.globl _start
+_start:
+    ret
+ASM
+cc -nostdlib -no-pie -Wl,-e,_start "$TEMP_ROOT/busybox.S" -o "$ROOTFS_DIR/bin/busybox"
 printf '%s\n' '#!/bin/sh' 'exit 0' > "$ROOTFS_DIR/usr/bin/aweui"
 chmod 0755 "$ROOTFS_DIR/sbin/init" "$ROOTFS_DIR/bin/busybox" "$ROOTFS_DIR/usr/bin/aweui"
 printf '%s\n' '[Desktop Entry]' 'Exec=/usr/bin/aweui' > "$ROOTFS_DIR/usr/share/wayland-sessions/ayui.desktop"
