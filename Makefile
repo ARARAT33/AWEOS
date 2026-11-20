@@ -44,7 +44,7 @@ userland: rust-build
 kernel: verify-linux
 	@mkdir -p $(KERNEL_BUILD_DIR)
 	@./scripts/config-kernel.sh $(KERNEL_SRC) $(KERNEL_BUILD_DIR)
-	@$(MAKE) -C $(KERNEL_SRC) O=$(KERNEL_BUILD_DIR) CC="$(CC) $(AWEOS_KERNEL_CPU_FLAGS)" -j"$(nproc)" bzImage
+	@$(MAKE) -C $(KERNEL_SRC) O=$(KERNEL_BUILD_DIR) CC="$(CC) $(AWEOS_KERNEL_CPU_FLAGS)" -j"$$(nproc)" bzImage
 	@test -s $(KERNEL_BUILD_DIR)/arch/x86/boot/bzImage
 	@test -s $(KERNEL_BUILD_DIR)/arch/x86/boot/compressed/vmlinux
 	@bash ./scripts/check-kernel-baseline-isa.sh $(KERNEL_BUILD_DIR)/arch/x86/boot/compressed/vmlinux

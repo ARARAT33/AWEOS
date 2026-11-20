@@ -408,3 +408,11 @@
 2. Re-run the qemu64 BIOS and UEFI tests and inspect both results independently; retain the rootfs hand-off and AYUI first-frame requirements.
 3. Reconcile PR #63 with PR #65 only after the exact-head ISA scan and QEMU results are known. Do not merge an unverified stacked branch.
 4. Continue the AOSIN uninstall-scope and metadata-atomicity review as a separate security task.
+
+## 2026-11-20 run 10 correction — Preserve Make's escaped job-count expression and script mode
+
+- Read-back of the first PR #63 correction found that the GitHub blob contained a single `$` in `-j"$(nproc)"`, because the replacement-string API interpreted `$$` as a literal single dollar. The earlier entry therefore overstated that this recipe had been corrected.
+- Rebuilt the replacement using a literal callback so the committed Makefile now contains the required `-j"$$(nproc)"` text. The regression assertion was updated to check the exact two-dollar form.
+- Restored `scripts/config-kernel.sh` to its original executable Git mode `100755` and added a test that fails if this direct-invocation script loses that mode again.
+- The previous exact-head image run #44674438775 stopped before kernel compilation because the script mode had been lost; it did not validate the baseline flags or compressed-kernel scan.
+- Fresh exact-head CI is required. No kernel build, ISA scan on a real image, or boot success is claimed for that failed run.

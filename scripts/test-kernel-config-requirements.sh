@@ -40,5 +40,9 @@ grep -Fq -- '--enable CONFIG_BLK_DEV_SR' "$SCRIPT_DIR/config-kernel.sh"
 grep -Fq 'verify-kernel-config.sh' "$SCRIPT_DIR/config-kernel.sh"
 grep -Fq -- '--disable CONFIG_X86_NATIVE_CPU' "$SCRIPT_DIR/config-kernel.sh"
 grep -Fq -- '-march=x86-64 -mtune=generic -mno-bmi -mno-bmi2' "$SCRIPT_DIR/../Makefile"
-grep -Fq -- '-j"$(nproc)"' "$SCRIPT_DIR/../Makefile"
+grep -Fq -- '-j"$$(nproc)"' "$SCRIPT_DIR/../Makefile"
+if [ ! -x "$SCRIPT_DIR/config-kernel.sh" ]; then
+    echo "ERROR: config-kernel.sh must remain executable because the Makefile invokes it directly." >&2
+    exit 1
+fi
 echo "PASS: required boot storage drivers are built in and kernel build enforces portable x86-64 flags without native CPU leakage."
