@@ -384,3 +384,27 @@
 2. Confirm the post-build scanner reports no BMI1/BMI2 instructions in the real compressed `vmlinux`.
 3. Require fresh BIOS and UEFI QEMU boots to reach rootfs hand-off and AYUI compositor first-frame markers; if they still fail, inspect the new trace and map the first faulting instruction.
 4. Keep PR #63 draft/unmerged until exact-head CI and the boot matrix pass; preserve the upstream `/linux` tree unchanged.
+
+## 2026-11-20 run 10 follow-up — Make the x86-64 baseline enforceable on reused build directories
+
+### New boot evidence
+- Inspected the fresh PR #65 full-image run #44672877358 and downloaded its diagnostic artifact #14600679940. Kernel build, rootfs, hybrid ISO creation, disk-image creation, and the post-build `/linux` read-only integrity check all passed.
+- BIOS QEMU still fails before the rootfs hand-off marker. The earlier exact-head PR #61 instruction trace (run #44241413286, artifact #14400546292) contains the bytes `c4 e2 fb f7 ca` at RIP `0x3cd63c7`; local `objdump` decodes them as `shrx rcx,rdx,rax` (BMI2), followed by #UD, #GP, double fault, and triple fault.
+- Re-inspected the existing PR #63 kernel-baseline branch instead of duplicating its implementation. Its Makefile recipe had `-j"$(nproc)"` (GNU Make expands this as an undefined Make variable) instead of the required escaped shell substitution `-j"$$(nproc)"`. Its config script also reused an existing `.config` without explicitly disabling `CONFIG_X86_NATIVE_CPU`; the upstream x86 Makefile emits `-march=native` when that option is enabled, which can override the intended baseline flags.
+
+### Changes on the existing PR #63 branch
+- `Makefile`: corrected the kernel parallelism recipe to pass `$(nproc)` to the shell rather than expanding an empty GNU Make variable.
+- `scripts/config-kernel.sh`: explicitly disables `CONFIG_X86_NATIVE_CPU` every time AWEOS reapplies its required kernel configuration, including when reusing an existing build directory.
+- `scripts/test-kernel-config-requirements.sh`: added regression assertions for the native-CPU disable, x86-64 baseline compiler flags, and correctly escaped parallel job-count expression.
+- No files under `/linux` were modified; only the build configuration and checks changed.
+
+### Validation status
+- The fresh PR #65 Userland Validation run #44672886433 passed. Its shell/C suite includes the AOSIN v2 create/verify/inspect/install/remove regression and CLI verification; the Rust workspace tests and all expected release binaries also passed.
+- The fresh PR #65 full image run #44672877358 passed Rust tests, shell/rootfs regressions, kernel build, rootfs/initramfs creation, ISO and disk-image creation, and the `/linux` integrity check, but failed the BIOS QEMU rootfs hand-off test with a triple fault. The UEFI step was not reached in this failed push run.
+- The PR #63 branch correction is not yet validated by a fresh exact-head build/boot run. No successful BIOS or UEFI boot is claimed.
+
+### Next priorities
+1. Run the exact PR #63 head through the full image build and verify the compressed-kernel BMI1/BMI2 scan passes on the actual `vmlinux`.
+2. Re-run the qemu64 BIOS and UEFI tests and inspect both results independently; retain the rootfs hand-off and AYUI first-frame requirements.
+3. Reconcile PR #63 with PR #65 only after the exact-head ISA scan and QEMU results are known. Do not merge an unverified stacked branch.
+4. Continue the AOSIN uninstall-scope and metadata-atomicity review as a separate security task.

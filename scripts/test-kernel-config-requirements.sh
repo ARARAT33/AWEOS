@@ -38,4 +38,7 @@ fi
 grep -Fq 'kernel configuration file is missing' "$TEMP_ROOT/missing-file.out"
 grep -Fq -- '--enable CONFIG_BLK_DEV_SR' "$SCRIPT_DIR/config-kernel.sh"
 grep -Fq 'verify-kernel-config.sh' "$SCRIPT_DIR/config-kernel.sh"
-echo "PASS: required boot storage drivers must be built in; missing and module-only SCSI CD-ROM support fail closed."
+grep -Fq -- '--disable CONFIG_X86_NATIVE_CPU' "$SCRIPT_DIR/config-kernel.sh"
+grep -Fq -- '-march=x86-64 -mtune=generic -mno-bmi -mno-bmi2' "$SCRIPT_DIR/../Makefile"
+grep -Fq -- '-j"$(nproc)"' "$SCRIPT_DIR/../Makefile"
+echo "PASS: required boot storage drivers are built in and kernel build enforces portable x86-64 flags without native CPU leakage."
