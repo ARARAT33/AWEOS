@@ -544,6 +544,10 @@
   - Reject . and .. package names for create and remove.
 - No files under /linux were changed. No install, update, partition, or user-data migration operation was performed.
 
+### Documentation correction
+
+- README.md: corrected the AOSIN section so .asp/.asa/.aosin are described as type tags in the same v2 container, not separate formats or an implemented multi-package bundle. The documentation now explicitly lists the missing signatures, trusted repositories, dependency resolution, sandboxing, and rollback boundaries.
+
 ### Validation status
 - GitHub source read-back confirms the new path-scoped remover and regression cases are present.
 - Local C execution was not available in this connector-only edit path. Exact-head Userland Validation, Core Data Preservation, and full image/boot checks are pending; no test pass or boot success is claimed for this branch.
