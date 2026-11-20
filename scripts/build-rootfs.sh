@@ -19,10 +19,10 @@ mkdir -p "${ROOTFS_DIR}"/{bin,sbin,usr/bin,usr/sbin,usr/lib,usr/share/applicatio
 mkdir -p "${ROOTFS_DIR}/run/user/0"
 chmod 0700 "${ROOTFS_DIR}/run/user/0"
 
-BUSYBOX_BIN="$(command -v busybox || true)"
-test -n "${BUSYBOX_BIN}" || { echo "ERROR: busybox binary not found" >&2; exit 1; }
-cp -L "${BUSYBOX_BIN}" "${ROOTFS_DIR}/bin/busybox"
-chmod 0755 "${ROOTFS_DIR}/bin/busybox"
+BUSYBOX_BIN="${AWEOS_BUSYBOX_BIN:-}"
+test -n "${BUSYBOX_BIN}" && [ -x "${BUSYBOX_BIN}" ] || { echo "ERROR: AWEOS_BUSYBOX_BIN must point to the baseline-built BusyBox binary" >&2; exit 1; }
+bash "$(dirname "${BASH_SOURCE[0]}")/check-x86-64-baseline-isa.sh" "${BUSYBOX_BIN}"
+install -D -m 0755 "${BUSYBOX_BIN}" "${ROOTFS_DIR}/bin/busybox"
 
 RUST_BINS="
 aweui
