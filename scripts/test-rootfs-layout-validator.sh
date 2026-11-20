@@ -20,7 +20,8 @@ printf '%s\n' '[desktop]' > "$ROOTFS_DIR/etc/aweui/config.toml"
 printf '%s\n' '#!/bin/sh' 'exit 0' > "$ROOTFS_DIR/sbin/init"
 printf '%s\n' '#!/bin/sh' 'exit 0' > "$ROOTFS_DIR/bin/busybox"
 printf '%s\n' '#!/bin/sh' 'exit 0' > "$ROOTFS_DIR/usr/bin/aweui"
-chmod 0755 "$ROOTFS_DIR/sbin/init" "$ROOTFS_DIR/bin/busybox" "$ROOTFS_DIR/usr/bin/aweui"
+printf '%s\n' '#!/bin/sh' 'exit 0' > "$ROOTFS_DIR/usr/bin/aosin"
+chmod 0755 "$ROOTFS_DIR/sbin/init" "$ROOTFS_DIR/bin/busybox" "$ROOTFS_DIR/usr/bin/aweui" "$ROOTFS_DIR/usr/bin/aosin"
 printf '%s\n' '[Desktop Entry]' 'Exec=/usr/bin/aweui' > "$ROOTFS_DIR/usr/share/wayland-sessions/ayui.desktop"
 
 # Exercise the same Makefile target used by the image build.
