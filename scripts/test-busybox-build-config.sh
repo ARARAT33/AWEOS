@@ -44,7 +44,7 @@ case "${1:-}" in
         ;;
     *)
         flags="$(sed -n 's/^CONFIG_EXTRA_CFLAGS=//p' .config)"
-        [[ "${flags}" == "*"-I${AWEOS_TEST_EXPECTED_HEADERS}/usr/include"*" ]] || {
+        [[ "${flags}" == *"-I${AWEOS_TEST_EXPECTED_HEADERS}/usr/include"* ]] || {
             echo "ERROR: kernel include path was not expanded in CONFIG_EXTRA_CFLAGS: ${flags}" >&2
             exit 21
         }

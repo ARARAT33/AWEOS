@@ -503,7 +503,7 @@
 
 
 
-## 2026-11-21 follow-up â Correct BusyBox kernel-header path and test compiler configuration
+## 2026-11-21 follow-up - Correct BusyBox kernel-header path and test compiler configuration
 
 ### Latest CI evidence
 - PR #68 head `4d8d6d78f0bf37f32ae87f486766f9ccde2b6c8d` was checked directly.
