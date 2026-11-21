@@ -8,6 +8,7 @@ BUSYBOX_URL="https://www.busybox.net/downloads/busybox-${BUSYBOX_VERSION}.tar.bz
 ARCHIVE="${BUILD_DIR}/busybox-${BUSYBOX_VERSION}.tar.bz2"
 OUTPUT="${BUILD_DIR}/busybox"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd -P)"
 
 for tool in curl make musl-gcc sha256sum tar readelf; do
     command -v "${tool}" >/dev/null 2>&1 || {
@@ -18,10 +19,16 @@ done
 mkdir -p "${BUILD_DIR}"
 
 # BusyBox tools such as kbd_mode include linux/kd.h, a kernel-headers file that
-# neither musl nor the host libc guarantees on every build host. Generate the
-# required headers out-of-tree from the read-only /linux source; /linux itself
-# is never modified because the output goes into the build directory only.
-KERNEL_SRC_SRC="${AWEOS_LINUX_SRC:-/linux}"
+# neither musl nor the host libc guarantees on every build host. Resolve the
+# vendored source relative to this repository (not the filesystem root): CI
+# checks the repository out below the runner workspace. Generate headers into
+# the build directory so the upstream kernel source remains untouched.
+KERNEL_SRC_SRC="${AWEOS_LINUX_SRC:-${REPO_ROOT}/linux}"
+if [ ! -f "${KERNEL_SRC_SRC}/Makefile" ]; then
+    echo "ERROR: kernel source Makefile not found at ${KERNEL_SRC_SRC}; set AWEOS_LINUX_SRC to the vendored kernel tree." >&2
+    exit 2
+fi
+KERNEL_SRC_SRC="$(cd -- "${KERNEL_SRC_SRC}" && pwd -P)"
 KERNEL_HEADERS="${BUILD_DIR}/linux-headers"
 KERNEL_HEADERS_ABS="$(cd -- "${BUILD_DIR}" && pwd -P)/linux-headers"
 if [ ! -f "${KERNEL_HEADERS}/usr/include/linux/kd.h" ]; then
@@ -69,7 +76,7 @@ tar -xjf "${ARCHIVE}" --directory "${WORK_DIR}" --strip-components=1
     set_config CONFIG_STATIC y
     set_config CONFIG_FEATURE_PREFER_APPLETS y
     set_config CONFIG_FEATURE_SH_STANDALONE y
-    set_config CONFIG_EXTRA_CFLAGS '"-I"${KERNEL_HEADERS_ABS}/usr/include" -march=x86-64 -mtune=generic -mno-avx -mno-avx2 -mno-avx512f -mno-bmi -mno-bmi2 -mno-fma -mno-f16c"'
+    set_config CONFIG_EXTRA_CFLAGS "\"-I${KERNEL_HEADERS_ABS}/usr/include -march=x86-64 -mtune=generic -mno-avx -mno-avx2 -mno-avx512f -mno-bmi -mno-bmi2 -mno-fma -mno-f16c\""
 
     make oldconfig </dev/null
     make -j"${AWEOS_BUSYBOX_JOBS:-$(nproc)}" CC="${AWEOS_BUSYBOX_CC:-musl-gcc}" HOSTCC=cc

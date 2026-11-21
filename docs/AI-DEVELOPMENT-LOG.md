@@ -501,3 +501,31 @@
 3. If a userspace invalid-opcode fault remains, map the new RIP to its ELF with the retained trace and fix that component for the x86-64 baseline.
 4. Keep this PR and its boot-diagnostic parent draft/unmerged until the exact-head build and boot matrix pass.
 
+
+
+## 2026-11-21 follow-up â Correct BusyBox kernel-header path and test compiler configuration
+
+### Latest CI evidence
+- PR #68 head `4d8d6d78f0bf37f32ae87f486766f9ccde2b6c8d` was checked directly.
+- Userland Validation run #44757503344: **PASS**. Shell/C regressions, repository-boundary validation, Cargo metadata, Rust workspace tests, release builds, and expected binary checks all completed successfully.
+- Full image run #44757503330: **FAIL** at `Build AWEOS images`; the kernel and BusyBox image build did not reach boot testing.
+- Exact failure: `ERROR: kernel source tree not found at /linux; cannot generate linux-headers`. BIOS and UEFI steps were skipped. The `/linux` integrity check before the image build passed.
+- The repository Makefile already defines `KERNEL_SRC := $(PWD)/linux`. GitHub Actions checks the repository out beneath the runner workspace, so `/linux` (the filesystem-root path) is not the checked-out kernel directory.
+
+### Changes on `fix/busybox-x86-64-baseline-20261120`
+- `scripts/build-busybox-baseline.sh`: resolve the default kernel source as `../linux` relative to the script/repository root, validate that its `Makefile` exists, and canonicalize the path. `AWEOS_LINUX_SRC` remains an explicit override.
+- Corrected `CONFIG_EXTRA_CFLAGS` so the absolute out-of-tree kernel-header include path is expanded by the shell instead of being written literally as `${KERNEL_HEADERS_ABS}` into BusyBox `.config`.
+- Added `scripts/test-busybox-build-config.sh`: a network-free fake-tool integration test that exercises default source-path resolution, out-of-tree header generation, expanded include flags, static ELF output, and the x86-64 baseline scanner.
+- Wired the new regression into `make test-shell`.
+- No files under `linux/` were modified; generated headers remain under the selected build directory.
+
+### Validation
+- Local isolated integration harness: **PASS**. It simulated `headers_install`, BusyBox configuration/build, and a static x86-64 ELF; verified the source path resolves to the repository's `linux/` directory and the compiler include path is expanded.
+- Exact-head GitHub CI for this new commit has not run yet. The previous head's Userland Validation passed, but the image build failed at the absolute `/linux` path. No ISO, BIOS, UEFI, or desktop boot success is claimed for this follow-up.
+
+### Next priorities
+1. Confirm the new regression passes in Userland Validation.
+2. Confirm BusyBox's real `headers_install` stage and static musl build complete in the full image workflow.
+3. Require the BusyBox ISA scan, rootfs/ISO/disk image checks, and `/linux` integrity checks to pass.
+4. Only then run BIOS and UEFI QEMU tests and require rootfs hand-off plus AYUI first-frame readiness in both modes.
+5. If the next build fails, use the exact job log and diagnostic artifact; do not relax the x86-64 baseline or boot markers.

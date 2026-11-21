@@ -111,6 +111,7 @@ test-shell:
 	@bash ./scripts/test-kernel-config-requirements.sh
 	@bash ./scripts/test-kernel-baseline-isa.sh
 	@bash ./scripts/test-x86-64-baseline-isa.sh
+	@bash ./scripts/test-busybox-build-config.sh
 	@bash ./scripts/test-qemu-user-isa-trace.sh
 
 test-qemu: iso
