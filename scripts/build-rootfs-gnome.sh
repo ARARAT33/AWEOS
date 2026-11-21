@@ -15,6 +15,11 @@ mkdir -p "${ROOTFS_DIR}"
 
 debootstrap --arch=amd64 --components=main,restricted,universe,multiverse "${UBUNTU_SUITE}" "${ROOTFS_DIR}" "${UBUNTU_MIRROR}"
 
+BUSYBOX_BIN="${AWEOS_BUSYBOX_BIN:-}"
+test -n "${BUSYBOX_BIN}" && [ -x "${BUSYBOX_BIN}" ] || { echo "ERROR: AWEOS_BUSYBOX_BIN must point to the baseline-built BusyBox binary" >&2; exit 1; }
+bash "$(dirname "${BASH_SOURCE[0]}")/check-x86-64-baseline-isa.sh" "${BUSYBOX_BIN}"
+install -D -m 0755 "${BUSYBOX_BIN}" "${ROOTFS_DIR}/bin/busybox"
+
 cat > "${ROOTFS_DIR}/etc/apt/sources.list" <<EOF
 deb ${UBUNTU_MIRROR} ${UBUNTU_SUITE} main restricted universe multiverse
 deb ${UBUNTU_MIRROR} ${UBUNTU_SUITE}-updates main restricted universe multiverse

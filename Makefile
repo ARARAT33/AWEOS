@@ -8,6 +8,7 @@ KERNEL_SRC := $(PWD)/linux
 KERNEL_BUILD_DIR := $(BUILD_DIR)/linux-x86_64
 ISO_PATH := $(BUILD_DIR)/AWEOS-x86_64.iso
 ROOTFS_IMG := $(BUILD_DIR)/rootfs.img
+BUSYBOX_BIN := $(BUILD_DIR)/busybox
 ROOTFS_DIR := $(BUILD_DIR)/rootfs
 INITRAMFS := $(BUILD_DIR)/aweos-initramfs.cpio.gz
 LIMINE_TOOL ?= $(shell command -v limine 2>/dev/null || true)
@@ -21,7 +22,7 @@ SHELL_SCRIPTS := $(shell find scripts -maxdepth 1 -type f -name '*.sh' -print | 
 
 .PHONY: all build verify-linux verify-linux-readonly rust-build userland kernel rootfs \
         initramfs finalize-rootfs iso disk-image image check test test-rust test-shell test-qemu \
-        validate-rootfs verify-artifacts clean
+        validate-rootfs verify-artifacts busybox clean
 
 all: build
 
@@ -41,6 +42,9 @@ rust-build:
 
 userland: rust-build
 
+busybox:
+	@bash ./scripts/build-busybox-baseline.sh "$(BUILD_DIR)"
+
 kernel: verify-linux
 	@mkdir -p $(KERNEL_BUILD_DIR)
 	@./scripts/config-kernel.sh $(KERNEL_SRC) $(KERNEL_BUILD_DIR)
@@ -49,15 +53,15 @@ kernel: verify-linux
 	@test -s $(KERNEL_BUILD_DIR)/arch/x86/boot/compressed/vmlinux
 	@bash ./scripts/check-kernel-baseline-isa.sh $(KERNEL_BUILD_DIR)/arch/x86/boot/compressed/vmlinux
 
-rootfs: rust-build
-	@AWEOS_DESKTOP=${AWEOS_DESKTOP:-ayui} ./scripts/build-rootfs.sh $(BUILD_DIR)
+rootfs: rust-build busybox
+	@AWEOS_BUSYBOX_BIN="$(BUSYBOX_BIN)" AWEOS_DESKTOP="$${AWEOS_DESKTOP:-ayui}" ./scripts/build-rootfs.sh $(BUILD_DIR)
 	@bash ./scripts/validate-rootfs-layout.sh $(BUILD_DIR)
 
 validate-rootfs:
 	@bash ./scripts/validate-rootfs-layout.sh $(BUILD_DIR)
 
-initramfs: rootfs
-	@./scripts/build-initramfs.sh $(BUILD_DIR)
+initramfs: rootfs busybox
+	@AWEOS_BUSYBOX_BIN="$(BUSYBOX_BIN)" ./scripts/build-initramfs.sh $(BUILD_DIR)
 
 finalize-rootfs: initramfs
 	@set -euo pipefail; \
@@ -106,6 +110,9 @@ test-shell:
 	@bash ./scripts/test-qemu-boot-readiness.sh
 	@bash ./scripts/test-kernel-config-requirements.sh
 	@bash ./scripts/test-kernel-baseline-isa.sh
+	@bash ./scripts/test-x86-64-baseline-isa.sh
+	@bash ./scripts/test-busybox-build-config.sh
+	@bash ./scripts/test-busybox-tc-disabled.sh
 	@bash ./scripts/test-qemu-user-isa-trace.sh
 
 test-qemu: iso
@@ -119,6 +126,7 @@ verify-artifacts:
 		$(BUILD_DIR)/aweui-control-center $(BUILD_DIR)/aweui-file-manager $(BUILD_DIR)/aweui-terminal \
 		$(BUILD_DIR)/aweui-system-monitor $(BUILD_DIR)/aweui-diagnostics $(BUILD_DIR)/aweui-text-editor \
 		$(BUILD_DIR)/aweui-calculator $(BUILD_DIR)/aweui-firstboot-setup $(BUILD_DIR)/aweui-user-app-template \
+		$(BUSYBOX_BIN) \
 		$(KERNEL_BUILD_DIR)/arch/x86/boot/bzImage $(INITRAMFS) $(ROOTFS_IMG) \
 		$(ISO_PATH) $(BUILD_DIR)/AWEOS-x86_64-disk.img; do \
 		test -s "$$artifact" || { echo "ERROR: missing or empty artifact $$artifact" >&2; exit 1; }; \

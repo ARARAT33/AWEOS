@@ -30,6 +30,7 @@ done
 
 [ -x "${ROOTFS_DIR}/sbin/init" ] || fail "/sbin/init is not executable"
 [ -x "${ROOTFS_DIR}/bin/busybox" ] || fail "/bin/busybox is not executable"
+bash "$(dirname "${BASH_SOURCE[0]}")/check-x86-64-baseline-isa.sh" "${ROOTFS_DIR}/bin/busybox" || fail "/bin/busybox contains unsupported x86-64 instructions"
 
 awk -F: 'BEGIN { ok=0 } $1 == "aweos" && $3 == "1000" { ok=1 } END { exit ok ? 0 : 1 }' "${ROOTFS_DIR}/etc/passwd" \
     || fail "the aweos user with UID 1000 is missing from /etc/passwd"
