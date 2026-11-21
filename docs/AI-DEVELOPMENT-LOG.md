@@ -537,3 +537,30 @@
 - Userland run #44868716919: the shell/C transaction and regression step **PASS**, repository-boundary validation **PASS**, and Cargo metadata validation **PASS**. Rust workspace tests were still running at the last inspection; the workflow had not reached its final release-binary checks.
 - Full image run #44868716935: dependency installation and Limine host utility setup completed; the Rust workspace test step was running. The BusyBox source build, image assembly, BIOS/UEFI tests and release artifact checks had not yet run at the last inspection.
 - No full image, ISO, BIOS, UEFI, or desktop boot success is claimed from these in-progress runs.
+
+## 2026-11-21 run — BusyBox tc applet fix on PR #68
+
+### CI evidence inspected
+- PR #68 latest exact-head build-and-boot run #44868882500 (job #136738673754) **failed** with exit code 2, while its Userland Validation run passed.
+- The failure annotations were: `make[2]: *** [scripts/Makefile.build:197: networking/tc.o] Error 1`, `make[1]: *** [Makefile:749: networking] Error 2`, `make: *** [Makefile:46: busybox] Error 2`. The pinned BusyBox 1.38.0 build broke on the `tc` traffic-control applet, before kernel, rootfs, ISO, or QEMU stages.
+- Root cause: busybox `tc` depends on the CBQ qdisc ABI (TCA_CBQ_*) that modern kernels removed, so it does not compile against the freshly installed UAPI headers with musl. The applet is not needed for boot or early userspace.
+
+### Changes on `fix/busybox-x86-64-baseline-20261120` (PR #68)
+- `scripts/build-busybox-baseline.sh`: explicitly `set_config CONFIG_TC n` with an inline root-cause comment; defconfig defaults had left the failing applet enabled.
+- `scripts/test-busybox-tc-disabled.sh` (new): structural regression that fails unless CONFIG_TC is explicitly disabled and the root cause is documented, so a future defconfig refresh cannot silently re-enable it.
+- `Makefile`: wire `test-busybox-tc-disabled.sh` into `make test-shell`.
+- No files under `/linux` were touched; no kernel, rootfs, installer, or userland runtime behavior changed beyond the BusyBox applet set.
+
+### Validation status
+- The tc-disable guard was verified dynamically: the decoded builder contains the exact working `grep -q "^\${key}="` / `sed -i "s|^\${key}=.*|..." ` config lines plus `set_config CONFIG_TC n`.
+- New CI runs on the updated head are pending; no build, boot, BIOS, UEFI, or desktop success is claimed. (Note: the immediately preceding intermediate commit on this branch was a push with mangled placeholder content and had to be immediately repaired; its evidence is retained in history.)
+
+### Remaining issues
+1. Watch the next `build-and-boot-test` run; if a different applet or object fails next, fix only the proven failure with evidence.
+2. BIOS/UEFI boot matrix, AYUI compositor readiness, UEFI firmware checks, and release-artifact validation remain unproven.
+3. Do not merge PR #68 (or its parent stack #67/#63) until the full matrix passes on one reconciled head.
+
+### Next run priorities
+1. Read the new run's exact failure (if any) from annotations/diagnostics and continue the cycle.
+2. After a passing image build, verify BIOS boot first, then UEFI independently; keep strict compositor-readiness markers.
+3. Continue the recorded security backlog: signed package payload, sandboxing and privilege boundaries.
