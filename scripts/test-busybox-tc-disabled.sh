@@ -13,15 +13,13 @@ BUILDER="${SCRIPT_DIR}/build-busybox-baseline.sh"
 
 [[ -f "${BUILDER}" ]] || { echo "ERROR: builder script missing: ${BUILDER}" >&2; exit 1; }
 
-grep -Eq "^\s*set_config CONFIG_TC n\s*$" "${BUILDER}" || {
+grep -Eq "^[[:space:]]*set_config CONFIG_TC n[[:space:]]*$" "${BUILDER}" || {
     echo "ERROR: build-busybox-baseline.sh does not explicitly disable CONFIG_TC." >&2
     exit 1
 }
 
-# The disable must be configured before the kernel include path and build
-# flags, i.e. inside the same set_config block that runs before make.
-# Also confirm the tc regression is documented with the CI evidence, so the
-# reason survives future refactors.
+# The disable must be documented with its root cause so the reason survives
+# future refactors and defconfig refreshes.
 grep -q "CBQ qdisc ABI" "${BUILDER}" || {
     echo "ERROR: the tc applet disable is not documented with its root cause." >&2
     exit 1
