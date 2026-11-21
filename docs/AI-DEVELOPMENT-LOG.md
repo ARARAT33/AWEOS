@@ -529,3 +529,11 @@
 3. Require the BusyBox ISA scan, rootfs/ISO/disk image checks, and `/linux` integrity checks to pass.
 4. Only then run BIOS and UEFI QEMU tests and require rootfs hand-off plus AYUI first-frame readiness in both modes.
 5. If the next build fails, use the exact job log and diagnostic artifact; do not relax the x86-64 baseline or boot markers.
+
+
+### Regression-harness correction and exact-head CI follow-up
+- The first harness commit `efbe6c4306fb6ecb881393356c0c54309715c039` exposed a malformed glob in the new fake-Make assertion. Userland run #44868652889 failed at `make test-shell` in that test fixture; the reported flags did contain the expected expanded include path, so this was a test assertion defect rather than a BusyBox compile failure.
+- Corrected the pattern in commit `ff7b5026f598ea50984d61d7b5861472467820a7` and reran the workflows on that head.
+- Userland run #44868716919: the shell/C transaction and regression step **PASS**, repository-boundary validation **PASS**, and Cargo metadata validation **PASS**. Rust workspace tests were still running at the last inspection; the workflow had not reached its final release-binary checks.
+- Full image run #44868716935: dependency installation and Limine host utility setup completed; the Rust workspace test step was running. The BusyBox source build, image assembly, BIOS/UEFI tests and release artifact checks had not yet run at the last inspection.
+- No full image, ISO, BIOS, UEFI, or desktop boot success is claimed from these in-progress runs.
