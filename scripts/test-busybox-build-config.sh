@@ -83,6 +83,14 @@ MAKE
 cat > "${FAKE_BIN}/readelf" <<'RE'
 #!/usr/bin/env bash
 set -euo pipefail
+# check-x86-64-baseline-isa.sh calls readelf -h; answer with a baseline
+# x86-64 machine line and only fake the -l program-header listing.
+case " $* " in
+    *" -h "*)
+        printf 'Machine:  Advanced Micro Devices X86-64\n'
+        exit 0
+        ;;
+esac
 if [[ " $* " != *" -l "* ]] && [[ " $* " != *" -l"* ]]; then
     echo "unexpected readelf invocation: $*" >&2
     exit 40
