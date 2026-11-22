@@ -40,7 +40,7 @@ case "${1:-}" in
         # Match the upstream BusyBox defconfig representation of a disabled
         # setting; the builder must rewrite this row in place, not append a
         # duplicate assignment whose resolution is left to kconfig.
-        printf '# CONFIG_STATIC is not set\nCONFIG_EXTRA_CFLAGS=""\n' > .config
+        printf '# CONFIG_STATIC is not set\nCONFIG_EXTRA_CFLAGS=""\nCONFIG_SHA256_HWACCEL=y\n' > .config
         ;;
     oldconfig)
         rows="$(grep -Ec '^CONFIG_STATIC=y$' .config || true)"
@@ -50,6 +50,13 @@ case "${1:-}" in
             echo "ERROR: exactly one CONFIG_STATIC=y row expected after the rewrite, got rows=${rows} total=${total}" >&2
             grep -n "CONFIG_STATIC" .config >&2
             exit 23
+        }
+        hw_enable_rows="$(grep -Ec '^CONFIG_SHA256_HWACCEL=y$' .config || true)"
+        hw_disable_rows="$(grep -Ec '^CONFIG_SHA256_HWACCEL=n$' .config || true)"
+        [[ "${hw_enable_rows}" == "0" && "${hw_disable_rows}" == "1" ]] || {
+            echo "ERROR: SHA-256 hardware acceleration must be disabled for the x86-64 baseline: enable_rows=${hw_enable_rows} disable_rows=${hw_disable_rows}" >&2
+            grep -n "CONFIG_SHA256_HWACCEL" .config >&2 || true
+            exit 24
         }
         ;;
     *)

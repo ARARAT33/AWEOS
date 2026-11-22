@@ -94,8 +94,14 @@ tar -xjf "${ARCHIVE}" --directory "${WORK_DIR}" --strip-components=1
     # networking/tc.o abort the whole BusyBox build.
     set_config CONFIG_TC n
 
+    # SHA-256 hardware acceleration compiles SIMD restatements that use
+    # AVX/VEX encodings, breaking the x86-64 baseline guard that CI requires
+    # for guests without those extensions. AWEOS does not rely on hardware
+    # SHA-256 in early userspace, so disable the accelerated path.
+    set_config CONFIG_SHA256_HWACCEL n
+
     # Guard against duplicate definitions of the same symbol after rewriting.
-    for key in CONFIG_STATIC CONFIG_FEATURE_PREFER_APPLETS CONFIG_FEATURE_SH_STANDALONE CONFIG_TC; do
+    for key in CONFIG_STATIC CONFIG_FEATURE_PREFER_APPLETS CONFIG_FEATURE_SH_STANDALONE CONFIG_TC CONFIG_SHA256_HWACCEL; do
         rows="$(grep -c "^${key}=" .config || true)"
         if [ "${rows}" -ne 1 ]; then
             echo "ERROR: BusyBox .config has ${rows} rows for ${key}; expected exactly one." >&2
