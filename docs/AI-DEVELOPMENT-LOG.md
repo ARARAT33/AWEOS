@@ -564,3 +564,34 @@
 1. Read the new run's exact failure (if any) from annotations/diagnostics and continue the cycle.
 2. After a passing image build, verify BIOS boot first, then UEFI independently; keep strict compositor-readiness markers.
 3. Continue the recorded security backlog: signed package payload, sandboxing and privilege boundaries.
+
+
+## 2026-11-22 run 11 — Restore corrupted BusyBox build-configuration regression
+
+### Repository and CI evidence
+- The default branch remains `master` at `d4d300545558d660abb2127d297d3a00ef017dae`; this work continues on the existing PR #68 branch `fix/busybox-x86-64-baseline-20261120`, stacked on PR #67 and the earlier x86-64 kernel baseline work. No default-branch merge was performed.
+- Exact-head PR workflows for `50e7889380dc85cc54676feb0701cf69e464955a` failed before any image build:
+  - Userland Validation run #44913056890 failed in `make test-shell`.
+  - Full image/boot run #44913056888 failed at its shell/rootfs regression step, before image assembly.
+- Both logs identify the same failure: `scripts/test-busybox-build-config.sh: line 1: ÿôÄÿÿÿ: command not found` (exit 127). The file had been overwritten with a 7-byte non-shell payload, so the previously added network-free BusyBox build regression could not execute. Kernel build, BusyBox compilation, ISO creation, BIOS, and UEFI were not reached by these runs.
+
+### Fix on the existing PR #68 branch
+- Restored `scripts/test-busybox-build-config.sh` from its previously validated version. The final blob SHA is `0b30b5edcb411ecbcb7368ea16cc7309048c69bc`, identical to the known-good version already present earlier in this branch history.
+- The restored test again exercises repository-relative kernel source discovery, out-of-tree headers installation, expanded `CONFIG_EXTRA_CFLAGS`, static ELF output, and the baseline ISA checker using fake build tools without network access.
+- The first restoration write contained escaping errors; it was corrected immediately in the next commit. The final branch head is `6c32f054d932d9f52992d4e04da49fbd1c885d59` and the file was read back from GitHub to verify its exact blob SHA.
+- No files under `linux/` were changed. No force push, branch deletion, or merge was performed.
+
+### Exact-head validation
+- New workflow runs for head `6c32f054d932d9f52992d4e04da49fbd1c885d59` were observed:
+  - Userland Validation PR run #44987358465: **in progress**.
+  - Full image/boot PR run #44987358525: **in progress**.
+  - Corresponding push-triggered runs #44987354904 and #44987354867: **in progress**.
+- These are pending, not passes. No new shell-test, BusyBox compilation, ISO, BIOS, UEFI, or AYUI readiness success is claimed in this log entry.
+
+### Remaining issues and next priorities
+1. Inspect the exact-head shell/C regression result; confirm the restored build-config test and tc-disable guard both pass.
+2. Confirm real kernel `headers_install` and pinned BusyBox 1.38.0 static musl compilation complete; then require the ELF baseline scanner to pass.
+3. Confirm kernel, rootfs, initramfs, ISO, disk image, and post-build `linux/` integrity checks complete.
+4. Run BIOS and UEFI independently and require rootfs hand-off plus AYUI first-frame readiness; do not treat an image build as a boot pass.
+5. If a new BusyBox object fails, use the actual compiler diagnostic and disable/fix only the proven incompatible applet; do not weaken the x86-64 baseline.
+6. After boot is unblocked, return to the documented security backlog: signed package trust, application isolation, and AYUI session privilege boundaries.
