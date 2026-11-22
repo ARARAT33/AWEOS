@@ -37,10 +37,20 @@ fi
 
 case "${1:-}" in
     defconfig)
-        printf 'CONFIG_STATIC=n\nCONFIG_EXTRA_CFLAGS=""\n' > .config
+        # Match the upstream BusyBox defconfig representation of a disabled
+        # setting; the builder must rewrite this row in place, not append a
+        # duplicate assignment whose resolution is left to kconfig.
+        printf '# CONFIG_STATIC is not set\nCONFIG_EXTRA_CFLAGS=""\n' > .config
         ;;
     oldconfig)
-        :
+        rows="$(grep -Ec '^CONFIG_STATIC=y$' .config || true)"
+        total="$(grep -Ec '^CONFIG_STATIC' .config || true)"
+        printf '%s %s\n' "${rows}" "${total}" > "${AWEOS_TEST_TRACE}/static-config-rows"
+        [[ "${rows}" == "1" ]] || {
+            echo "ERROR: exactly one CONFIG_STATIC=y row expected after the rewrite, got rows=${rows} total=${total}" >&2
+            grep -n "CONFIG_STATIC" .config >&2
+            exit 23
+        }
         ;;
     *)
         flags="$(sed -n 's/^CONFIG_EXTRA_CFLAGS=//p' .config)"
@@ -61,10 +71,28 @@ _start:
     mov $60,%eax
     syscall
 ASM
-        cc -nostdlib -no-pie -Wl,-e,_start baseline.S -o busybox
+        link_flags="-nostdlib -no-pie -Wl,-e,_start"
+        if [[ -f "${AWEOS_TEST_TRACE}/fake-dynamic" ]]; then
+            link_flags="-nostdlib -no-pie -Wl,-e,_start -Wl,--dynamic-linker=/lib/ld-musl-x86_64.so.1"
+        fi
+        cc ${link_flags} baseline.S -o busybox
         ;;
 esac
 MAKE
+
+cat > "${FAKE_BIN}/readelf" <<'RE'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ " $* " != *" -l "* ]] && [[ " $* " != *" -l"* ]]; then
+    echo "unexpected readelf invocation: $*" >&2
+    exit 40
+fi
+if [[ -f "${AWEOS_TEST_TRACE}/fake-dynamic" ]]; then
+    printf 'Program Headers:\n  INTERP     0x0000000000000318 Rx8  /lib/ld-musl-x86_64.so.1\n'
+else
+    printf 'Program Headers:\n  LOAD       0x0000000000000000 RWE 0x8\n'
+fi
+RE
 
 cat > "${FAKE_BIN}/curl" <<'CURL'
 #!/usr/bin/env bash
@@ -101,7 +129,7 @@ cat > "${FAKE_BIN}/musl-gcc" <<'MUSL'
 exec cc "$@"
 MUSL
 
-chmod 0755 "${FAKE_BIN}/make" "${FAKE_BIN}/curl" "${FAKE_BIN}/sha256sum" "${FAKE_BIN}/tar" "${FAKE_BIN}/musl-gcc"
+chmod 0755 "${FAKE_BIN}/make" "${FAKE_BIN}/curl" "${FAKE_BIN}/sha256sum" "${FAKE_BIN}/tar" "${FAKE_BIN}/musl-gcc" "${FAKE_BIN}/readelf"
 
 export AWEOS_TEST_TRACE="${TRACE_DIR}"
 export AWEOS_TEST_EXPECTED_HEADERS="${BUILD_DIR}/linux-headers"
@@ -124,6 +152,42 @@ export AWEOS_TEST_EXPECTED_HEADERS="${BUILD_DIR}/linux-headers"
 }
 grep -Fq -- "-I${BUILD_DIR}/linux-headers/usr/include" "${TRACE_DIR}/config-flags"
 ! grep -Fq -- '${KERNEL_HEADERS_ABS}' "${TRACE_DIR}/config-flags"
+[[ "$(cat "${TRACE_DIR}/static-config-rows")" == "1 1" ]] || {
+    echo "ERROR: expected exactly one CONFIG_STATIC=y row in the rewritten .config, got: $(cat "${TRACE_DIR}/static-config-rows")" >&2
+    exit 1
+}
 [[ -x "${BUILD_DIR}/busybox" ]]
 
-echo "PASS: BusyBox build resolves the repository kernel tree, keeps headers out-of-tree, expands compiler flags, and validates a static x86-64 baseline ELF."
+# Negative case: reproduce the CI failure mode where the binary links with an
+# interpreter. The builder must fail closed with diagnostics instead of
+# shipping a dynamic BusyBox for the initramfs.
+NEGATIVE_DIR="${TEMP_ROOT}/out-dynamic"
+mkdir -p "${NEGATIVE_DIR}"
+touch "${TRACE_DIR}/fake-dynamic"
+set +e
+(
+    cd "${TEMP_ROOT}"
+    env -u AWEOS_LINUX_SRC \
+        PATH="${FAKE_BIN}:${PATH}" \
+        AWEOS_TEST_TRACE="${TRACE_DIR}" \
+        AWEOS_TEST_EXPECTED_HEADERS="${NEGATIVE_DIR}/linux-headers" \
+        bash "${FAKE_REPO}/scripts/build-busybox-baseline.sh" "${NEGATIVE_DIR}"
+) > "${TRACE_DIR}/negative-stdout" 2> "${TRACE_DIR}/negative-stderr"
+negative_status=$?
+set -e
+rm -f "${TRACE_DIR}/fake-dynamic"
+[[ "${negative_status}" -ne 0 ]] || {
+    echo "ERROR: dynamic BusyBox output was accepted by the static-link check." >&2
+    exit 1
+}
+grep -q "must be statically linked" "${TRACE_DIR}/negative-stderr" || {
+    echo "ERROR: static-link failure diagnostics were not emitted." >&2
+    exit 1
+}
+grep -q "readelf program headers" "${TRACE_DIR}/negative-stderr" || {
+    echo "ERROR: readelf diagnostic output missing on static-link failure." >&2
+    exit 1
+}
+
+echo "PASS: BusyBox build resolves the repository kernel tree, keeps headers out-of-tree, expands compiler flags, keeps exactly one CONFIG_STATIC=y row, validates a static x86-64 baseline ELF, and fails closed on dynamic output."
+

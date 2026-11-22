@@ -60,11 +60,21 @@ tar -xjf "${ARCHIVE}" --directory "${WORK_DIR}" --strip-components=1
     cd "${WORK_DIR}"
     make defconfig
 
+    # Upstream BusyBox defconfig stores disabled settings as
+    # "# CONFIG_X is not set", not "CONFIG_X=n". Appending a duplicate
+    # assignment for a symbol that conflicts with an existing row leaves the
+    # outcome to kconfig duplicate handling and was observed to produce a
+    # dynamic binary in CI. Rewrite each form of the line in place instead.
     set_config() {
         local key="$1"
         local value="$2"
+        if [ "${value}" = "n" ] && grep -q "^# ${key} is not set$" .config; then
+            return 0
+        fi
         if grep -q "^${key}=" .config; then
             sed -i "s|^${key}=.*|${key}=${value}|" .config
+        elif grep -q "^# ${key} is not set$" .config; then
+            sed -i "s|^# ${key} is not set$|${key}=${value}|" .config
         else
             printf '%s=%s\n' "${key}" "${value}" >> .config
         fi
@@ -84,9 +94,26 @@ tar -xjf "${ARCHIVE}" --directory "${WORK_DIR}" --strip-components=1
     # networking/tc.o abort the whole BusyBox build.
     set_config CONFIG_TC n
 
+    # Guard against duplicate definitions of the same symbol after rewriting.
+    for key in CONFIG_STATIC CONFIG_FEATURE_PREFER_APPLETS CONFIG_FEATURE_SH_STANDALONE CONFIG_TC; do
+        rows="$(grep -c "^${key}=" .config || true)"
+        if [ "${rows}" -ne 1 ]; then
+            echo "ERROR: BusyBox .config has ${rows} rows for ${key}; expected exactly one." >&2
+            exit 2
+        fi
+    done
+
     set_config CONFIG_EXTRA_CFLAGS "\"-I${KERNEL_HEADERS_ABS}/usr/include -march=x86-64 -mtune=generic -mno-avx -mno-avx2 -mno-avx512f -mno-bmi -mno-bmi2 -mno-fma -mno-f16c\""
 
     make oldconfig </dev/null
+
+    # Confirm the static-link intent survived oldconfig before compiling.
+    if ! grep -Eq '^CONFIG_STATIC=y$' .config; then
+        echo "ERROR: CONFIG_STATIC=y did not survive oldconfig; BusyBox would be dynamically linked." >&2
+        grep -n "CONFIG_STATIC" .config >&2 || true
+        exit 2
+    fi
+
     make -j"${AWEOS_BUSYBOX_JOBS:-$(nproc)}" CC="${AWEOS_BUSYBOX_CC:-musl-gcc}" HOSTCC=cc
     test -s busybox
 )
@@ -95,6 +122,10 @@ install -D -m 0755 "${WORK_DIR}/busybox" "${OUTPUT}"
 bash "${SCRIPT_DIR}/check-x86-64-baseline-isa.sh" "${OUTPUT}"
 if readelf -l "${OUTPUT}" | grep -q 'INTERP'; then
     echo "ERROR: BusyBox must be statically linked for the initramfs." >&2
+    echo "--- readelf program headers of ${OUTPUT} ---" >&2
+    readelf -l "${OUTPUT}" >&2 || true
+    echo "--- BusyBox static configuration rows from .config ---" >&2
+    grep -n "CONFIG_STATIC" "${WORK_DIR}/.config" >&2 || true
     exit 1
 fi
 "${OUTPUT}" --list >/dev/null
