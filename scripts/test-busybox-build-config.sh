@@ -29,15 +29,15 @@ if [[ " $* " == *" headers_install "* ]]; then
     done
     [[ -f "${source_dir}/Makefile" ]] || { echo "missing kernel Makefile: ${source_dir}" >&2; exit 20; }
     mkdir -p "${output_dir}/usr/include/linux"
-    printf '/* test kernel header */\\n' > "${output_dir}/usr/include/linux/kd.h"
-    printf '%s\\n' "${source_dir}" > "${AWEOS_TEST_TRACE}/kernel-source"
-    printf '%s\\n' "${output_dir}" > "${AWEOS_TEST_TRACE}/headers-output"
+    printf '/* test kernel header */\n' > "${output_dir}/usr/include/linux/kd.h"
+    printf '%s\n' "${source_dir}" > "${AWEOS_TEST_TRACE}/kernel-source"
+    printf '%s\n' "${output_dir}" > "${AWEOS_TEST_TRACE}/headers-output"
     exit 0
 fi
 
 case "${1:-}" in
     defconfig)
-        printf 'CONFIG_STATIC=n\\nCONFIG_EXTRA_CFLAGS=""\\n' > .config
+        printf 'CONFIG_STATIC=n\nCONFIG_EXTRA_CFLAGS=""\n' > .config
         ;;
     oldconfig)
         :
@@ -48,11 +48,11 @@ case "${1:-}" in
             echo "ERROR: kernel include path was not expanded in CONFIG_EXTRA_CFLAGS: ${flags}" >&2
             exit 21
         }
-        [[ "${flags}" != *'\${KERNEL_HEADERS_ABS}'* ]] || {
+        [[ "${flags}" != *'${KERNEL_HEADERS_ABS}'* ]] || {
             echo "ERROR: CONFIG_EXTRA_CFLAGS contains an unexpanded shell variable." >&2
             exit 22
         }
-        printf '%s\\n' "${flags}" > "${AWEOS_TEST_TRACE}/config-flags"
+        printf '%s\n' "${flags}" > "${AWEOS_TEST_TRACE}/config-flags"
         cat > baseline.S <<'ASM'
 .text
 .global _start
@@ -107,10 +107,10 @@ export AWEOS_TEST_TRACE="${TRACE_DIR}"
 export AWEOS_TEST_EXPECTED_HEADERS="${BUILD_DIR}/linux-headers"
 (
     cd "${TEMP_ROOT}"
-    env -u AWEOS_LINUX_SRC \\
-        PATH="${FAKE_BIN}:${PATH}" \\
-        AWEOS_TEST_TRACE="${TRACE_DIR}" \\
-        AWEOS_TEST_EXPECTED_HEADERS="${BUILD_DIR}/linux-headers" \\
+    env -u AWEOS_LINUX_SRC \
+        PATH="${FAKE_BIN}:${PATH}" \
+        AWEOS_TEST_TRACE="${TRACE_DIR}" \
+        AWEOS_TEST_EXPECTED_HEADERS="${BUILD_DIR}/linux-headers" \
         bash "${FAKE_REPO}/scripts/build-busybox-baseline.sh" "${BUILD_DIR}"
 )
 
@@ -123,7 +123,7 @@ export AWEOS_TEST_EXPECTED_HEADERS="${BUILD_DIR}/linux-headers"
     exit 1
 }
 grep -Fq -- "-I${BUILD_DIR}/linux-headers/usr/include" "${TRACE_DIR}/config-flags"
-! grep -Fq -- '\${KERNEL_HEADERS_ABS}' "${TRACE_DIR}/config-flags"
+! grep -Fq -- '${KERNEL_HEADERS_ABS}' "${TRACE_DIR}/config-flags"
 [[ -x "${BUILD_DIR}/busybox" ]]
 
 echo "PASS: BusyBox build resolves the repository kernel tree, keeps headers out-of-tree, expands compiler flags, and validates a static x86-64 baseline ELF."
