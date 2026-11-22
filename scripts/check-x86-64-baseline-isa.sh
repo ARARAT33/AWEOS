@@ -37,6 +37,9 @@ if awk '
         mnemonic = fields[1]
         if ((mnemonic ~ /^v[a-z][[:alnum:]]*$/ && mnemonic != "verr" && mnemonic != "verw") ||
             mnemonic ~ /^(andn|bextr|blsi|blsmsk|blsr|lzcnt|mulx|pdep|pext|rorx|sarx|shlx|shrx|tzcnt|popcnt|movbe|crc32|rdrand|rdseed|adcx|adox|aesenc|aesenclast|aesdec|aesdeclast|aesimc|aeskeygenassist|pclmulqdq)$/) {
+            # Tagged with ERROR so CI diagnostics steps surface the exact
+            # offending instruction as a run-page annotation.
+            print "ERROR: Unsupported non-baseline x86-64 instruction: " $0 > "/dev/stderr"
             print "Unsupported non-baseline x86-64 instruction: " $0 > "/dev/stderr"
             found = 1
         }
