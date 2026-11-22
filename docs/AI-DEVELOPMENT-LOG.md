@@ -441,3 +441,168 @@
 2. If the fault is in BusyBox or a library, replace/rebuild that component for the x86-64 baseline rather than relaxing QEMU's CPU features.
 3. Re-run BIOS and UEFI and require the rootfs hand-off plus AYUI first-frame markers.
 4. Keep PR #63 and this diagnostic follow-up draft/unmerged until the exact-head boot matrix passes.
+
+
+## 2026-11-20 run 10 follow-up — Rebuild early userspace BusyBox for the x86-64 baseline
+
+### Evidence
+- PR #67 exact-head full image run #44676952897 passed Rust tests, shell/rootfs regressions, kernel build, compressed-kernel BMI1/BMI2 scan, rootfs/initramfs creation, ISO and disk-image creation, and the post-build `/linux` integrity check. BIOS boot still failed with PID 1 SIGILL at RIP `0x56df50`; UEFI was not reached because BIOS failed first.
+- The kernel serial log records the fault bytes `c5 f9 6f`; the targeted QEMU `in_asm` trace decodes the instruction at `0x56df50` as `vmovdqa`, a VEX/AVX instruction unavailable on the required `qemu64` baseline.
+- Source inspection shows that the AYUI rootfs copies the host `busybox` binary from PATH, creates `/bin/sh` as a BusyBox applet symlink, and runs `/sbin/init` as a shell script. The initramfs independently copies the same host BusyBox. This makes a host-built BusyBox the leading, testable source of the userspace ISA mismatch; the exact ELF symbol is not yet proven.
+
+### Changes on `fix/busybox-x86-64-baseline-20261120`
+- Added a pinned BusyBox 1.38.0 source build using static musl and explicit `-march=x86-64 -mtune=generic` flags with AVX/BMI disabled. The source archive is SHA-256 verified before extraction.
+- The same built binary is now passed explicitly to both persistent-rootfs and initramfs builders; they no longer silently copy the CI host's BusyBox.
+- Added a targeted ELF instruction scanner and regression fixtures that accept baseline code and reject AVX, BMI and invalid ELF inputs.
+- Added the same checked BusyBox to the GNOME rootfs so the shared rootfs validator has consistent boot tooling.
+- Added the BusyBox build to the Makefile and CI release checksum/artifact list. Fixed the Makefile's desktop selection assignment so the shell default is expanded by Bash rather than interpreted as a Make variable.
+- No files under `/linux` were changed.
+
+### Validation status
+- Local targeted ISA-scanner regression: **PASS** (baseline ELF accepted; AVX, BMI and invalid ELF fixtures rejected).
+- Local shell syntax checks for the new build/check/test scripts: **PASS**.
+- The source archive could not be downloaded in this development container, so the full BusyBox compile was not run locally.
+- Upstream currently labels BusyBox 1.38.0 as an unstable release; this version is pinned for reproducible testing, not presented as a stable-release claim.
+- Exact-head Userland Validation run #44680050497: **PASS**. It completed shell/C transaction tests (including the rootfs validator and new ISA scanner), repository-boundary validation, Cargo metadata, Rust workspace tests, and all expected Rust binary builds.
+- Exact-head image run #44680050408 was still running at this log update. No successful BIOS or UEFI boot is claimed.
+
+### Next priorities
+1. Run exact-head CI and confirm the pinned BusyBox build is static and passes the AVX/BMI scanner.
+2. Re-run BIOS and UEFI; require rootfs hand-off and the AYUI compositor first-frame marker in both modes.
+3. If SIGILL persists, use the retained BusyBox ELF and QEMU trace to map the new RIP to a symbol and correct that component without enabling non-baseline CPU features.
+4. Keep this PR and its boot-diagnostic parent draft/unmerged until the exact-head build and boot matrix pass.
+
+
+### Additional repository architecture findings
+- The current image build is a Linux-kernel/Limine boot path with a Rust `AWEUI` workspace and Rust system applications under `APPS/`. The older C implementations under `src/core`, `src/aosin`, `src/gui`, `src/installer`, `src/updater`, and `src/wlin` are not members of the current root `Cargo.toml` workspace and are not built by the current `make image` path; their integration must be verified separately rather than inferred from their presence.
+- The repository contains additional EFI binaries for ARM64, RISC-V64, LoongArch64 and IA32, but the current Makefile, kernel configuration and QEMU CI exercise x86_64 only. Those other architecture binaries are not evidence of a working AWEOS port.
+- No dedicated distributed Network Platform service tree was found in the current module layout. The Linux networking stack exists, but AWEOS device identity, service discovery, peer authentication and distributed resource orchestration remain future implementation work.
+
+
+## 2026-11-20 run 11 fix — Supply kernel headers so the pinned BusyBox build compiles
+
+### Evidence
+- Exact-head PR #68 full image run #44680612284 (job #136102828774) failed during the BusyBox source build, not during boot:
+  - `console-tools/kbd_mode.c:32:10: fatal error: linux/kd.h: No such file or directory`
+  - `make[2]: *** [scripts/Makefile.build:197: console-tools/kbd_mode.o] Error 1`
+  - `make: *** [Makefile:46: busybox] Error 2`
+- The PR #68 Userland Validation run #44680612390 passed; this is a build-configuration failure only.
+- Root cause: the pinned BusyBox is compiled statically with musl-gcc, and neither musl nor the CI host's libc development headers are guaranteed to provide `linux/kd.h`, which is a kernel-headers file.
+
+### Changes on this branch
+- `scripts/build-busybox-baseline.sh`: generate x86_64 kernel headers out-of-tree with `make O=build/linux-headers ARCH=x86_64 headers_install` from the read-only `/linux` source (overridable with `AWEOS_LINUX_SRC`), fail closed if `linux/kd.h` is still absent, and prepend that directory to `CONFIG_EXTRA_CFLAGS` so kbd_mode and siblings compile against the real kernel headers. `/linux` itself is never written.
+
+### Validation status
+- The exact-head Userland Validation run #44680612390 passed for the pre-fix head; the new fix has fresh exact-head Userland and full image/boot workflows pending on the updated head. No build or boot success is claimed for the fix commit yet.
+
+### Next priorities
+1. Confirm the fixed BusyBox build completes, the static binary passes the AVX/BMI ISA scanner, and image assembly succeeds.
+2. Re-run BIOS and UEFI; require the rootfs hand-off marker plus the AYUI compositor first-frame marker in both modes.
+3. If a userspace invalid-opcode fault remains, map the new RIP to its ELF with the retained trace and fix that component for the x86-64 baseline.
+4. Keep this PR and its boot-diagnostic parent draft/unmerged until the exact-head build and boot matrix pass.
+
+
+
+## 2026-11-21 follow-up - Correct BusyBox kernel-header path and test compiler configuration
+
+### Latest CI evidence
+- PR #68 head `4d8d6d78f0bf37f32ae87f486766f9ccde2b6c8d` was checked directly.
+- Userland Validation run #44757503344: **PASS**. Shell/C regressions, repository-boundary validation, Cargo metadata, Rust workspace tests, release builds, and expected binary checks all completed successfully.
+- Full image run #44757503330: **FAIL** at `Build AWEOS images`; the kernel and BusyBox image build did not reach boot testing.
+- Exact failure: `ERROR: kernel source tree not found at /linux; cannot generate linux-headers`. BIOS and UEFI steps were skipped. The `/linux` integrity check before the image build passed.
+- The repository Makefile already defines `KERNEL_SRC := $(PWD)/linux`. GitHub Actions checks the repository out beneath the runner workspace, so `/linux` (the filesystem-root path) is not the checked-out kernel directory.
+
+### Changes on `fix/busybox-x86-64-baseline-20261120`
+- `scripts/build-busybox-baseline.sh`: resolve the default kernel source as `../linux` relative to the script/repository root, validate that its `Makefile` exists, and canonicalize the path. `AWEOS_LINUX_SRC` remains an explicit override.
+- Corrected `CONFIG_EXTRA_CFLAGS` so the absolute out-of-tree kernel-header include path is expanded by the shell instead of being written literally as `${KERNEL_HEADERS_ABS}` into BusyBox `.config`.
+- Added `scripts/test-busybox-build-config.sh`: a network-free fake-tool integration test that exercises default source-path resolution, out-of-tree header generation, expanded include flags, static ELF output, and the x86-64 baseline scanner.
+- Wired the new regression into `make test-shell`.
+- No files under `linux/` were modified; generated headers remain under the selected build directory.
+
+### Validation
+- Local isolated integration harness: **PASS**. It simulated `headers_install`, BusyBox configuration/build, and a static x86-64 ELF; verified the source path resolves to the repository's `linux/` directory and the compiler include path is expanded.
+- Exact-head GitHub CI for this new commit has not run yet. The previous head's Userland Validation passed, but the image build failed at the absolute `/linux` path. No ISO, BIOS, UEFI, or desktop boot success is claimed for this follow-up.
+
+### Next priorities
+1. Confirm the new regression passes in Userland Validation.
+2. Confirm BusyBox's real `headers_install` stage and static musl build complete in the full image workflow.
+3. Require the BusyBox ISA scan, rootfs/ISO/disk image checks, and `/linux` integrity checks to pass.
+4. Only then run BIOS and UEFI QEMU tests and require rootfs hand-off plus AYUI first-frame readiness in both modes.
+5. If the next build fails, use the exact job log and diagnostic artifact; do not relax the x86-64 baseline or boot markers.
+
+
+### Regression-harness correction and exact-head CI follow-up
+- The first harness commit `efbe6c4306fb6ecb881393356c0c54309715c039` exposed a malformed glob in the new fake-Make assertion. Userland run #44868652889 failed at `make test-shell` in that test fixture; the reported flags did contain the expected expanded include path, so this was a test assertion defect rather than a BusyBox compile failure.
+- Corrected the pattern in commit `ff7b5026f598ea50984d61d7b5861472467820a7` and reran the workflows on that head.
+- Userland run #44868716919: the shell/C transaction and regression step **PASS**, repository-boundary validation **PASS**, and Cargo metadata validation **PASS**. Rust workspace tests were still running at the last inspection; the workflow had not reached its final release-binary checks.
+- Full image run #44868716935: dependency installation and Limine host utility setup completed; the Rust workspace test step was running. The BusyBox source build, image assembly, BIOS/UEFI tests and release artifact checks had not yet run at the last inspection.
+- No full image, ISO, BIOS, UEFI, or desktop boot success is claimed from these in-progress runs.
+
+## 2026-11-21 run — BusyBox tc applet fix on PR #68
+
+### CI evidence inspected
+- PR #68 latest exact-head build-and-boot run #44868882500 (job #136738673754) **failed** with exit code 2, while its Userland Validation run passed.
+- The failure annotations were: `make[2]: *** [scripts/Makefile.build:197: networking/tc.o] Error 1`, `make[1]: *** [Makefile:749: networking] Error 2`, `make: *** [Makefile:46: busybox] Error 2`. The pinned BusyBox 1.38.0 build broke on the `tc` traffic-control applet, before kernel, rootfs, ISO, or QEMU stages.
+- Root cause: busybox `tc` depends on the CBQ qdisc ABI (TCA_CBQ_*) that modern kernels removed, so it does not compile against the freshly installed UAPI headers with musl. The applet is not needed for boot or early userspace.
+
+### Changes on `fix/busybox-x86-64-baseline-20261120` (PR #68)
+- `scripts/build-busybox-baseline.sh`: explicitly `set_config CONFIG_TC n` with an inline root-cause comment; defconfig defaults had left the failing applet enabled.
+- `scripts/test-busybox-tc-disabled.sh` (new): structural regression that fails unless CONFIG_TC is explicitly disabled and the root cause is documented, so a future defconfig refresh cannot silently re-enable it.
+- `Makefile`: wire `test-busybox-tc-disabled.sh` into `make test-shell`.
+- No files under `/linux` were touched; no kernel, rootfs, installer, or userland runtime behavior changed beyond the BusyBox applet set.
+
+### Validation status
+- The tc-disable guard was verified dynamically: the decoded builder contains the exact working `grep -q "^\${key}="` / `sed -i "s|^\${key}=.*|..." ` config lines plus `set_config CONFIG_TC n`.
+- New CI runs on the updated head are pending; no build, boot, BIOS, UEFI, or desktop success is claimed. (Note: the immediately preceding intermediate commit on this branch was a push with mangled placeholder content and had to be immediately repaired; its evidence is retained in history.)
+
+### Remaining issues
+1. Watch the next `build-and-boot-test` run; if a different applet or object fails next, fix only the proven failure with evidence.
+2. BIOS/UEFI boot matrix, AYUI compositor readiness, UEFI firmware checks, and release-artifact validation remain unproven.
+3. Do not merge PR #68 (or its parent stack #67/#63) until the full matrix passes on one reconciled head.
+
+### Next run priorities
+1. Read the new run's exact failure (if any) from annotations/diagnostics and continue the cycle.
+2. After a passing image build, verify BIOS boot first, then UEFI independently; keep strict compositor-readiness markers.
+3. Continue the recorded security backlog: signed package payload, sandboxing and privilege boundaries.
+
+
+## 2026-11-22 run 11 — Restore corrupted BusyBox build-configuration regression
+
+### Repository and CI evidence
+- The default branch remains `master` at `d4d300545558d660abb2127d297d3a00ef017dae`; this work continues on the existing PR #68 branch `fix/busybox-x86-64-baseline-20261120`, stacked on PR #67 and the earlier x86-64 kernel baseline work. No default-branch merge was performed.
+- Exact-head PR workflows for `50e7889380dc85cc54676feb0701cf69e464955a` failed before any image build:
+  - Userland Validation run #44913056890 failed in `make test-shell`.
+  - Full image/boot run #44913056888 failed at its shell/rootfs regression step, before image assembly.
+- Both logs identify the same failure: `scripts/test-busybox-build-config.sh: line 1: ÿôÄÿÿÿ: command not found` (exit 127). The file had been overwritten with a 7-byte non-shell payload, so the previously added network-free BusyBox build regression could not execute. Kernel build, BusyBox compilation, ISO creation, BIOS, and UEFI were not reached by these runs.
+
+### Fix on the existing PR #68 branch
+- Restored `scripts/test-busybox-build-config.sh` from its previously validated version. The final blob SHA is `0b30b5edcb411ecbcb7368ea16cc7309048c69bc`, identical to the known-good version already present earlier in this branch history.
+- The restored test again exercises repository-relative kernel source discovery, out-of-tree headers installation, expanded `CONFIG_EXTRA_CFLAGS`, static ELF output, and the baseline ISA checker using fake build tools without network access.
+- The first restoration write contained escaping errors; it was corrected immediately in the next commit. The final branch head is `6c32f054d932d9f52992d4e04da49fbd1c885d59` and the file was read back from GitHub to verify its exact blob SHA.
+- No files under `linux/` were changed. No force push, branch deletion, or merge was performed.
+
+### Exact-head validation
+- New workflow runs for head `6c32f054d932d9f52992d4e04da49fbd1c885d59` were observed:
+  - Userland Validation PR run #44987358465: **in progress**.
+  - Full image/boot PR run #44987358525: **in progress**.
+  - Corresponding push-triggered runs #44987354904 and #44987354867: **in progress**.
+- These are pending, not passes. No new shell-test, BusyBox compilation, ISO, BIOS, UEFI, or AYUI readiness success is claimed in this log entry.
+
+### Remaining issues and next priorities
+1. Inspect the exact-head shell/C regression result; confirm the restored build-config test and tc-disable guard both pass.
+2. Confirm real kernel `headers_install` and pinned BusyBox 1.38.0 static musl compilation complete; then require the ELF baseline scanner to pass.
+3. Confirm kernel, rootfs, initramfs, ISO, disk image, and post-build `linux/` integrity checks complete.
+4. Run BIOS and UEFI independently and require rootfs hand-off plus AYUI first-frame readiness; do not treat an image build as a boot pass.
+5. If a new BusyBox object fails, use the actual compiler diagnostic and disable/fix only the proven incompatible applet; do not weaken the x86-64 baseline.
+6. After boot is unblocked, return to the documented security backlog: signed package trust, application isolation, and AYUI session privilege boundaries.
+
+
+### Run 11 validation update — 2026-11-22
+- Exact code head `6c32f054d932d9f52992d4e04da49fbd1c885d59` passed Userland Validation:
+  - PR run #44987358465: **success**.
+  - Push run #44987354904: **success**.
+  - Confirmed passing steps: shell/C safety regressions (including the restored BusyBox build-config harness and `CONFIG_TC=n` guard), repository-boundary validation, Cargo metadata, Rust workspace tests, all Rust release binaries, and expected-binary verification.
+- Full image runs #44987358525 (PR) and #44987354867 (push) passed Rust tests and shell/rootfs regression tests, and were still in `Build AWEOS images` at the last poll. Kernel/BusyBox image build, ISO/disk image, BIOS, UEFI, and compositor readiness are therefore still **pending**; no boot success is claimed.
+- The push and pull-request triggers ran duplicate copies of each workflow for the same commit. This is an efficiency issue to review separately; neither run was cancelled.
+- Separate default-branch workflow observation: Safe branch integration run #44966568387 completed **success** on `master`. Linux upstream sync run #44898847608 failed at `Update ONLY /linux` with `fatal: path 'linux' exists on disk, but not in the index`; the pre-update clean check and tree comparison passed, while the post-update boundary and push steps were skipped. No kernel sync commit was pushed. The leftover path must be diagnosed before adding any cleanup that could delete ignored data.
+- AYUI IPC hardening PR #58 remains open and non-draft; its Userland Validation run #44237900509 passed, but its image/boot run #44237900437 failed at the BIOS/UEFI boot-test step. It remains unmerged and is not treated as a verified production security boundary.
