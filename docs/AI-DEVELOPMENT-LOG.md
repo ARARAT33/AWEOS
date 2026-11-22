@@ -595,3 +595,14 @@
 4. Run BIOS and UEFI independently and require rootfs hand-off plus AYUI first-frame readiness; do not treat an image build as a boot pass.
 5. If a new BusyBox object fails, use the actual compiler diagnostic and disable/fix only the proven incompatible applet; do not weaken the x86-64 baseline.
 6. After boot is unblocked, return to the documented security backlog: signed package trust, application isolation, and AYUI session privilege boundaries.
+
+
+### Run 11 validation update — 2026-11-22
+- Exact code head `6c32f054d932d9f52992d4e04da49fbd1c885d59` passed Userland Validation:
+  - PR run #44987358465: **success**.
+  - Push run #44987354904: **success**.
+  - Confirmed passing steps: shell/C safety regressions (including the restored BusyBox build-config harness and `CONFIG_TC=n` guard), repository-boundary validation, Cargo metadata, Rust workspace tests, all Rust release binaries, and expected-binary verification.
+- Full image runs #44987358525 (PR) and #44987354867 (push) passed Rust tests and shell/rootfs regression tests, and were still in `Build AWEOS images` at the last poll. Kernel/BusyBox image build, ISO/disk image, BIOS, UEFI, and compositor readiness are therefore still **pending**; no boot success is claimed.
+- The push and pull-request triggers ran duplicate copies of each workflow for the same commit. This is an efficiency issue to review separately; neither run was cancelled.
+- Separate default-branch workflow observation: Safe branch integration run #44966568387 completed **success** on `master`. Linux upstream sync run #44898847608 failed at `Update ONLY /linux` with `fatal: path 'linux' exists on disk, but not in the index`; the pre-update clean check and tree comparison passed, while the post-update boundary and push steps were skipped. No kernel sync commit was pushed. The leftover path must be diagnosed before adding any cleanup that could delete ignored data.
+- AYUI IPC hardening PR #58 remains open and non-draft; its Userland Validation run #44237900509 passed, but its image/boot run #44237900437 failed at the BIOS/UEFI boot-test step. It remains unmerged and is not treated as a verified production security boundary.
