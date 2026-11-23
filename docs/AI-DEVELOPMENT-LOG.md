@@ -606,3 +606,30 @@
 - The push and pull-request triggers ran duplicate copies of each workflow for the same commit. This is an efficiency issue to review separately; neither run was cancelled.
 - Separate default-branch workflow observation: Safe branch integration run #44966568387 completed **success** on `master`. Linux upstream sync run #44898847608 failed at `Update ONLY /linux` with `fatal: path 'linux' exists on disk, but not in the index`; the pre-update clean check and tree comparison passed, while the post-update boundary and push steps were skipped. No kernel sync commit was pushed. The leftover path must be diagnosed before adding any cleanup that could delete ignored data.
 - AYUI IPC hardening PR #58 remains open and non-draft; its Userland Validation run #44237900509 passed, but its image/boot run #44237900437 failed at the BIOS/UEFI boot-test step. It remains unmerged and is not treated as a verified production security boundary.
+
+
+## 2026-11-23 run 11 — Enforce BusyBox compiler ISA floor at the driver boundary
+
+### Exact-head CI evidence
+- PR #69 head e6ace26d9e3e87098b7f8df40750b2af6d3acb85 passed Userland Validation run #45036957032, but the full image run #45036957026 failed during make image at the BusyBox baseline ISA check.
+- The kernel build and out-of-tree header installation completed. BusyBox 1.38.0 compiled and linked, but the produced static ELF contained VEX/AVX instructions (vpxor, vmovdqu, vpinsrq, vpsubq) and BMI2 instructions (shrx, shlx). ISO assembly and BIOS/UEFI boot tests were not reached.
+- The CI Kconfig transcript confirms that CONFIG_EXTRA_CFLAGS contained the requested -march=x86-64, -mno-avx, and -mno-bmi2 options. That proves the values reached BusyBox configuration, but does not by itself prove every compiler invocation received them.
+
+### Changes on fix/busybox-static-link-config-20261122 (PR #69)
+- scripts/build-busybox-baseline.sh: centralize the x86-64 baseline compiler flags and pass them through both CONFIG_EXTRA_CFLAGS and the CC command supplied to GNU make. This is a defensive enforcement at the compiler-driver boundary; it does not weaken or bypass the post-build ELF scanner.
+- scripts/test-busybox-build-config.sh: capture the fake make invocation's CC= value and assert that the direct compiler command includes -march=x86-64, -mno-avx, and -mno-bmi2, and excludes -march=native.
+- .github/workflows/build-aweos-x86_64.yml: include the built build/busybox ELF in the always-uploaded diagnostic artifact so a future scanner failure can be inspected rather than inferred from text output.
+- docs/AI-DEVELOPMENT-LOG.md: record this run's evidence and the next diagnostic branch.
+- No files under linux/ were changed. No existing branch or commit was rewritten; no merge or force push was performed.
+
+### Validation status
+- The source-level test harness was updated to verify compiler-command propagation. Its actual CI result is pending for this new head.
+- No claim is made that the real BusyBox ELF now passes the baseline scanner. The previous exact-head full-image run failed at that scanner, and this change must be confirmed by a new full-image run.
+- If the scanner still rejects the ELF, download and inspect the retained BusyBox artifact, map the first offending addresses to symbols, and distinguish BusyBox objects from statically linked musl/libgcc objects before changing the toolchain.
+
+### Next priorities
+1. Confirm Userland Validation passes with the new compiler-command regression.
+2. Confirm the real BusyBox binary passes the x86-64 baseline scanner without relaxing its instruction list.
+3. If it still fails, inspect the retained ELF and compiler/toolchain metadata; isolate the static runtime from BusyBox objects with a separately compiled static probe.
+4. Continue kernel/rootfs/ISO/disk-image checks only after BusyBox passes.
+5. Run BIOS and UEFI independently and require the rootfs hand-off and AYUI first-frame markers in both modes.
