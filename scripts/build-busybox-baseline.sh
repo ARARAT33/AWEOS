@@ -7,12 +7,26 @@ BUSYBOX_SHA256="34f9ea6ff8636f2c9241153b9114eefa9e65674a45318ae1ef95bb5f31c53bb2
 BUSYBOX_URL="https://www.busybox.net/downloads/busybox-${BUSYBOX_VERSION}.tar.bz2"
 ARCHIVE="${BUILD_DIR}/busybox-${BUSYBOX_VERSION}.tar.bz2"
 OUTPUT="${BUILD_DIR}/busybox"
-BUSYBOX_COMPILER="${AWEOS_BUSYBOX_CC:-musl-gcc}"
 BUSYBOX_BASELINE_CFLAGS="-march=x86-64 -mtune=generic -mno-avx -mno-avx2 -mno-avx512f -mno-bmi -mno-bmi2 -mno-fma -mno-f16c"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd -P)"
 
-for tool in curl make musl-gcc sha256sum tar readelf; do
+# The distribution's prebuilt musl libc.a is not tested to be x86-64-baseline
+# safe, and compiler flags cannot restrict already-compiled archive objects.
+# Build a pinned, baseline-verified musl into the build directory and use its
+# compiler wrapper unless an explicit override is set.
+if [ -z "${AWEOS_BUSYBOX_CC:-}" ]; then
+    bash "${SCRIPT_DIR}/build-musl-baseline.sh" "${BUILD_DIR}"
+    BUSYBOX_COMPILER="${BUILD_DIR}/musl/bin/musl-gcc"
+    if [ ! -x "${BUSYBOX_COMPILER}" ]; then
+        echo "ERROR: expected baseline musl wrapper is missing: ${BUSYBOX_COMPILER}" >&2
+        exit 2
+    fi
+else
+    BUSYBOX_COMPILER="${AWEOS_BUSYBOX_CC}"
+fi
+
+for tool in curl make sha256sum tar readelf; do
     command -v "${tool}" >/dev/null 2>&1 || {
         echo "ERROR: required BusyBox build tool is missing: ${tool}" >&2
         exit 2

@@ -31,6 +31,11 @@ fi
 
 if awk '
     /^[[:space:]]*[[:xdigit:]]+:/ {
+        if ($0 ~ /^[[:space:]]*[[:xdigit:]]+ </) {
+            sym = $0
+            sub(/[^<]*</, "", sym)
+            sub(/>[[:space:]]*:.*$/, "", sym)
+        }
         instruction = $0
         sub(/^[[:space:]]*[[:xdigit:]]+:[[:space:]]*/, "", instruction)
         split(instruction, fields, /[[:space:]]+/)
@@ -39,8 +44,8 @@ if awk '
             mnemonic ~ /^(andn|bextr|blsi|blsmsk|blsr|lzcnt|mulx|pdep|pext|rorx|sarx|shlx|shrx|tzcnt|popcnt|movbe|crc32|rdrand|rdseed|adcx|adox|aesenc|aesenclast|aesdec|aesdeclast|aesimc|aeskeygenassist|pclmulqdq)$/) {
             # Tagged with ERROR so CI diagnostics steps surface the exact
             # offending instruction as a run-page annotation.
-            print "ERROR: Unsupported non-baseline x86-64 instruction: " $0 > "/dev/stderr"
-            print "Unsupported non-baseline x86-64 instruction: " $0 > "/dev/stderr"
+            print "ERROR: Unsupported non-baseline x86-64 instruction near symbol <" (sym ? sym : "?") ">: " $0 > "/dev/stderr"
+            print "Unsupported non-baseline x86-64 instruction near symbol: " $0 > "/dev/stderr"
             found = 1
         }
     }

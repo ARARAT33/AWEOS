@@ -648,3 +648,28 @@
 2. If the scan fails, inspect the uploaded BusyBox ELF and map offending instructions to symbols before changing compiler/runtime components.
 3. Complete BIOS and UEFI boot validation, requiring both rootfs hand-off and AYUI first-frame markers.
 4. Correct the README/build-graph mismatch and document which legacy C modules are archived, experimental, or scheduled for integration.
+
+## 2026-11-23 run 13 — Rebuild musl from source for the x86-64 baseline
+
+### Exact-head CI evidence
+- PR #69 head 242cb74469bc4aa992fded04bbada59fedcdf6dc passed Userland Validation run #45111620971, but the full image run #45112312153 (job #137487197842) failed again at the BusyBox baseline scan.
+- The run-page annotations show VEX/AVX instructions inside the final static ELF: vpsubq, vpextrq, vmovq, vmovdqa, and vpaddq clustered at 0x430021..0x430143, immediately before 'make: *** [Makefile:46: busybox] Error 1'.
+- The baseline flags are already verified to reach both CONFIG_EXTRA_CFLAGS and the direct CC command. They govern only code compiled from source in this build. The remaining explanation for VEX instructions at those addresses is statically linked runtime code from the distribution's prebuilt musl libc.a, which inherits the packaging host's optimization target and cannot be fixed by compiler flags.
+- ISO assembly and BIOS/UEFI boot tests were not reached. No boot result is claimed for this head.
+
+### Changes on fix/busybox-static-link-config-20261122 (PR #69)
+- scripts/build-musl-baseline.sh (new): builds pinned musl 1.2.5 (SHA-256 verified, including caller-supplied archives via AWEOS_MUSL_ARCHIVE) from source with the x86-64 baseline flags into build/musl, static-only; verifies a representative static smoke program with the baseline checker and then scans every archive object in build/musl/lib fail-closed before stamping baseline-verified.
+- scripts/build-busybox-baseline.sh: the default compiler is now this baseline-verified musl wrapper (build/musl/bin/musl-gcc) instead of the distribution musl-gcc; AWEOS_BUSYBOX_CC remains an explicit override used by the fake-tool regression tests.
+- scripts/check-x86-64-baseline-isa.sh: offending-instruction errors now name the nearest disassembly symbol, so the next failure can identify its ELF component directly from run-page annotations.
+- scripts/test-x86-64-baseline-isa.sh: requires the symbol attribution in diagnostic output.
+- scripts/test-musl-baseline-build.sh (new) and Makefile wiring: network-free regression proving the archive checksum gate fails closed and installs nothing from a rejected archive, and that the BusyBox builder is wired to the baseline musl builder.
+- No files under linux/ were changed. No branch, commit, or workflow trigger was rewritten.
+
+### Validation status
+- Patch targets were checked against the live blobs before the push; the pushed commit is being read back from GitHub to confirm content. No local musl or BusyBox compile, image build, ISO, BIOS, UEFI, or AYUI boot was executed in this connector-only environment. No build or boot success is claimed yet.
+
+### Next run priorities
+1. Confirm Userland Validation passes with the new symbol-attribution assertion and musl-builder regression.
+2. Confirm the full image run compiles baseline musl 1.2.5, passes the per-object archive scan, links a baseline-clean static BusyBox, and completes ISO/disk-image assembly.
+3. Then run BIOS and UEFI independently, requiring the rootfs hand-off and AYUI compositor first-frame markers in both modes.
+4. If the scan still fails, use the new symbol attribution plus the retained BusyBox ELF artifact to identify the remaining object before changing anything else.
