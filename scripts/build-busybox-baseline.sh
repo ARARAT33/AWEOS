@@ -7,6 +7,8 @@ BUSYBOX_SHA256="34f9ea6ff8636f2c9241153b9114eefa9e65674a45318ae1ef95bb5f31c53bb2
 BUSYBOX_URL="https://www.busybox.net/downloads/busybox-${BUSYBOX_VERSION}.tar.bz2"
 ARCHIVE="${BUILD_DIR}/busybox-${BUSYBOX_VERSION}.tar.bz2"
 OUTPUT="${BUILD_DIR}/busybox"
+BUSYBOX_COMPILER="${AWEOS_BUSYBOX_CC:-musl-gcc}"
+BUSYBOX_BASELINE_CFLAGS="-march=x86-64 -mtune=generic -mno-avx -mno-avx2 -mno-avx512f -mno-bmi -mno-bmi2 -mno-fma -mno-f16c"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd -P)"
 
@@ -109,7 +111,7 @@ tar -xjf "${ARCHIVE}" --directory "${WORK_DIR}" --strip-components=1
         fi
     done
 
-    set_config CONFIG_EXTRA_CFLAGS "\"-I${KERNEL_HEADERS_ABS}/usr/include -march=x86-64 -mtune=generic -mno-avx -mno-avx2 -mno-avx512f -mno-bmi -mno-bmi2 -mno-fma -mno-f16c\""
+    set_config CONFIG_EXTRA_CFLAGS "\"-I${KERNEL_HEADERS_ABS}/usr/include ${BUSYBOX_BASELINE_CFLAGS}\""
 
     make oldconfig </dev/null
 
@@ -120,7 +122,11 @@ tar -xjf "${ARCHIVE}" --directory "${WORK_DIR}" --strip-components=1
         exit 2
     fi
 
-    make -j"${AWEOS_BUSYBOX_JOBS:-$(nproc)}" CC="${AWEOS_BUSYBOX_CC:-musl-gcc}" HOSTCC=cc
+    echo "BusyBox compiler: ${BUSYBOX_COMPILER} ${BUSYBOX_BASELINE_CFLAGS}"
+    # Pass the ISA floor through CC as well as CONFIG_EXTRA_CFLAGS. This
+    # keeps the baseline flags on every compiler invocation even if a future
+    # BusyBox build-system change stops propagating the Kconfig extra flags.
+    make -j"${AWEOS_BUSYBOX_JOBS:-$(nproc)}" CC="${BUSYBOX_COMPILER} ${BUSYBOX_BASELINE_CFLAGS}" HOSTCC=cc
     test -s busybox
 )
 
