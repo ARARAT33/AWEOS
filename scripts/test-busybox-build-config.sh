@@ -18,6 +18,13 @@ cp "${SCRIPT_DIR}/check-x86-64-baseline-isa.sh" "${FAKE_REPO}/scripts/"
 cat > "${FAKE_BIN}/make" <<'MAKE'
 #!/usr/bin/env bash
 set -euo pipefail
+cc_setting=""
+for argument in "$@"; do
+    case "${argument}" in CC=*) cc_setting="${argument#CC=}" ;; esac
+done
+if [[ -n "${cc_setting}" ]]; then
+    printf "%s\\n" "${cc_setting}" > "${AWEOS_TEST_TRACE}/compiler-command"
+fi
 if [[ " $* " == *" headers_install "* ]]; then
     source_dir=""
     output_dir=""
@@ -167,6 +174,10 @@ export AWEOS_TEST_EXPECTED_HEADERS="${BUILD_DIR}/linux-headers"
 }
 grep -Fq -- "-I${BUILD_DIR}/linux-headers/usr/include" "${TRACE_DIR}/config-flags"
 ! grep -Fq -- '${KERNEL_HEADERS_ABS}' "${TRACE_DIR}/config-flags"
+grep -Fq -- "-march=x86-64" "${TRACE_DIR}/compiler-command"
+grep -Fq -- "-mno-avx" "${TRACE_DIR}/compiler-command"
+grep -Fq -- "-mno-bmi2" "${TRACE_DIR}/compiler-command"
+! grep -Fq -- "-march=native" "${TRACE_DIR}/compiler-command"
 [[ "$(cat "${TRACE_DIR}/static-config-rows")" == "1 1" ]] || {
     echo "ERROR: expected exactly one CONFIG_STATIC=y row in the rewritten .config, got: $(cat "${TRACE_DIR}/static-config-rows")" >&2
     exit 1
