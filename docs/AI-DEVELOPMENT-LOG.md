@@ -633,3 +633,18 @@
 3. If it still fails, inspect the retained ELF and compiler/toolchain metadata; isolate the static runtime from BusyBox objects with a separately compiled static probe.
 4. Continue kernel/rootfs/ISO/disk-image checks only after BusyBox passes.
 5. Run BIOS and UEFI independently and require the rootfs hand-off and AYUI first-frame markers in both modes.
+
+### Current-head validation update — 2026-11-23
+- Current PR #69 head at the time of validation: 2d37939ee391eb45d650637615a43371a29cd442.
+- Userland Validation run #45111620971: **PASS**. The shell/C safety step passed, including the updated BusyBox compiler-command propagation regression; repository-boundary validation, Cargo metadata, Rust workspace tests, all release userland binaries, and expected-binary checks also passed.
+- Full image/boot run #45111621008: **IN PROGRESS** at the Build AWEOS images step. Kernel/BusyBox build, ISO, disk image, BIOS boot, UEFI boot, and AYUI first-frame results are not yet available. No image or boot success is claimed.
+- The PR remains draft and unmerged. The default branch remains unchanged.
+
+### Documentation audit finding
+- README.md still describes the older C desktop/package modules under src/gui and src/aosin as if they are the active build path, and lists make targets such as make ayui, make aosin, make installer, make updater, and make wlin that are not present in the current root Makefile. The active Cargo workspace builds the Rust AWEUI and APPS workspace. Reconcile the README with the actual build graph after the current boot blocker is resolved; do not present unbuilt C modules as shipped functionality.
+
+### Next priorities
+1. Finish the exact-head BusyBox ELF baseline scan and full image build.
+2. If the scan fails, inspect the uploaded BusyBox ELF and map offending instructions to symbols before changing compiler/runtime components.
+3. Complete BIOS and UEFI boot validation, requiring both rootfs hand-off and AYUI first-frame markers.
+4. Correct the README/build-graph mismatch and document which legacy C modules are archived, experimental, or scheduled for integration.
