@@ -43,6 +43,7 @@ for unsafe in avx bmi invalid; do
     fi
 done
 grep -q 'vmovdqa' "${WORK_DIR}/avx.out"
+grep -q 'near symbol' "${WORK_DIR}/avx.out"
 grep -q 'andn' "${WORK_DIR}/bmi.out"
 
 echo "PASS: userland ISA checker accepts baseline code and rejects AVX, BMI and invalid ELF fixtures."

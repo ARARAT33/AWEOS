@@ -137,6 +137,7 @@ jobs:
           name: aweos-build-and-boot-diagnostics
           path: |
             build-make-image.log
+            build/busybox
             build/qemu-bios.log
             build/qemu-uefi.log
             build/qemu-bios-debug.log

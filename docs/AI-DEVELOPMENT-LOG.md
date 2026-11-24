@@ -606,3 +606,100 @@
 - The push and pull-request triggers ran duplicate copies of each workflow for the same commit. This is an efficiency issue to review separately; neither run was cancelled.
 - Separate default-branch workflow observation: Safe branch integration run #44966568387 completed **success** on `master`. Linux upstream sync run #44898847608 failed at `Update ONLY /linux` with `fatal: path 'linux' exists on disk, but not in the index`; the pre-update clean check and tree comparison passed, while the post-update boundary and push steps were skipped. No kernel sync commit was pushed. The leftover path must be diagnosed before adding any cleanup that could delete ignored data.
 - AYUI IPC hardening PR #58 remains open and non-draft; its Userland Validation run #44237900509 passed, but its image/boot run #44237900437 failed at the BIOS/UEFI boot-test step. It remains unmerged and is not treated as a verified production security boundary.
+
+
+## 2026-11-23 run 11 — Enforce BusyBox compiler ISA floor at the driver boundary
+
+### Exact-head CI evidence
+- PR #69 head e6ace26d9e3e87098b7f8df40750b2af6d3acb85 passed Userland Validation run #45036957032, but the full image run #45036957026 failed during make image at the BusyBox baseline ISA check.
+- The kernel build and out-of-tree header installation completed. BusyBox 1.38.0 compiled and linked, but the produced static ELF contained VEX/AVX instructions (vpxor, vmovdqu, vpinsrq, vpsubq) and BMI2 instructions (shrx, shlx). ISO assembly and BIOS/UEFI boot tests were not reached.
+- The CI Kconfig transcript confirms that CONFIG_EXTRA_CFLAGS contained the requested -march=x86-64, -mno-avx, and -mno-bmi2 options. That proves the values reached BusyBox configuration, but does not by itself prove every compiler invocation received them.
+
+### Changes on fix/busybox-static-link-config-20261122 (PR #69)
+- scripts/build-busybox-baseline.sh: centralize the x86-64 baseline compiler flags and pass them through both CONFIG_EXTRA_CFLAGS and the CC command supplied to GNU make. This is a defensive enforcement at the compiler-driver boundary; it does not weaken or bypass the post-build ELF scanner.
+- scripts/test-busybox-build-config.sh: capture the fake make invocation's CC= value and assert that the direct compiler command includes -march=x86-64, -mno-avx, and -mno-bmi2, and excludes -march=native.
+- .github/workflows/build-aweos-x86_64.yml: include the built build/busybox ELF in the always-uploaded diagnostic artifact so a future scanner failure can be inspected rather than inferred from text output.
+- docs/AI-DEVELOPMENT-LOG.md: record this run's evidence and the next diagnostic branch.
+- No files under linux/ were changed. No existing branch or commit was rewritten; no merge or force push was performed.
+
+### Validation status
+- The source-level test harness was updated to verify compiler-command propagation. Its actual CI result is pending for this new head.
+- No claim is made that the real BusyBox ELF now passes the baseline scanner. The previous exact-head full-image run failed at that scanner, and this change must be confirmed by a new full-image run.
+- If the scanner still rejects the ELF, download and inspect the retained BusyBox artifact, map the first offending addresses to symbols, and distinguish BusyBox objects from statically linked musl/libgcc objects before changing the toolchain.
+
+### Next priorities
+1. Confirm Userland Validation passes with the new compiler-command regression.
+2. Confirm the real BusyBox binary passes the x86-64 baseline scanner without relaxing its instruction list.
+3. If it still fails, inspect the retained ELF and compiler/toolchain metadata; isolate the static runtime from BusyBox objects with a separately compiled static probe.
+4. Continue kernel/rootfs/ISO/disk-image checks only after BusyBox passes.
+5. Run BIOS and UEFI independently and require the rootfs hand-off and AYUI first-frame markers in both modes.
+
+### Current-head validation update — 2026-11-23
+- Current PR #69 head at the time of validation: 2d37939ee391eb45d650637615a43371a29cd442.
+- Userland Validation run #45111620971: **PASS**. The shell/C safety step passed, including the updated BusyBox compiler-command propagation regression; repository-boundary validation, Cargo metadata, Rust workspace tests, all release userland binaries, and expected-binary checks also passed.
+- Full image/boot run #45111621008: **IN PROGRESS** at the Build AWEOS images step. Kernel/BusyBox build, ISO, disk image, BIOS boot, UEFI boot, and AYUI first-frame results are not yet available. No image or boot success is claimed.
+- The PR remains draft and unmerged. The default branch remains unchanged.
+
+### Documentation audit finding
+- README.md still describes the older C desktop/package modules under src/gui and src/aosin as if they are the active build path, and lists make targets such as make ayui, make aosin, make installer, make updater, and make wlin that are not present in the current root Makefile. The active Cargo workspace builds the Rust AWEUI and APPS workspace. Reconcile the README with the actual build graph after the current boot blocker is resolved; do not present unbuilt C modules as shipped functionality.
+
+### Next priorities
+1. Finish the exact-head BusyBox ELF baseline scan and full image build.
+2. If the scan fails, inspect the uploaded BusyBox ELF and map offending instructions to symbols before changing compiler/runtime components.
+3. Complete BIOS and UEFI boot validation, requiring both rootfs hand-off and AYUI first-frame markers.
+4. Correct the README/build-graph mismatch and document which legacy C modules are archived, experimental, or scheduled for integration.
+
+## 2026-11-23 run 13 — Rebuild musl from source for the x86-64 baseline
+
+### Exact-head CI evidence
+- PR #69 head 242cb74469bc4aa992fded04bbada59fedcdf6dc passed Userland Validation run #45111620971, but the full image run #45112312153 (job #137487197842) failed again at the BusyBox baseline scan.
+- The run-page annotations show VEX/AVX instructions inside the final static ELF: vpsubq, vpextrq, vmovq, vmovdqa, and vpaddq clustered at 0x430021..0x430143, immediately before 'make: *** [Makefile:46: busybox] Error 1'.
+- The baseline flags are already verified to reach both CONFIG_EXTRA_CFLAGS and the direct CC command. They govern only code compiled from source in this build. The remaining explanation for VEX instructions at those addresses is statically linked runtime code from the distribution's prebuilt musl libc.a, which inherits the packaging host's optimization target and cannot be fixed by compiler flags.
+- ISO assembly and BIOS/UEFI boot tests were not reached. No boot result is claimed for this head.
+
+### Changes on fix/busybox-static-link-config-20261122 (PR #69)
+- scripts/build-musl-baseline.sh (new): builds pinned musl 1.2.5 (SHA-256 verified, including caller-supplied archives via AWEOS_MUSL_ARCHIVE) from source with the x86-64 baseline flags into build/musl, static-only; verifies a representative static smoke program with the baseline checker and then scans every archive object in build/musl/lib fail-closed before stamping baseline-verified.
+- scripts/build-busybox-baseline.sh: the default compiler is now this baseline-verified musl wrapper (build/musl/bin/musl-gcc) instead of the distribution musl-gcc; AWEOS_BUSYBOX_CC remains an explicit override used by the fake-tool regression tests.
+- scripts/check-x86-64-baseline-isa.sh: offending-instruction errors now name the nearest disassembly symbol, so the next failure can identify its ELF component directly from run-page annotations.
+- scripts/test-x86-64-baseline-isa.sh: requires the symbol attribution in diagnostic output.
+- scripts/test-musl-baseline-build.sh (new) and Makefile wiring: network-free regression proving the archive checksum gate fails closed and installs nothing from a rejected archive, and that the BusyBox builder is wired to the baseline musl builder.
+- No files under linux/ were changed. No branch, commit, or workflow trigger was rewritten.
+
+### Validation status
+- Patch targets were checked against the live blobs before the push; the pushed commit is being read back from GitHub to confirm content. No local musl or BusyBox compile, image build, ISO, BIOS, UEFI, or AYUI boot was executed in this connector-only environment. No build or boot success is claimed yet.
+
+### Next run priorities
+1. Confirm Userland Validation passes with the new symbol-attribution assertion and musl-builder regression.
+2. Confirm the full image run compiles baseline musl 1.2.5, passes the per-object archive scan, links a baseline-clean static BusyBox, and completes ISO/disk-image assembly.
+3. Then run BIOS and UEFI independently, requiring the rootfs hand-off and AYUI compositor first-frame markers in both modes.
+4. If the scan still fails, use the new symbol attribution plus the retained BusyBox ELF artifact to identify the remaining object before changing anything else.
+
+
+## 2026-11-24 run 11 — Isolate BusyBox regression harness from the musl source build
+
+### Exact-head CI diagnosis
+- Inspected PR #69's actual head `8926b693983c5d5f10a5ee7b91ec0e34363b3b20` and its exact-head workflow runs:
+  - Userland Validation run #45192271093: **FAIL** in `make test-shell`.
+  - Full image/boot run #45192270872: **FAIL** in the shell/rootfs regression step, before `Build AWEOS images`.
+- Both workflows failed at the same deterministic line:
+  `bash: /tmp/aweos-busybox-config-test.*/repo/scripts/build-musl-baseline.sh: No such file or directory` (exit 127).
+- Root cause: `scripts/test-busybox-build-config.sh` creates a minimal fake repository and copies `build-busybox-baseline.sh` plus the ISA checker into it, but it did not copy the newly introduced `build-musl-baseline.sh`. The production BusyBox builder now invokes that script by default, so the isolated fake-tool test accidentally crossed into the real musl-build path and failed before its intended assertions.
+- The logs show the Rust workspace tests passed in the full image workflow before the shell regression failed. ISO/image assembly and BIOS/UEFI tests were skipped; no build or boot success is claimed.
+
+### Fix committed on the existing PR #69 branch
+- `scripts/test-busybox-build-config.sh`: pass the already-provided fake compiler as `AWEOS_BUSYBOX_CC=${FAKE_BIN}/musl-gcc` to both positive and negative harness invocations.
+- This uses the builder's explicit test override, keeping the fixture isolated and network-free. The harness continues to verify Kconfig rewriting, direct compiler ISA flags, static-link acceptance, and rejection of a dynamic ELF.
+- The separate `scripts/test-musl-baseline-build.sh` remains responsible for checking that the production builder invokes the pinned musl build and rejects a malformed/checksum-invalid archive. No production build behavior or ISA guard was weakened.
+- New commit: `e0b86d66db9cfaeecc01a3f7f00d9f606ed1b0e8` — `test: isolate BusyBox harness from baseline musl build`.
+- No files under `linux/` were changed. No force push, branch deletion, or merge was performed.
+
+### Validation status
+- The new harness change has been committed and read back from GitHub. It has **not yet** been validated by a fresh Actions run at the time of this entry.
+- No local execution was possible in this connector-only environment. The next exact-head Userland Validation run must prove the regression suite passes; only then can the full image job reach the real pinned musl and BusyBox builds.
+
+### Next priorities
+1. Inspect the fresh exact-head CI runs for commit `e0b86d66db9cfaeecc01a3f7f00d9f606ed1b0e8`.
+2. Confirm `make test-shell` passes, including both the isolated BusyBox builder test and the separate musl checksum/wiring regression.
+3. If userland passes, inspect the real musl 1.2.5 build, archive-object ISA scan, static BusyBox ELF scan, kernel/rootfs/ISO/disk-image assembly.
+4. Run BIOS and UEFI independently only after image assembly; require rootfs hand-off and AYUI first-frame readiness in both modes.
+5. Keep PR #69 draft and unmerged until the full exact-head validation matrix passes.

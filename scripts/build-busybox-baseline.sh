@@ -7,10 +7,26 @@ BUSYBOX_SHA256="34f9ea6ff8636f2c9241153b9114eefa9e65674a45318ae1ef95bb5f31c53bb2
 BUSYBOX_URL="https://www.busybox.net/downloads/busybox-${BUSYBOX_VERSION}.tar.bz2"
 ARCHIVE="${BUILD_DIR}/busybox-${BUSYBOX_VERSION}.tar.bz2"
 OUTPUT="${BUILD_DIR}/busybox"
+BUSYBOX_BASELINE_CFLAGS="-march=x86-64 -mtune=generic -mno-avx -mno-avx2 -mno-avx512f -mno-bmi -mno-bmi2 -mno-fma -mno-f16c"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd -P)"
 
-for tool in curl make musl-gcc sha256sum tar readelf; do
+# The distribution's prebuilt musl libc.a is not tested to be x86-64-baseline
+# safe, and compiler flags cannot restrict already-compiled archive objects.
+# Build a pinned, baseline-verified musl into the build directory and use its
+# compiler wrapper unless an explicit override is set.
+if [ -z "${AWEOS_BUSYBOX_CC:-}" ]; then
+    bash "${SCRIPT_DIR}/build-musl-baseline.sh" "${BUILD_DIR}"
+    BUSYBOX_COMPILER="${BUILD_DIR}/musl/bin/musl-gcc"
+    if [ ! -x "${BUSYBOX_COMPILER}" ]; then
+        echo "ERROR: expected baseline musl wrapper is missing: ${BUSYBOX_COMPILER}" >&2
+        exit 2
+    fi
+else
+    BUSYBOX_COMPILER="${AWEOS_BUSYBOX_CC}"
+fi
+
+for tool in curl make sha256sum tar readelf; do
     command -v "${tool}" >/dev/null 2>&1 || {
         echo "ERROR: required BusyBox build tool is missing: ${tool}" >&2
         exit 2
@@ -60,11 +76,21 @@ tar -xjf "${ARCHIVE}" --directory "${WORK_DIR}" --strip-components=1
     cd "${WORK_DIR}"
     make defconfig
 
+    # Upstream BusyBox defconfig stores disabled settings as
+    # "# CONFIG_X is not set", not "CONFIG_X=n". Appending a duplicate
+    # assignment for a symbol that conflicts with an existing row leaves the
+    # outcome to kconfig duplicate handling and was observed to produce a
+    # dynamic binary in CI. Rewrite each form of the line in place instead.
     set_config() {
         local key="$1"
         local value="$2"
+        if [ "${value}" = "n" ] && grep -q "^# ${key} is not set$" .config; then
+            return 0
+        fi
         if grep -q "^${key}=" .config; then
             sed -i "s|^${key}=.*|${key}=${value}|" .config
+        elif grep -q "^# ${key} is not set$" .config; then
+            sed -i "s|^# ${key} is not set$|${key}=${value}|" .config
         else
             printf '%s=%s\n' "${key}" "${value}" >> .config
         fi
@@ -84,10 +110,37 @@ tar -xjf "${ARCHIVE}" --directory "${WORK_DIR}" --strip-components=1
     # networking/tc.o abort the whole BusyBox build.
     set_config CONFIG_TC n
 
-    set_config CONFIG_EXTRA_CFLAGS "\"-I${KERNEL_HEADERS_ABS}/usr/include -march=x86-64 -mtune=generic -mno-avx -mno-avx2 -mno-avx512f -mno-bmi -mno-bmi2 -mno-fma -mno-f16c\""
+    # SHA-256 hardware acceleration compiles SIMD restatements that use
+    # AVX/VEX encodings, breaking the x86-64 baseline guard that CI requires
+    # for guests without those extensions. AWEOS does not rely on hardware
+    # SHA-256 in early userspace, so disable the accelerated path.
+    set_config CONFIG_SHA256_HWACCEL n
+
+    # Guard against duplicate definitions of the same symbol after rewriting.
+    for key in CONFIG_STATIC CONFIG_FEATURE_PREFER_APPLETS CONFIG_FEATURE_SH_STANDALONE CONFIG_TC CONFIG_SHA256_HWACCEL; do
+        rows="$(grep -c "^${key}=" .config || true)"
+        if [ "${rows}" -ne 1 ]; then
+            echo "ERROR: BusyBox .config has ${rows} rows for ${key}; expected exactly one." >&2
+            exit 2
+        fi
+    done
+
+    set_config CONFIG_EXTRA_CFLAGS "\"-I${KERNEL_HEADERS_ABS}/usr/include ${BUSYBOX_BASELINE_CFLAGS}\""
 
     make oldconfig </dev/null
-    make -j"${AWEOS_BUSYBOX_JOBS:-$(nproc)}" CC="${AWEOS_BUSYBOX_CC:-musl-gcc}" HOSTCC=cc
+
+    # Confirm the static-link intent survived oldconfig before compiling.
+    if ! grep -Eq '^CONFIG_STATIC=y$' .config; then
+        echo "ERROR: CONFIG_STATIC=y did not survive oldconfig; BusyBox would be dynamically linked." >&2
+        grep -n "CONFIG_STATIC" .config >&2 || true
+        exit 2
+    fi
+
+    echo "BusyBox compiler: ${BUSYBOX_COMPILER} ${BUSYBOX_BASELINE_CFLAGS}"
+    # Pass the ISA floor through CC as well as CONFIG_EXTRA_CFLAGS. This
+    # keeps the baseline flags on every compiler invocation even if a future
+    # BusyBox build-system change stops propagating the Kconfig extra flags.
+    make -j"${AWEOS_BUSYBOX_JOBS:-$(nproc)}" CC="${BUSYBOX_COMPILER} ${BUSYBOX_BASELINE_CFLAGS}" HOSTCC=cc
     test -s busybox
 )
 
@@ -95,6 +148,10 @@ install -D -m 0755 "${WORK_DIR}/busybox" "${OUTPUT}"
 bash "${SCRIPT_DIR}/check-x86-64-baseline-isa.sh" "${OUTPUT}"
 if readelf -l "${OUTPUT}" | grep -q 'INTERP'; then
     echo "ERROR: BusyBox must be statically linked for the initramfs." >&2
+    echo "--- readelf program headers of ${OUTPUT} ---" >&2
+    readelf -l "${OUTPUT}" >&2 || true
+    echo "--- BusyBox static configuration rows from .config ---" >&2
+    grep -n "CONFIG_STATIC" "${WORK_DIR}/.config" >&2 || true
     exit 1
 fi
 "${OUTPUT}" --list >/dev/null
