@@ -673,3 +673,33 @@
 2. Confirm the full image run compiles baseline musl 1.2.5, passes the per-object archive scan, links a baseline-clean static BusyBox, and completes ISO/disk-image assembly.
 3. Then run BIOS and UEFI independently, requiring the rootfs hand-off and AYUI compositor first-frame markers in both modes.
 4. If the scan still fails, use the new symbol attribution plus the retained BusyBox ELF artifact to identify the remaining object before changing anything else.
+
+
+## 2026-11-24 run 11 — Isolate BusyBox regression harness from the musl source build
+
+### Exact-head CI diagnosis
+- Inspected PR #69's actual head `8926b693983c5d5f10a5ee7b91ec0e34363b3b20` and its exact-head workflow runs:
+  - Userland Validation run #45192271093: **FAIL** in `make test-shell`.
+  - Full image/boot run #45192270872: **FAIL** in the shell/rootfs regression step, before `Build AWEOS images`.
+- Both workflows failed at the same deterministic line:
+  `bash: /tmp/aweos-busybox-config-test.*/repo/scripts/build-musl-baseline.sh: No such file or directory` (exit 127).
+- Root cause: `scripts/test-busybox-build-config.sh` creates a minimal fake repository and copies `build-busybox-baseline.sh` plus the ISA checker into it, but it did not copy the newly introduced `build-musl-baseline.sh`. The production BusyBox builder now invokes that script by default, so the isolated fake-tool test accidentally crossed into the real musl-build path and failed before its intended assertions.
+- The logs show the Rust workspace tests passed in the full image workflow before the shell regression failed. ISO/image assembly and BIOS/UEFI tests were skipped; no build or boot success is claimed.
+
+### Fix committed on the existing PR #69 branch
+- `scripts/test-busybox-build-config.sh`: pass the already-provided fake compiler as `AWEOS_BUSYBOX_CC=${FAKE_BIN}/musl-gcc` to both positive and negative harness invocations.
+- This uses the builder's explicit test override, keeping the fixture isolated and network-free. The harness continues to verify Kconfig rewriting, direct compiler ISA flags, static-link acceptance, and rejection of a dynamic ELF.
+- The separate `scripts/test-musl-baseline-build.sh` remains responsible for checking that the production builder invokes the pinned musl build and rejects a malformed/checksum-invalid archive. No production build behavior or ISA guard was weakened.
+- New commit: `e0b86d66db9cfaeecc01a3f7f00d9f606ed1b0e8` — `test: isolate BusyBox harness from baseline musl build`.
+- No files under `linux/` were changed. No force push, branch deletion, or merge was performed.
+
+### Validation status
+- The new harness change has been committed and read back from GitHub. It has **not yet** been validated by a fresh Actions run at the time of this entry.
+- No local execution was possible in this connector-only environment. The next exact-head Userland Validation run must prove the regression suite passes; only then can the full image job reach the real pinned musl and BusyBox builds.
+
+### Next priorities
+1. Inspect the fresh exact-head CI runs for commit `e0b86d66db9cfaeecc01a3f7f00d9f606ed1b0e8`.
+2. Confirm `make test-shell` passes, including both the isolated BusyBox builder test and the separate musl checksum/wiring regression.
+3. If userland passes, inspect the real musl 1.2.5 build, archive-object ISA scan, static BusyBox ELF scan, kernel/rootfs/ISO/disk-image assembly.
+4. Run BIOS and UEFI independently only after image assembly; require rootfs hand-off and AYUI first-frame readiness in both modes.
+5. Keep PR #69 draft and unmerged until the full exact-head validation matrix passes.
