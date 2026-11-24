@@ -153,11 +153,15 @@ MUSL
 
 chmod 0755 "${FAKE_BIN}/make" "${FAKE_BIN}/curl" "${FAKE_BIN}/sha256sum" "${FAKE_BIN}/tar" "${FAKE_BIN}/musl-gcc" "${FAKE_BIN}/readelf"
 
+# The harness tests BusyBox configuration and fail-closed ELF checks, not a real musl build.
+# Use the supported compiler override so the fake toolchain stays network-free;
+# test-musl-baseline-build.sh separately verifies the pinned musl builder wiring.
 export AWEOS_TEST_TRACE="${TRACE_DIR}"
 export AWEOS_TEST_EXPECTED_HEADERS="${BUILD_DIR}/linux-headers"
 (
     cd "${TEMP_ROOT}"
     env -u AWEOS_LINUX_SRC \
+        AWEOS_BUSYBOX_CC="${FAKE_BIN}/musl-gcc" \
         PATH="${FAKE_BIN}:${PATH}" \
         AWEOS_TEST_TRACE="${TRACE_DIR}" \
         AWEOS_TEST_EXPECTED_HEADERS="${BUILD_DIR}/linux-headers" \
@@ -194,6 +198,7 @@ set +e
 (
     cd "${TEMP_ROOT}"
     env -u AWEOS_LINUX_SRC \
+        AWEOS_BUSYBOX_CC="${FAKE_BIN}/musl-gcc" \
         PATH="${FAKE_BIN}:${PATH}" \
         AWEOS_TEST_TRACE="${TRACE_DIR}" \
         AWEOS_TEST_EXPECTED_HEADERS="${NEGATIVE_DIR}/linux-headers" \
