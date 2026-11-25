@@ -722,7 +722,7 @@
 - No files under `linux/` are modified. No force push, branch deletion, merge, or kernel-tree cleanup was performed.
 
 ### Validation status
-- Changes have been prepared on a new branch based on the exact PR #69 head. Connector-only execution cannot run the shell regression or compile musl locally; exact-head GitHub Actions results are required before this fix can be considered validated.
+- Changes have been prepared on a new branch based on the exact PR #69 head. The isolated archive-scanner positive/negative fixtures were also executed in the local Linux tool environment: baseline `.lo` accepted, AVX `.lo` rejected with member attribution, non-ELF member rejected, and empty archive rejected. The complete `make test-shell` suite and real musl 1.2.5 build are still being verified by exact-head GitHub Actions; no full OS image or boot is claimed.
 - The next Userland Validation run must pass the new archive regression. The full image workflow must then build pinned musl, scan every archive member, build and scan static BusyBox, and proceed to image assembly.
 - BIOS/UEFI boot and AYUI first-frame results remain unverified.
 
