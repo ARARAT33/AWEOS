@@ -27,7 +27,9 @@ mkdir -p "${BUILD_DIR}"
 BUILD_DIR_ABS="$(cd -- "${BUILD_DIR}" && pwd -P)"
 MUSL_PREFIX="${BUILD_DIR_ABS}/musl"
 
-if [ -f "${MUSL_PREFIX}/lib/libc.a" ] && [ -x "${MUSL_PREFIX}/bin/musl-gcc" ] && [ -f "${MUSL_PREFIX}/baseline-verified" ]; then
+if [ -f "${MUSL_PREFIX}/lib/libc.a" ] &&
+   [ -x "${MUSL_PREFIX}/bin/musl-gcc" ] &&
+   grep -Fxq "archive-member-scan-v2" "${MUSL_PREFIX}/baseline-verified" 2>/dev/null; then
     echo "Using cached baseline-verified musl: ${MUSL_PREFIX}"
     exit 0
 fi
@@ -74,21 +76,29 @@ EOF
 "${MUSL_PREFIX}/bin/musl-gcc" -static -Os ${MUSL_BASELINE_CFLAGS} "${SMOKE}" -o "${WORK_DIR}/smoke.elf"
 bash "${CHECKER}" "${WORK_DIR}/smoke.elf"
 
-# Scan every archive object: the check at link time only covers pulled-in code.
+# Scan every archive member, not only files ending in .o. musl's
+# archive members may use a different object suffix; a non-matching shell
+# glob would otherwise pass a literal '*.o' path to the checker.
+ARCHIVE_CHECKER="${SCRIPT_DIR}/check-x86-64-baseline-archive.sh"
+[ -f "${ARCHIVE_CHECKER}" ] || {
+    echo "ERROR: baseline archive checker not found: ${ARCHIVE_CHECKER}" >&2
+    exit 2
+}
+archive_count=0
 for lib in "${MUSL_PREFIX}"/lib/*.a; do
-    LIB_NAME="$(basename "${lib}")"
-    OBJ_DIR="$(mktemp -d "${WORK_DIR}/objs.XXXXXX")"
-    (cd "${OBJ_DIR}" && ar x "${lib}")
-    for obj in "${OBJ_DIR}"/*.o; do
-        if ! bash "${CHECKER}" "${obj}" >/dev/null 2>&1; then
-            echo "ERROR: baseline-unsafe object found in ${LIB_NAME}: ${obj}" >&2
-            bash "${CHECKER}" "${obj}" >&2 || true
-            exit 1
-        fi
-        rm -f -- "${obj}"
-    done
-    rmdir "${OBJ_DIR}"
+    [ -f "${lib}" ] || {
+        echo "ERROR: no static musl archives found in ${MUSL_PREFIX}/lib" >&2
+        exit 1
+    }
+    bash "${ARCHIVE_CHECKER}" "${lib}" "${CHECKER}"
+    archive_count=$((archive_count + 1))
 done
+[ "${archive_count}" -gt 0 ] || {
+    echo "ERROR: no static musl archives were verified." >&2
+    exit 1
+}
 
-touch "${MUSL_PREFIX}/baseline-verified"
+# Version the stamp so a cache produced by the old suffix-dependent scanner
+# cannot be mistaken for a fully verified cache.
+printf '%s\\n' "archive-member-scan-v2" > "${MUSL_PREFIX}/baseline-verified"
 echo "Built and verified musl ${MUSL_VERSION} for the x86-64 baseline: ${MUSL_PREFIX}"
