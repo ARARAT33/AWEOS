@@ -703,3 +703,47 @@
 3. If userland passes, inspect the real musl 1.2.5 build, archive-object ISA scan, static BusyBox ELF scan, kernel/rootfs/ISO/disk-image assembly.
 4. Run BIOS and UEFI independently only after image assembly; require rootfs hand-off and AYUI first-frame readiness in both modes.
 5. Keep PR #69 draft and unmerged until the full exact-head validation matrix passes.
+
+
+## 2026-11-25 run 11 — Fix musl archive-member ISA verification
+
+### Exact-head CI diagnosis
+- Rechecked PR #69 at head `f0e470a1046171735b6b3e7083be3adbda400ec8`.
+- Userland Validation run #45330148966 completed **success**.
+- Full image/boot run #45330149099 completed **failure** in `Build AWEOS images`, before BusyBox, ISO, disk-image, BIOS, or UEFI validation could finish.
+- The exact failure was in `scripts/build-musl-baseline.sh`: after `ar x`, the scanner iterated only `${OBJ_DIR}/*.o`. No extracted archive member matched that suffix, so Bash passed the literal wildcard path to the ELF checker. The checker then reported that the literal path was not an ELF. The archive scan therefore failed before the actual member ISA compatibility could be determined. The previous PASS status for Userland Validation did not imply the image pipeline passed.
+- The same CI inspection found the independent Linux sync workflow #45408594481 failed at `Update ONLY /linux` with `fatal: path 'linux' exists on disk, but not in the index`. No kernel sync was committed or pushed. This remains a separate unresolved workflow issue; no cleanup of the kernel tree was attempted.
+
+### Changes on `fix/musl-archive-member-scan-20261125`, stacked on PR #69
+- Added `scripts/check-x86-64-baseline-archive.sh`: enumerate archive members with `ar t`, reject empty archives and duplicate names, extract each member by its archive name, and run the existing strict x86-64 ELF/ISA checker on every member. The scanner no longer assumes that archive objects end in `.o`.
+- Updated `scripts/build-musl-baseline.sh` to use the new archive scanner for every static archive and to fail if no archives are found.
+- Versioned the musl verification stamp as `archive-member-scan-v2`; a cache stamped by the old suffix-dependent scanner is not accepted as verified.
+- Added `scripts/test-x86-64-baseline-archive.sh` and wired it into `make test-shell`. The regression uses a `.lo` archive member, confirms baseline code passes, confirms AVX code is rejected with the offending member named, rejects non-ELF members, and rejects empty archives.
+- No files under `linux/` are modified. No force push, branch deletion, merge, or kernel-tree cleanup was performed.
+
+### Validation status
+- Changes have been prepared on a new branch based on the exact PR #69 head. The isolated archive-scanner positive/negative fixtures were also executed in the local Linux tool environment: baseline `.lo` accepted, AVX `.lo` rejected with member attribution, non-ELF member rejected, and empty archive rejected. The complete `make test-shell` suite and real musl 1.2.5 build are still being verified by exact-head GitHub Actions; no full OS image or boot is claimed.
+- The next Userland Validation run must pass the new archive regression. The full image workflow must then build pinned musl, scan every archive member, build and scan static BusyBox, and proceed to image assembly.
+- BIOS/UEFI boot and AYUI first-frame results remain unverified.
+
+### Next priorities
+1. Confirm the archive regression passes on the new branch.
+2. Confirm real musl 1.2.5 archive members are all scanned and baseline-safe; inspect the first named offending member if the checker rejects one.
+3. Confirm BusyBox is statically linked and passes the existing x86-64 ISA guard.
+4. Complete kernel, rootfs, initramfs, ISO, and disk-image construction.
+5. Run BIOS and UEFI separately and require rootfs hand-off and AYUI first-frame readiness.
+6. Diagnose the Linux sync index/worktree mismatch in a separate change, preserving the strict `/linux` boundary.
+
+
+### Architecture audit — AYUI backend and active product surface
+- The active Rust AYUI compositor currently enables Smithay's `backend_winit` feature and calls `winit::init::<GlesRenderer>()` in `AWEUI/src/wayland.rs`. The QEMU readiness marker also explicitly identifies `backend=winit`. The current `AWEUI/src/renderer.rs` `DrmKms` enum is only a mode label/counter and is not a DRM/KMS backend. Therefore, even a successful Winit first-frame marker would not prove a standalone direct-display compositor suitable for a bare-metal session. A real DRM/KMS + udev/input backend remains a required product milestone.
+- The minimal rootfs still creates `/run/user/0` and starts `aweui` from PID 1 as UID 0. PR #58 contains IPC hardening but remains open/unmerged; private socket permissions do not replace the missing unprivileged desktop-session split.
+- The root `Makefile` builds the Rust Cargo workspace for AYUI and bundled apps. The legacy C modules under `src/gui`, `src/aosin`, `src/installer`, `src/updater`, and `src/wlin` are not part of the current Makefile build graph. In particular, the default-branch C `src/aosin/aosin_core.c` writes a fixed dummy payload and only registers metadata; it is not a production payload package manager. The real AOSIN v2 work is still in open PRs #65/#66 and must not be described as shipped until integrated and validated.
+- These are scope/architecture findings, not failures introduced by the archive-scanner patch. They are recorded to keep future progress reports from overstating desktop, package, or hardware readiness.
+
+### Follow-on priorities from architecture audit
+1. Complete the x86-64 image and BIOS/UEFI boot pipeline without weakening the rootfs or AYUI first-frame checks.
+2. Implement a genuine Smithay DRM/KMS backend with udev device discovery, input, VT/session handling, and a QEMU/real-hardware test path; keep Winit as a development backend only.
+3. Move AYUI and ordinary applications to an unprivileged user session; put narrowly scoped privileged operations behind a separate broker.
+4. Reconcile README claims with the actual Cargo/Makefile build graph and clearly label legacy C modules as inactive/experimental.
+5. Integrate and test AOSIN v2, package signatures, dependency validation, and safe rollback before claiming a production package ecosystem.
