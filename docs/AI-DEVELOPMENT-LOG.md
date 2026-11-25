@@ -733,3 +733,17 @@
 4. Complete kernel, rootfs, initramfs, ISO, and disk-image construction.
 5. Run BIOS and UEFI separately and require rootfs hand-off and AYUI first-frame readiness.
 6. Diagnose the Linux sync index/worktree mismatch in a separate change, preserving the strict `/linux` boundary.
+
+
+### Architecture audit — AYUI backend and active product surface
+- The active Rust AYUI compositor currently enables Smithay's `backend_winit` feature and calls `winit::init::<GlesRenderer>()` in `AWEUI/src/wayland.rs`. The QEMU readiness marker also explicitly identifies `backend=winit`. The current `AWEUI/src/renderer.rs` `DrmKms` enum is only a mode label/counter and is not a DRM/KMS backend. Therefore, even a successful Winit first-frame marker would not prove a standalone direct-display compositor suitable for a bare-metal session. A real DRM/KMS + udev/input backend remains a required product milestone.
+- The minimal rootfs still creates `/run/user/0` and starts `aweui` from PID 1 as UID 0. PR #58 contains IPC hardening but remains open/unmerged; private socket permissions do not replace the missing unprivileged desktop-session split.
+- The root `Makefile` builds the Rust Cargo workspace for AYUI and bundled apps. The legacy C modules under `src/gui`, `src/aosin`, `src/installer`, `src/updater`, and `src/wlin` are not part of the current Makefile build graph. In particular, the default-branch C `src/aosin/aosin_core.c` writes a fixed dummy payload and only registers metadata; it is not a production payload package manager. The real AOSIN v2 work is still in open PRs #65/#66 and must not be described as shipped until integrated and validated.
+- These are scope/architecture findings, not failures introduced by the archive-scanner patch. They are recorded to keep future progress reports from overstating desktop, package, or hardware readiness.
+
+### Follow-on priorities from architecture audit
+1. Complete the x86-64 image and BIOS/UEFI boot pipeline without weakening the rootfs or AYUI first-frame checks.
+2. Implement a genuine Smithay DRM/KMS backend with udev device discovery, input, VT/session handling, and a QEMU/real-hardware test path; keep Winit as a development backend only.
+3. Move AYUI and ordinary applications to an unprivileged user session; put narrowly scoped privileged operations behind a separate broker.
+4. Reconcile README claims with the actual Cargo/Makefile build graph and clearly label legacy C modules as inactive/experimental.
+5. Integrate and test AOSIN v2, package signatures, dependency validation, and safe rollback before claiming a production package ecosystem.
