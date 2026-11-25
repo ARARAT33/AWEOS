@@ -100,5 +100,5 @@ done
 
 # Version the stamp so a cache produced by the old suffix-dependent scanner
 # cannot be mistaken for a fully verified cache.
-printf '%s\\n' "archive-member-scan-v2" > "${MUSL_PREFIX}/baseline-verified"
+printf '%s\n' "archive-member-scan-v2" > "${MUSL_PREFIX}/baseline-verified"
 echo "Built and verified musl ${MUSL_VERSION} for the x86-64 baseline: ${MUSL_PREFIX}"
