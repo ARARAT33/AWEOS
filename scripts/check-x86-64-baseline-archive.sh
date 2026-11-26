@@ -10,12 +10,16 @@ archive="$1"
 checker="$2"
 [ -s "$archive" ] || { echo "ERROR: archive is missing or empty: $archive" >&2; exit 2; }
 [ -f "$checker" ] || { echo "ERROR: ISA checker is missing: $checker" >&2; exit 2; }
-for tool in ar sort uniq awk; do
+for tool in ar awk; do
     command -v "$tool" >/dev/null 2>&1 || {
         echo "ERROR: required archive-scan tool is missing: $tool" >&2
         exit 2
     }
 done
+
+# Resolve the archive before changing into per-member extraction directories.
+archive_dir="$(cd -- "$(dirname -- "$archive")" && pwd -P)"
+archive="$archive_dir/$(basename -- "$archive")"
 
 work_dir="$(mktemp -d "${TMPDIR:-/tmp}/aweos-archive-isa.XXXXXX")"
 trap 'rm -rf -- "$work_dir"' EXIT
@@ -31,27 +35,37 @@ if [ "$member_count" -eq 0 ]; then
     exit 1
 fi
 
-duplicates="$(LC_ALL=C sort "$members_file" | uniq -d)"
-if [ -n "$duplicates" ]; then
-    echo "ERROR: duplicate archive member names cannot be verified unambiguously in $archive:" >&2
-    printf '%s\n' "$duplicates" >&2
-    exit 1
-fi
-
+# Archive member basenames are not necessarily unique (for example, several
+# musl objects are named clone.lo). Track each occurrence independently and
+# use GNU ar's xN modifier so no duplicate member is silently skipped.
+declare -A occurrence_by_name=()
 scanned=0
 while IFS= read -r member || [ -n "$member" ]; do
     [ -n "$member" ] || continue
-    object="$work_dir/member-$scanned.elf"
-    if ! ar p "$archive" "$member" >"$object"; then
-        echo "ERROR: could not extract archive member '$member' from $archive" >&2
+    case "$member" in
+        .|..|*/*)
+            echo "ERROR: unsafe archive member path cannot be extracted: '$member' in $archive" >&2
+            exit 1
+            ;;
+    esac
+
+    occurrence=$(( ${occurrence_by_name["$member"]:-0} + 1 ))
+    occurrence_by_name["$member"]="$occurrence"
+    member_dir="$work_dir/member-$scanned"
+    mkdir "$member_dir"
+
+    if ! (cd "$member_dir" && ar xN "$occurrence" "$archive" "$member"); then
+        echo "ERROR: could not extract archive member '$member' occurrence #$occurrence from $archive (GNU ar xN is required)" >&2
         exit 1
     fi
+
+    object="$member_dir/$member"
     if [ ! -s "$object" ]; then
-        echo "ERROR: archive member '$member' is empty in $archive" >&2
+        echo "ERROR: archive member '$member' occurrence #$occurrence is missing or empty in $archive" >&2
         exit 1
     fi
     if ! bash "$checker" "$object" >"$work_dir/check.log" 2>&1; then
-        echo "ERROR: baseline-unsafe or invalid archive member '$member' in $archive" >&2
+        echo "ERROR: baseline-unsafe or invalid archive member '$member' occurrence #$occurrence in $archive" >&2
         cat "$work_dir/check.log" >&2
         exit 1
     fi
