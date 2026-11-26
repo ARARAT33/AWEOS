@@ -747,3 +747,28 @@
 3. Move AYUI and ordinary applications to an unprivileged user session; put narrowly scoped privileged operations behind a separate broker.
 4. Reconcile README claims with the actual Cargo/Makefile build graph and clearly label legacy C modules as inactive/experimental.
 5. Integrate and test AOSIN v2, package signatures, dependency validation, and safe rollback before claiming a production package ecosystem.
+
+
+## 2026-11-26 run 11 — Scan duplicate musl archive members by occurrence
+
+### Exact-head CI diagnosis
+- Inspected PR #70 at head `960b9308aebcfef0b38885d5f30e7f6c99cbea93` and downloaded its retained image-build diagnostic artifact from run #45545991763.
+- Userland Validation passed on the PR head, but the full x86_64 image/boot workflow failed in `Build AWEOS images` while scanning the freshly built musl `libc.a`.
+- The exact failure named duplicate archive members `clone.lo`, `free.lo`, and `realloc.lo`. These duplicate basenames are valid in static archives when objects originate from different source directories. The previous scanner rejected duplicates because plain `ar p` cannot select a particular occurrence. Simply ignoring duplicates would be unsafe because a later same-named object could contain non-baseline instructions.
+
+### Changes on `fix/musl-archive-duplicate-members-20261126`, stacked on PR #70
+- Updated `scripts/check-x86-64-baseline-archive.sh` to track each member-name occurrence and extract it with GNU `ar xN` into a separate directory. Every archive entry is checked, including repeated basenames; the error identifies the offending occurrence. Unsafe path-shaped member names fail closed.
+- Extended `scripts/test-x86-64-baseline-archive.sh` with two duplicate-name fixtures: a safe archive with two baseline `clone.lo` entries must pass, while an archive whose second `clone.lo` contains AVX must fail and identify occurrence #2. Existing `.lo`, AVX, non-ELF, and empty-archive cases remain covered.
+- Bumped the musl verification stamp from `archive-member-scan-v2` to `archive-member-scan-v3` so cached output produced by the previous scanner is not trusted.
+- No files under `linux/` were changed. No force push, branch deletion, or merge was performed.
+
+### Validation status
+- Local regression executed with GNU binutils `ar 2.44`: **PASS**. The scanner verified both duplicate baseline members and rejected the second duplicate when it contained `vmovdqa`; the existing positive/negative fixtures also passed.
+- Exact-head GitHub Actions for this new branch are pending. The real musl image build, BusyBox static link, ISO/disk image, BIOS/UEFI boot, and AYUI first-frame remain unverified; no OS build or boot success is claimed.
+
+### Next priorities
+1. Require Userland Validation to pass the duplicate-occurrence regression on the new PR head.
+2. Confirm the real musl 1.2.5 `libc.a` scan verifies every member, including duplicate names, and that static BusyBox passes the x86-64 ISA guard.
+3. Complete kernel/rootfs/initramfs, ISO, and disk-image assembly.
+4. Run BIOS and UEFI separately and require rootfs hand-off plus AYUI first-frame readiness.
+5. Diagnose the separate Linux sync failure (#45620871584, `linux` exists on disk but not in the index) without broad cleanup or changes to the vendored kernel tree.
