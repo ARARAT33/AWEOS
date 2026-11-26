@@ -98,6 +98,47 @@ _ZN9othercrate4arch6x86_6410find_avx2E:
     ret
 ASM
 
+cat >"$workdir/sha2x86.S" <<'ASM'
+.text
+.globl _ZN4sha26sha2563x8613digest_blocksE
+_ZN4sha26sha2563x8613digest_blocksE:
+    # SSSE3 pshufb inside the RustCrypto sha2 runtime-dispatched
+    # sha256::x86 backend kernel. The kernel is entered only behind CPU
+    # feature detection, so it cannot execute on qemu64 and must be
+    # accepted.
+    .byte 0x66, 0x0f, 0x38, 0x00, 0xc1
+    ret
+ASM
+
+cat >"$workdir/sha2-nokernel.S" <<'ASM'
+.text
+.globl _ZN4sha26sha2566detectE
+_ZN4sha26sha2566detectE:
+    # Same SSSE3 bytes in a sha2 symbol WITHOUT digest_blocks: the narrow
+    # exception must not apply, fail closed.
+    .byte 0x66, 0x0f, 0x38, 0x00, 0xc1
+    ret
+ASM
+
+cat >"$workdir/sha2-nobackend.S" <<'ASM'
+.text
+.globl _ZN4sha29sha512_x8613digest_blocksE
+_ZN4sha29sha512_x8613digest_blocksE:
+    # sha2 digest_blocks without a 3x86/4shani/avx2 backend marker: fail
+    # closed.
+    .byte 0x66, 0x0f, 0x38, 0x00, 0xc1
+    ret
+ASM
+
+cat >"$workdir/othercrate-shani.S" <<'ASM'
+.text
+.globl _ZN9digester6sha2564shani13digest_blocksE
+_ZN9digester6sha2564shani13digest_blocksE:
+    # Same SSSE3 bytes outside the sha2 crate: fail closed.
+    .byte 0x66, 0x0f, 0x38, 0x00, 0xc1
+    ret
+ASM
+
 cc -c "$workdir/safe.S" -o "$workdir/safe.o"
 cc -c "$workdir/avx.S" -o "$workdir/avx.o"
 cc -c "$workdir/bmi1.S" -o "$workdir/bmi1.o"
@@ -107,6 +148,10 @@ cc -c "$workdir/stdmemchr.S" -o "$workdir/stdmemchr.o"
 cc -c "$workdir/stdmemchr-nokernel.S" -o "$workdir/stdmemchr-nokernel.o"
 cc -c "$workdir/stdmemchr-avx512.S" -o "$workdir/stdmemchr-avx512.o"
 cc -c "$workdir/othercrate-avx.S" -o "$workdir/othercrate-avx.o"
+cc -c "$workdir/sha2x86.S" -o "$workdir/sha2x86.o"
+cc -c "$workdir/sha2-nokernel.S" -o "$workdir/sha2-nokernel.o"
+cc -c "$workdir/sha2-nobackend.S" -o "$workdir/sha2-nobackend.o"
+cc -c "$workdir/othercrate-shani.S" -o "$workdir/othercrate-shani.o"
 
 # With no report path configured, the checker must not create a stray
 # file named "-" in its caller's working directory.
@@ -167,6 +212,32 @@ if bash "$checker" "$workdir/othercrate-avx.o" >"$workdir/othercrate-avx.out" 2>
 fi
 grep -Eqi 'vmovdqa|avx' "$workdir/othercrate-avx.out"
 
+# The RustCrypto sha2 runtime-dispatched sha256::x86 kernel must be
+# accepted: it is entered only behind CPU feature detection and therefore
+# cannot execute on qemu64.
+bash "$checker" "$workdir/sha2x86.o" >"$workdir/sha2x86.out" 2>&1
+grep -q 'PASS' "$workdir/sha2x86.out"
+
+# The exception must stay narrow: sha2 symbols without digest_blocks,
+# without a backend marker, and any other crate still fail closed.
+if bash "$checker" "$workdir/sha2-nokernel.o" >"$workdir/sha2-nokernel.out" 2>&1; then
+    echo "ERROR: qemu64 ISA checker accepted a sha2 symbol without digest_blocks." >&2
+    exit 1
+fi
+grep -Eqi 'pshufb' "$workdir/sha2-nokernel.out"
+
+if bash "$checker" "$workdir/sha2-nobackend.o" >"$workdir/sha2-nobackend.out" 2>&1; then
+    echo "ERROR: qemu64 ISA checker accepted sha2 digest_blocks without a backend marker." >&2
+    exit 1
+fi
+grep -Eqi 'pshufb' "$workdir/sha2-nobackend.out"
+
+if bash "$checker" "$workdir/othercrate-shani.o" >"$workdir/othercrate-shani.out" 2>&1; then
+    echo "ERROR: qemu64 ISA checker accepted SSSE3 outside the sha2 crate." >&2
+    exit 1
+fi
+grep -Eqi 'pshufb' "$workdir/othercrate-shani.out"
+
 # The full symbol-labeled report must be persisted when requested, without
 # changing the fail-closed verdict.
 if AWEOS_ISA_REPORT_OUT="$workdir/persisted-report.txt" \
@@ -212,4 +283,4 @@ else
     exit 1
 fi
 
-echo "PASS: qemu64 ISA checker accepts baseline code and std memchr runtime-gated kernels, rejects AVX, BMI, lzcnt, avx512, and non-kernel symbols, persists reports, and supports soft archive attribution."
+echo "PASS: qemu64 ISA checker accepts baseline code, std memchr and sha2 runtime-gated kernels, rejects AVX, BMI, lzcnt, avx512, and non-kernel symbols, persists reports, and supports soft archive attribution."
