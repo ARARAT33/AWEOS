@@ -45,6 +45,25 @@ fi
 grep -q "avx.lo" "$WORK_DIR/avx.log"
 grep -q "vmovdqa" "$WORK_DIR/avx.log"
 
+# Duplicate basenames are valid in static archives. Verify all occurrences:
+# the first is baseline-safe and the second deliberately contains AVX.
+mkdir -p "$WORK_DIR/duplicate-safe/a" "$WORK_DIR/duplicate-safe/b"
+mkdir -p "$WORK_DIR/duplicate-mixed/a" "$WORK_DIR/duplicate-mixed/b"
+cc -c "$WORK_DIR/baseline.S" -o "$WORK_DIR/duplicate-safe/a/clone.lo"
+cc -c "$WORK_DIR/baseline.S" -o "$WORK_DIR/duplicate-safe/b/clone.lo"
+cc -c "$WORK_DIR/baseline.S" -o "$WORK_DIR/duplicate-mixed/a/clone.lo"
+cc -mavx -c "$WORK_DIR/avx.S" -o "$WORK_DIR/duplicate-mixed/b/clone.lo"
+ar rcs "$WORK_DIR/duplicate-safe.a" "$WORK_DIR/duplicate-safe/a/clone.lo" "$WORK_DIR/duplicate-safe/b/clone.lo"
+ar rcs "$WORK_DIR/duplicate-mixed.a" "$WORK_DIR/duplicate-mixed/a/clone.lo" "$WORK_DIR/duplicate-mixed/b/clone.lo"
+
+bash "$ARCHIVE_CHECKER" "$WORK_DIR/duplicate-safe.a" "$ISA_CHECKER"
+if bash "$ARCHIVE_CHECKER" "$WORK_DIR/duplicate-mixed.a" "$ISA_CHECKER" >"$WORK_DIR/duplicate-mixed.log" 2>&1; then
+    echo "ERROR: archive checker skipped an unsafe duplicate member." >&2
+    exit 1
+fi
+grep -q "clone.lo.*occurrence #2" "$WORK_DIR/duplicate-mixed.log"
+grep -q "vmovdqa" "$WORK_DIR/duplicate-mixed.log"
+
 printf 'not an ELF object\n' >"$WORK_DIR/invalid.member"
 ar rcs "$WORK_DIR/invalid.a" "$WORK_DIR/invalid.member"
 if bash "$ARCHIVE_CHECKER" "$WORK_DIR/invalid.a" "$ISA_CHECKER" >"$WORK_DIR/invalid.log" 2>&1; then
@@ -60,4 +79,4 @@ if bash "$ARCHIVE_CHECKER" "$WORK_DIR/empty.a" "$ISA_CHECKER" >"$WORK_DIR/empty.
 fi
 grep -q "no members" "$WORK_DIR/empty.log"
 
-echo "PASS: archive ISA scan handles .lo members, rejects AVX and invalid members, and fails on empty archives."
+echo "PASS: archive ISA scan handles .lo and duplicate members, rejects AVX/invalid members, and fails on empty archives."
