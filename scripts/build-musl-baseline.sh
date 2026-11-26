@@ -29,7 +29,7 @@ MUSL_PREFIX="${BUILD_DIR_ABS}/musl"
 
 if [ -f "${MUSL_PREFIX}/lib/libc.a" ] &&
    [ -x "${MUSL_PREFIX}/bin/musl-gcc" ] &&
-   grep -Fxq "archive-member-scan-v2" "${MUSL_PREFIX}/baseline-verified" 2>/dev/null; then
+   grep -Fxq "archive-member-scan-v3" "${MUSL_PREFIX}/baseline-verified" 2>/dev/null; then
     echo "Using cached baseline-verified musl: ${MUSL_PREFIX}"
     exit 0
 fi
@@ -100,5 +100,5 @@ done
 
 # Version the stamp so a cache produced by the old suffix-dependent scanner
 # cannot be mistaken for a fully verified cache.
-printf '%s\n' "archive-member-scan-v2" > "${MUSL_PREFIX}/baseline-verified"
+printf '%s\n' "archive-member-scan-v3" > "${MUSL_PREFIX}/baseline-verified"
 echo "Built and verified musl ${MUSL_VERSION} for the x86-64 baseline: ${MUSL_PREFIX}"
