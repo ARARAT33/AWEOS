@@ -68,7 +68,8 @@ jobs:
           test -x bin/limine
           sudo install -m 0755 bin/limine /usr/local/bin/limine
 
-      - name: Run shell, C, rootfs, session, and QEMU-runner regressions
+      - name: Run shell, C
+, rootfs, session, and QEMU-runner regressions
         run: make test-shell
 
       - name: Verify /linux is untouched
@@ -97,6 +98,15 @@ jobs:
             echo "First make/script errors:"
             grep -nE 'ERROR:|Error [0-9]+|\*\*\*' image-build.log | head -n 40 || true
             echo
+            echo "BusyBox UAPI probe error (when the UAPI probe failed):"
+            cat build/busybox-uapi-probe-error.txt 2>/dev/null || true
+            echo
+            echo "UAPI headers install log tail (when headers_install failed):"
+            tail -n 20 build/busybox-uapi-headers-install.log 2>/dev/null || true
+            echo
+            echo "BusyBox ISA attribution (when the ISA gate failed):"
+            cat build/busybox-isa-attribution.txt 2>/dev/null || true
+            echo
             echo "Last 100 log lines:"
             tail -n 100 image-build.log || true
           } | tee -a "$summary"
@@ -110,7 +120,8 @@ jobs:
 
       - name: Upload image build log on failure
         if: ${{ failure() && steps.build_images.outcome == 'failure' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifac
+t@v4
         with:
           name: AWEOS-image-build-log
           path: image-build.log
@@ -163,7 +174,8 @@ jobs:
           mkdir -p build
           : > "$summary"
           found=0
-          for log in build/qemu-*-instrtrace-debug.log; do
+          for log in build/qe
+mu-*-instrtrace-debug.log; do
             if [ -f "$log" ]; then
               found=1
             fi
@@ -196,6 +208,31 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30
 
+      - name: Summarize boot-test serial output for diagnosis
+        if: ${{ failure() && steps.qemu_boot.outcome == 'failure' }}
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          summary="build/boot-test-failure-summary.txt"
+          mkdir -p build
+          : > "$summary"
+          for log in build/qemu-bios*.log build/qemu-uefi*.log build/qemu-kernel*.log; do
+            [ -f "$log" ] || continue
+            {
+              echo "=== $log (serial tail -n 60) ==="
+              tail -n 60 "$log" || true
+              echo "--- boot markers and failures ---"
+              grep -nE 'AWEOS ROOTFS READY|AWEOS AYUI|AWEOS HEADLESS|AWEOS RECOVERY|kernel panic|FAIL:' "$log" | tail -n 30 || true
+              echo
+            } >> "$summary"
+          done
+          if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+            cat "$summary" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          excerpt="$(grep -m1 -E 'FAIL:' build/qemu-*.log 2>/dev/null | cut -c1-700 || true)"
+          if [ -n "${excerpt:-}" ]; then
+            echo "::error::boot-test failure excerpt: ${excerpt}"
+          fi
       - name: Boot diagnostic retry with QEMU max CPU and instruction trace
         if: ${{ failure() && steps.qemu_boot.outcome == 'failure' }}
         continue-on-error: true
@@ -209,7 +246,8 @@ jobs:
               exit 0
             fi
           done
-          bash ./scripts/run-qemu-tests.sh build all
+          bash ./scripts/run-qemu-tests.sh build
+ all
 
       - name: Upload QEMU and kernel diagnostics on failure
         if: failure()
@@ -225,6 +263,13 @@ jobs:
             build/linux-x86_64/arch/x86/boot/bzImage
             build/linux-x86_64/arch/x86/boot/compressed/vmlinux
             build/aweos-initramfs.cpio.gz
+            build/busybox-isa-report.txt
+            build/busybox-isa-attribution.txt
+            build/busybox-compiler-target-report.txt
+            build/busybox-uapi-probe-error.txt
+            build/busybox-uapi-headers-install.log
+            build/image-build-failure-summary.txt
+            build/boot-test-failure-summary.txt
           if-no-files-found: ignore
           include-hidden-files: true
           retention-days: 7
