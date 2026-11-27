@@ -28,15 +28,24 @@ archive_avx:
     vmovdqa %xmm0, %xmm1
     ret
 ASM
+cat >"$WORK_DIR/data-only.S" <<'ASM'
+.section .rodata
+.globl archive_data_only
+archive_data_only:
+    .quad 0x12345678
+ASM
 
 # Deliberately use .lo rather than .o to cover archive member suffixes used
 # by some static-library build systems.
 cc -c "$WORK_DIR/baseline.S" -o "$WORK_DIR/baseline.lo"
 cc -mavx -c "$WORK_DIR/avx.S" -o "$WORK_DIR/avx.lo"
+cc -c "$WORK_DIR/data-only.S" -o "$WORK_DIR/data-only.lo"
 ar rcs "$WORK_DIR/baseline.a" "$WORK_DIR/baseline.lo"
 ar rcs "$WORK_DIR/avx.a" "$WORK_DIR/avx.lo"
+ar rcs "$WORK_DIR/data-only.a" "$WORK_DIR/data-only.lo"
 
 bash "$ARCHIVE_CHECKER" "$WORK_DIR/baseline.a" "$ISA_CHECKER"
+bash "$ARCHIVE_CHECKER" "$WORK_DIR/data-only.a" "$ISA_CHECKER"
 
 if bash "$ARCHIVE_CHECKER" "$WORK_DIR/avx.a" "$ISA_CHECKER" >"$WORK_DIR/avx.log" 2>&1; then
     echo "ERROR: archive checker accepted an AVX archive member." >&2
@@ -79,4 +88,4 @@ if bash "$ARCHIVE_CHECKER" "$WORK_DIR/empty.a" "$ISA_CHECKER" >"$WORK_DIR/empty.
 fi
 grep -q "no members" "$WORK_DIR/empty.log"
 
-echo "PASS: archive ISA scan handles .lo and duplicate members, rejects AVX/invalid members, and fails on empty archives."
+echo "PASS: archive ISA scan handles .lo, data-only and duplicate members, rejects AVX/invalid members, and fails on empty archives."

@@ -772,3 +772,32 @@
 3. Complete kernel/rootfs/initramfs, ISO, and disk-image assembly.
 4. Run BIOS and UEFI separately and require rootfs hand-off plus AYUI first-frame readiness.
 5. Diagnose the separate Linux sync failure (#45620871584, `linux` exists on disk but not in the index) without broad cleanup or changes to the vendored kernel tree.
+
+
+## 2026-11-27 run 12 — Accept verified data-only x86-64 relocatable archive members
+
+### Repository and CI inspection
+- Inspected the repository metadata, default branch, root build graph, Cargo workspace, AWEUI and application source layout, bootloader assets, build scripts, CI workflows, and the existing development log. The default branch is `master` at `d4d300545558d660abb2127d297d3a00ef017dae`; the active build work remains in stacked pull-request branches.
+- PR #71 (`fix/musl-archive-duplicate-members-20261126`, head `ee256b7fdf32647cfd55363897b80e1549925633`) has a passing Userland Validation job but its image workflow #45753801723 fails during the musl archive scan.
+- The exact failure is `__environ.lo`: GNU objdump emits no instruction lines because this is a valid data-only x86-64 relocatable ELF object. The prior checker treated every no-disassembly object as invalid, preventing the pinned musl build from reaching BusyBox and image assembly.
+- The independent Linux synchronization workflow #45823429575 also fails at the index/worktree boundary (`linux` exists on disk but is not in the index after the attempted replacement). This is a separate issue and is deliberately not changed here.
+
+### Changes on `fix/musl-data-only-archive-members-20261127`, stacked on PR #71
+- Updated `scripts/check-x86-64-baseline-isa.sh` to inspect the ELF type and section headers when objdump produces no instruction lines. It accepts only ET_REL objects with no non-empty executable section, which covers legitimate data-only musl objects without weakening executable-code checks.
+- Preserved fail-closed behavior for non-relocatable ELF files with no disassembly, malformed section tables, and relocatable objects that declare non-empty executable sections but produce no instruction lines.
+- Extended `scripts/test-x86-64-baseline-isa.sh` with a data-only ET_REL positive fixture and a code-less ET_EXEC negative fixture.
+- Extended `scripts/test-x86-64-baseline-archive.sh` with a data-only `.lo` archive member, while retaining duplicate-member, AVX, non-ELF, and empty-archive checks.
+- No files under `linux/` were changed. No existing branch, commit, or pull request was deleted, force-pushed, or merged.
+
+### Validation
+- Local GNU Binutils 2.44: `test-x86-64-baseline-isa.sh` **PASS** (baseline accepted; data-only ET_REL accepted; AVX, BMI, invalid ELF, and code-less ET_EXEC rejected).
+- Local GNU Binutils 2.44: `test-x86-64-baseline-archive.sh` **PASS** (baseline, data-only, and duplicate archive members accepted; second duplicate containing AVX rejected; non-ELF and empty archives rejected).
+- `bash -n` passed for the three changed shell scripts.
+- The new branch has not yet completed GitHub Actions. A real musl 1.2.5 build, static BusyBox validation, rootfs/initramfs, ISO/disk image, and BIOS/UEFI boot remain unverified. No full OS build or boot success is claimed.
+
+### Next priorities
+1. Require both Userland Validation and the full image workflow to pass on this exact branch head.
+2. Confirm every member of the real musl 1.2.5 archives is checked and static BusyBox passes the x86-64 baseline guard.
+3. Complete rootfs, initramfs, ISO, and disk-image construction.
+4. Run BIOS and UEFI boot tests and verify rootfs hand-off plus AYUI readiness.
+5. Diagnose the separate Linux sync index/worktree mismatch in an isolated change without broad cleanup or modifications to the vendored kernel tree.

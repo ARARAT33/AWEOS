@@ -12,21 +12,56 @@ for tool in readelf objdump awk grep; do
     command -v "$tool" >/dev/null 2>&1 || { echo "ERROR: $tool is required" >&2; exit 2; }
 done
 
-machine="$(readelf -h "$binary" | awk -F: '/Machine:/ {sub(/^[[:space:]]+/, "", $2); print $2}')"
+header="$(readelf -h "$binary")" || {
+    echo "ERROR: readelf could not inspect $binary." >&2
+    exit 1
+}
+machine="$(printf '%s\n' "$header" | awk -F: '/Machine:/ {sub(/^[[:space:]]+/, "", $2); print $2}')"
 [ "$machine" = "Advanced Micro Devices X86-64" ] || {
     echo "ERROR: expected an x86_64 ELF, got: ${machine:-unknown}" >&2
     exit 1
 }
+elf_type="$(printf '%s\n' "$header" | awk -F: '/Type:/ {sub(/^[[:space:]]+/, "", $2); split($2, fields, /[[:space:]]+/); print fields[1]; exit}')"
 
-disassembly="$(mktemp "${TMPDIR:-/tmp}/aweos-isa-check.XXXXXX")"
-trap 'rm -f -- "$disassembly"' EXIT
+work_dir="$(mktemp -d "${TMPDIR:-/tmp}/aweos-isa-check.XXXXXX")"
+trap 'rm -rf -- "$work_dir"' EXIT
+disassembly="$work_dir/disassembly"
 if ! objdump -d --no-show-raw-insn "$binary" >"$disassembly"; then
     echo "ERROR: objdump could not disassemble $binary." >&2
     exit 1
 fi
 if ! grep -Eq '^[[:space:]]*[[:xdigit:]]+:' "$disassembly"; then
-    echo "ERROR: objdump produced no instruction lines for $binary." >&2
-    exit 1
+    # Static archives legitimately contain data-only relocatable objects (for
+    # example musl's __environ.lo). They are safe only when the ELF is ET_REL
+    # and has no non-empty executable section. A malformed object or a final
+    # executable with no disassembly must still fail closed.
+    if [ "$elf_type" != "REL" ]; then
+        echo "ERROR: objdump produced no instruction lines for non-relocatable ELF type ${elf_type:-unknown}: $binary." >&2
+        exit 1
+    fi
+
+    sections="$work_dir/sections"
+    if ! readelf -SW "$binary" >"$sections"; then
+        echo "ERROR: readelf could not inspect section headers for $binary." >&2
+        exit 1
+    fi
+    if awk '
+        /^[[:space:]]*\[[[:space:]]*[0-9]+\]/ {
+            line = $0
+            sub(/^[[:space:]]*\[[[:space:]]*[0-9]+\][[:space:]]*/, "", line)
+            split(line, fields, /[[:space:]]+/)
+            size = fields[5]
+            flags = fields[7]
+            if (flags ~ /X/ && size !~ /^0+$/) found = 1
+        }
+        END { exit found ? 0 : 1 }
+    ' "$sections"; then
+        echo "ERROR: objdump produced no instruction lines for an ELF with non-empty executable sections: $binary." >&2
+        exit 1
+    fi
+
+    echo "PASS: $binary is a data-only x86-64 relocatable ELF with no non-empty executable sections."
+    exit 0
 fi
 
 if awk '
