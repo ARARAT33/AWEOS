@@ -772,3 +772,63 @@
 3. Complete kernel/rootfs/initramfs, ISO, and disk-image assembly.
 4. Run BIOS and UEFI separately and require rootfs hand-off plus AYUI first-frame readiness.
 5. Diagnose the separate Linux sync failure (#45620871584, `linux` exists on disk but not in the index) without broad cleanup or changes to the vendored kernel tree.
+
+
+## 2026-11-27 run 12 — Accept verified data-only x86-64 relocatable archive members
+
+### Repository and CI inspection
+- Inspected the repository metadata, default branch, root build graph, Cargo workspace, AWEUI and application source layout, bootloader assets, build scripts, CI workflows, and the existing development log. The default branch is `master` at `d4d300545558d660abb2127d297d3a00ef017dae`; the active build work remains in stacked pull-request branches.
+- PR #71 (`fix/musl-archive-duplicate-members-20261126`, head `ee256b7fdf32647cfd55363897b80e1549925633`) has a passing Userland Validation job but its image workflow #45753801723 fails during the musl archive scan.
+- The exact failure is `__environ.lo`: GNU objdump emits no instruction lines because this is a valid data-only x86-64 relocatable ELF object. The prior checker treated every no-disassembly object as invalid, preventing the pinned musl build from reaching BusyBox and image assembly.
+- The independent Linux synchronization workflow #45823429575 also fails at the index/worktree boundary (`linux` exists on disk but is not in the index after the attempted replacement). This is a separate issue and is deliberately not changed here.
+
+### Changes on `fix/musl-data-only-archive-members-20261127`, stacked on PR #71
+- Updated `scripts/check-x86-64-baseline-isa.sh` to inspect the ELF type and section headers when objdump produces no instruction lines. It accepts only ET_REL objects with no non-empty executable section, which covers legitimate data-only musl objects without weakening executable-code checks.
+- Preserved fail-closed behavior for non-relocatable ELF files with no disassembly, malformed section tables, and relocatable objects that declare non-empty executable sections but produce no instruction lines.
+- Extended `scripts/test-x86-64-baseline-isa.sh` with a data-only ET_REL positive fixture and a code-less ET_EXEC negative fixture.
+- Extended `scripts/test-x86-64-baseline-archive.sh` with a data-only `.lo` archive member, while retaining duplicate-member, AVX, non-ELF, and empty-archive checks.
+- No files under `linux/` were changed. No existing branch, commit, or pull request was deleted, force-pushed, or merged.
+
+### Validation
+- Local GNU Binutils 2.44: `test-x86-64-baseline-isa.sh` **PASS** (baseline accepted; data-only ET_REL accepted; AVX, BMI, invalid ELF, and code-less ET_EXEC rejected).
+- Local GNU Binutils 2.44: `test-x86-64-baseline-archive.sh` **PASS** (baseline, data-only, and duplicate archive members accepted; second duplicate containing AVX rejected; non-ELF and empty archives rejected).
+- `bash -n` passed for the three changed shell scripts.
+- The new branch has not yet completed GitHub Actions. A real musl 1.2.5 build, static BusyBox validation, rootfs/initramfs, ISO/disk image, and BIOS/UEFI boot remain unverified. No full OS build or boot success is claimed.
+
+### Next priorities
+1. Require both Userland Validation and the full image workflow to pass on this exact branch head.
+2. Confirm every member of the real musl 1.2.5 archives is checked and static BusyBox passes the x86-64 baseline guard.
+3. Complete rootfs, initramfs, ISO, and disk-image construction.
+4. Run BIOS and UEFI boot tests and verify rootfs hand-off plus AYUI readiness.
+5. Diagnose the separate Linux sync index/worktree mismatch in an isolated change without broad cleanup or modifications to the vendored kernel tree.
+
+
+## 2026-11-28 run 13 — Validate musl's intentionally empty compatibility archives
+
+### Exact-head CI diagnosis
+- Rechecked PR #72 at head `cd4e2f83cb217899a1b0291a27a3adf542a6f3b8`. Its Userland Validation run #45943318059 passed, but the full x86_64 image/boot run #45943318027 failed in `Build AWEOS images`.
+- The log confirms the new scanner accepted the data-only `__environ.lo` and verified all 1,345 members of musl's `libc.a`. The next failure was `libcrypt.a`: the archive exists but has no members, so the generic archive scanner rejected it before BusyBox could build.
+- This is expected musl behavior, not a missing library: musl's upstream Makefile defines the compatibility archives `libm.a`, `librt.a`, `libpthread.a`, `libcrypt.a`, `libutil.a`, `libxnet.a`, `libresolv.a`, and `libdl.a` as empty archives. The implementations are provided by `libc.a` (see the [musl FAQ](https://wiki.musl-libc.org/faq) and the [musl Makefile](https://sources.debian.org/src/musl/1.2.2-1/Makefile)). The build stopped at `Makefile:46: busybox`; rootfs, ISO, disk-image, BIOS, and UEFI stages were not reached.
+- PR #72 remains a draft and unmerged. No files under `linux/` were changed.
+
+### Changes on `fix/musl-data-only-archive-members-20261127`, stacked on PR #71
+- Added `scripts/check-musl-baseline-archives.sh` to validate the complete installed static-library set. It permits an empty archive only when its exact basename is in musl's documented compatibility allowlist.
+- Every non-empty archive is still passed to the existing object-by-object x86-64 ISA scanner, including an allowlisted archive if it unexpectedly contains members. Unknown empty archives, zero-byte files, malformed archives, and a missing/empty primary `libc.a` fail closed.
+- Updated `scripts/build-musl-baseline.sh` to use the archive-set validator and bumped the cache stamp to `archive-member-scan-v4`, so outputs produced under the previous validation policy are not trusted.
+- Added a regression assertion to `scripts/test-musl-baseline-build.sh` that the cache-read check and cache-write stamp both use `archive-member-scan-v4`; this prevents a stale or mismatched verification marker.
+- Added `scripts/test-musl-baseline-archives.sh` and wired it into `make test-shell`. The regression covers the allowlisted empty archives, an unknown empty archive, AVX code hidden in a non-empty `libcrypt.a`, and missing/empty `libc.a`.
+- No existing branches, commits, or pull requests were deleted, force-pushed, or merged.
+
+### Validation
+- Local GNU `ar`/Binutils regression for the archive-set policy: **PASS** (allowlisted empty compatibility archives accepted; unknown empty archive rejected; AVX object in non-empty `libcrypt.a` rejected; missing/empty `libc.a` rejected).
+- The exact production archive-set helper and regression test passed locally with GNU `ar`/Binutils using real baseline and AVX ELF objects.
+- Exact-head PR run #46108146208 on code commit `05a2530f458ff54b9b3dbee17ce2179064eb1af7`: `/linux` preflight, Rust workspace tests, and the complete `make test-shell` step passed; `Build AWEOS images` was still running at the end of this run.
+- Exact-head PR run #46108146176: `make test-shell`, repository-boundary validation, Cargo metadata, and `cargo test --workspace` passed; the release binary build was still running.
+- No complete image, ISO/disk image, BIOS/UEFI boot, or AYUI readiness success is claimed. The CI runs above validate the code commit; the follow-up commit changing only this development log does not alter the tested build scripts.
+
+### Next priorities
+1. Require Userland Validation and the full image workflow to pass on the new exact PR #72 head.
+2. Confirm the complete musl 1.2.5 archive set is scanned/allowlisted as expected and static BusyBox builds successfully.
+3. Continue through rootfs, initramfs, ISO, and disk-image construction.
+4. Run BIOS and UEFI QEMU tests; require rootfs hand-off and AYUI first-frame readiness.
+5. Diagnose the separate Linux synchronization index/worktree failure in an isolated branch without broad cleanup or changes under `linux/`.

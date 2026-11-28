@@ -34,4 +34,14 @@ grep -q 'SHA-256' "${WORK_DIR}/out.log" || {
     exit 1
 }
 
+stamp_count="$(grep -F -c 'archive-member-scan-v4' "${BUILDER}" || true)"
+[ "${stamp_count}" -eq 2 ] || {
+    echo "ERROR: musl cache validation and stamp writer must both use archive-member-scan-v4 (found ${stamp_count} occurrences)." >&2
+    exit 1
+}
+if grep -Fq 'archive-member-scan-v3' "${BUILDER}"; then
+    echo "ERROR: stale archive-member-scan-v3 cache stamp remains in the musl builder." >&2
+    exit 1
+fi
+
 echo "PASS: baseline musl builder verifies archive checksums and fails closed."

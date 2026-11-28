@@ -29,7 +29,7 @@ MUSL_PREFIX="${BUILD_DIR_ABS}/musl"
 
 if [ -f "${MUSL_PREFIX}/lib/libc.a" ] &&
    [ -x "${MUSL_PREFIX}/bin/musl-gcc" ] &&
-   grep -Fxq "archive-member-scan-v3" "${MUSL_PREFIX}/baseline-verified" 2>/dev/null; then
+   grep -Fxq "archive-member-scan-v4" "${MUSL_PREFIX}/baseline-verified" 2>/dev/null; then
     echo "Using cached baseline-verified musl: ${MUSL_PREFIX}"
     exit 0
 fi
@@ -76,29 +76,22 @@ EOF
 "${MUSL_PREFIX}/bin/musl-gcc" -static -Os ${MUSL_BASELINE_CFLAGS} "${SMOKE}" -o "${WORK_DIR}/smoke.elf"
 bash "${CHECKER}" "${WORK_DIR}/smoke.elf"
 
-# Scan every archive member, not only files ending in .o. musl's
-# archive members may use a different object suffix; a non-matching shell
-# glob would otherwise pass a literal '*.o' path to the checker.
+# Validate the complete installed archive set. musl intentionally ships
+# several empty compatibility archives; only the exact upstream allowlist may
+# be empty, while every non-empty archive is still scanned object by object.
 ARCHIVE_CHECKER="${SCRIPT_DIR}/check-x86-64-baseline-archive.sh"
+ARCHIVE_SET_CHECKER="${SCRIPT_DIR}/check-musl-baseline-archives.sh"
 [ -f "${ARCHIVE_CHECKER}" ] || {
     echo "ERROR: baseline archive checker not found: ${ARCHIVE_CHECKER}" >&2
     exit 2
 }
-archive_count=0
-for lib in "${MUSL_PREFIX}"/lib/*.a; do
-    [ -f "${lib}" ] || {
-        echo "ERROR: no static musl archives found in ${MUSL_PREFIX}/lib" >&2
-        exit 1
-    }
-    bash "${ARCHIVE_CHECKER}" "${lib}" "${CHECKER}"
-    archive_count=$((archive_count + 1))
-done
-[ "${archive_count}" -gt 0 ] || {
-    echo "ERROR: no static musl archives were verified." >&2
-    exit 1
+[ -f "${ARCHIVE_SET_CHECKER}" ] || {
+    echo "ERROR: musl archive-set checker not found: ${ARCHIVE_SET_CHECKER}" >&2
+    exit 2
 }
+bash "${ARCHIVE_SET_CHECKER}" "${MUSL_PREFIX}/lib" "${CHECKER}" "${ARCHIVE_CHECKER}"
 
 # Version the stamp so a cache produced by the old suffix-dependent scanner
 # cannot be mistaken for a fully verified cache.
-printf '%s\n' "archive-member-scan-v3" > "${MUSL_PREFIX}/baseline-verified"
+printf '%s\n' "archive-member-scan-v4" > "${MUSL_PREFIX}/baseline-verified"
 echo "Built and verified musl ${MUSL_VERSION} for the x86-64 baseline: ${MUSL_PREFIX}"

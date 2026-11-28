@@ -114,6 +114,7 @@ test-shell:
 	@bash ./scripts/test-x86-64-baseline-archive.sh
 	@bash ./scripts/test-busybox-build-config.sh
 	@bash ./scripts/test-musl-baseline-build.sh
+	@bash ./scripts/test-musl-baseline-archives.sh
 	@bash ./scripts/test-busybox-tc-disabled.sh
 	@bash ./scripts/test-qemu-user-isa-trace.sh
 
