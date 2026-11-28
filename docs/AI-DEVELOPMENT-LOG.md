@@ -801,3 +801,30 @@
 3. Complete rootfs, initramfs, ISO, and disk-image construction.
 4. Run BIOS and UEFI boot tests and verify rootfs hand-off plus AYUI readiness.
 5. Diagnose the separate Linux sync index/worktree mismatch in an isolated change without broad cleanup or modifications to the vendored kernel tree.
+
+
+## 2026-11-28 run 13 — Validate musl's intentionally empty compatibility archives
+
+### Exact-head CI diagnosis
+- Rechecked PR #72 at head `cd4e2f83cb217899a1b0291a27a3adf542a6f3b8`. Its Userland Validation run #45943318059 passed, but the full x86_64 image/boot run #45943318027 failed in `Build AWEOS images`.
+- The log confirms the new scanner accepted the data-only `__environ.lo` and verified all 1,345 members of musl's `libc.a`. The next failure was `libcrypt.a`: the archive exists but has no members, so the generic archive scanner rejected it before BusyBox could build.
+- This is expected musl behavior, not a missing library: musl's upstream Makefile defines the compatibility archives `libm.a`, `librt.a`, `libpthread.a`, `libcrypt.a`, `libutil.a`, `libxnet.a`, `libresolv.a`, and `libdl.a` as empty archives. The implementations are provided by `libc.a` (see the [musl FAQ](https://wiki.musl-libc.org/faq) and the [musl Makefile](https://sources.debian.org/src/musl/1.2.2-1/Makefile)). The build stopped at `Makefile:46: busybox`; rootfs, ISO, disk-image, BIOS, and UEFI stages were not reached.
+- PR #72 remains a draft and unmerged. No files under `linux/` were changed.
+
+### Changes on `fix/musl-data-only-archive-members-20261127`, stacked on PR #71
+- Added `scripts/check-musl-baseline-archives.sh` to validate the complete installed static-library set. It permits an empty archive only when its exact basename is in musl's documented compatibility allowlist.
+- Every non-empty archive is still passed to the existing object-by-object x86-64 ISA scanner, including an allowlisted archive if it unexpectedly contains members. Unknown empty archives, zero-byte files, malformed archives, and a missing/empty primary `libc.a` fail closed.
+- Updated `scripts/build-musl-baseline.sh` to use the archive-set validator and bumped the cache stamp to `archive-member-scan-v4`, so outputs produced under the previous validation policy are not trusted.
+- Added `scripts/test-musl-baseline-archives.sh` and wired it into `make test-shell`. The regression covers the allowlisted empty archives, an unknown empty archive, AVX code hidden in a non-empty `libcrypt.a`, and missing/empty `libc.a`.
+- No existing branches, commits, or pull requests were deleted, force-pushed, or merged.
+
+### Validation
+- Local GNU `ar`/Binutils regression for the archive-set policy: **PASS** (allowlisted empty compatibility archives accepted; unknown empty archive rejected; AVX object in non-empty `libcrypt.a` rejected; missing/empty `libc.a` rejected).
+- The exact production archive helper and full `make test-shell` suite still require GitHub Actions validation after this commit. The full musl/BusyBox build, rootfs/initramfs, ISO/disk image, BIOS/UEFI boot, and AYUI readiness remain unverified.
+
+### Next priorities
+1. Require Userland Validation and the full image workflow to pass on the new exact PR #72 head.
+2. Confirm the complete musl 1.2.5 archive set is scanned/allowlisted as expected and static BusyBox builds successfully.
+3. Continue through rootfs, initramfs, ISO, and disk-image construction.
+4. Run BIOS and UEFI QEMU tests; require rootfs hand-off and AYUI first-frame readiness.
+5. Diagnose the separate Linux synchronization index/worktree failure in an isolated branch without broad cleanup or changes under `linux/`.
