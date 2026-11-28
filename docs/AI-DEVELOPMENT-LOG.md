@@ -821,7 +821,10 @@
 
 ### Validation
 - Local GNU `ar`/Binutils regression for the archive-set policy: **PASS** (allowlisted empty compatibility archives accepted; unknown empty archive rejected; AVX object in non-empty `libcrypt.a` rejected; missing/empty `libc.a` rejected).
-- The exact production archive helper and full `make test-shell` suite still require GitHub Actions validation after this commit. The full musl/BusyBox build, rootfs/initramfs, ISO/disk image, BIOS/UEFI boot, and AYUI readiness remain unverified.
+- The exact production archive-set helper and regression test passed locally with GNU `ar`/Binutils using real baseline and AVX ELF objects.
+- Exact-head PR run #46108146208 on code commit `05a2530f458ff54b9b3dbee17ce2179064eb1af7`: `/linux` preflight, Rust workspace tests, and the complete `make test-shell` step passed; `Build AWEOS images` was still running at the end of this run.
+- Exact-head PR run #46108146176: `make test-shell`, repository-boundary validation, Cargo metadata, and `cargo test --workspace` passed; the release binary build was still running.
+- No complete image, ISO/disk image, BIOS/UEFI boot, or AYUI readiness success is claimed. The CI runs above validate the code commit; the follow-up commit changing only this development log does not alter the tested build scripts.
 
 ### Next priorities
 1. Require Userland Validation and the full image workflow to pass on the new exact PR #72 head.
