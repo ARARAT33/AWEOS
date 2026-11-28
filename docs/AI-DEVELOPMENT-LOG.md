@@ -815,6 +815,7 @@
 - Added `scripts/check-musl-baseline-archives.sh` to validate the complete installed static-library set. It permits an empty archive only when its exact basename is in musl's documented compatibility allowlist.
 - Every non-empty archive is still passed to the existing object-by-object x86-64 ISA scanner, including an allowlisted archive if it unexpectedly contains members. Unknown empty archives, zero-byte files, malformed archives, and a missing/empty primary `libc.a` fail closed.
 - Updated `scripts/build-musl-baseline.sh` to use the archive-set validator and bumped the cache stamp to `archive-member-scan-v4`, so outputs produced under the previous validation policy are not trusted.
+- Added a regression assertion to `scripts/test-musl-baseline-build.sh` that the cache-read check and cache-write stamp both use `archive-member-scan-v4`; this prevents a stale or mismatched verification marker.
 - Added `scripts/test-musl-baseline-archives.sh` and wired it into `make test-shell`. The regression covers the allowlisted empty archives, an unknown empty archive, AVX code hidden in a non-empty `libcrypt.a`, and missing/empty `libc.a`.
 - No existing branches, commits, or pull requests were deleted, force-pushed, or merged.
 

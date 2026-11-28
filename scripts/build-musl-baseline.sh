@@ -93,5 +93,5 @@ bash "${ARCHIVE_SET_CHECKER}" "${MUSL_PREFIX}/lib" "${CHECKER}" "${ARCHIVE_CHECK
 
 # Version the stamp so a cache produced by the old suffix-dependent scanner
 # cannot be mistaken for a fully verified cache.
-printf '%s\n' "archive-member-scan-v3" > "${MUSL_PREFIX}/baseline-verified"
+printf '%s\n' "archive-member-scan-v4" > "${MUSL_PREFIX}/baseline-verified"
 echo "Built and verified musl ${MUSL_VERSION} for the x86-64 baseline: ${MUSL_PREFIX}"
